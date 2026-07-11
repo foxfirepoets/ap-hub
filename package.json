@@ -1,0 +1,43 @@
+{
+  "name": "ap-hub",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "AI Accountant Hub — Gmail → proof-gated → QuickBooks Online (sandbox) invoice pipeline",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "cli": "tsx src/cli.ts",
+    "migrate:up": "tsx src/db/migrate.ts up",
+    "migrate:down": "tsx src/db/migrate.ts down",
+    "db:reset": "tsx src/db/migrate.ts reset",
+    "seed": "tsx src/db/seed.ts",
+    "test": "vitest run",
+    "test:int": "vitest run --mode integration",
+    "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\"",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.1",
+    "commander": "^12.1.0",
+    "dotenv": "^16.4.7",
+    "googleapis": "^144.0.0",
+    "pg": "^8.13.1",
+    "pg-boss": "^10.1.5",
+    "pino": "^9.5.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "@types/node": "^22.10.2",
+    "@types/pg": "^8.11.10",
+    "eslint": "^9.17.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.18.1",
+    "vitest": "^2.1.8"
+  }
+}

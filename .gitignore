@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+
+# Environment & secrets — NEVER commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+credentials/
+*.credentials.json
+
+# Test / coverage
+coverage/
+.vitest/
+*.log
+
+# Local Postgres data (if run locally)
+pgdata/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Ralph loop runtime state (keep specs + prompts; ignore volatile logs)
+.ralph/activity.log
+.ralph/errors.log
+.claude/cbv/

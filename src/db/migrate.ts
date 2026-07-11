@@ -1,0 +1,103 @@
+import { readdirSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+import pg from 'pg';
+
+const { Pool } = pg;
+
+/**
+ * Minimal, dependency-free SQL migration runner. Ordered `migrations/*.sql` files
+ * are applied once each; applied names are tracked in `_migrations`. This gives
+ * `migrate:up`, `migrate:down` (best-effort via *.down.sql), and `reset`.
+ */
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const MIGRATIONS_DIR = join(__dirname, '..', '..', 'migrations');
+
+export function migrationFiles(): string[] {
+  return readdirSync(MIGRATIONS_DIR)
+    .filter((f) => f.endsWith('.sql') && !f.endsWith('.down.sql'))
+    .sort();
+}
+
+export async function ensureMigrationsTable(pool: pg.Pool): Promise<void> {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS _migrations (
+      name text PRIMARY KEY,
+      applied_at timestamptz NOT NULL DEFAULT now()
+    );
+  `);
+}
+
+export async function appliedMigrations(pool: pg.Pool): Promise<Set<string>> {
+  const { rows } = await pool.query<{ name: string }>('SELECT name FROM _migrations');
+  return new Set(rows.map((r) => r.name));
+}
+
+export async function migrateUp(connectionString: string): Promise<string[]> {
+  const pool = new Pool({ connectionString });
+  const applied: string[] = [];
+  try {
+    await ensureMigrationsTable(pool);
+    const done = await appliedMigrations(pool);
+    for (const file of migrationFiles()) {
+      if (done.has(file)) continue;
+      const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf8');
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query(sql);
+        await client.query('INSERT INTO _migrations (name) VALUES ($1)', [file]);
+        await client.query('COMMIT');
+        applied.push(file);
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw new Error(`Migration ${file} failed: ${(err as Error).message}`);
+      } finally {
+        client.release();
+      }
+    }
+    return applied;
+  } finally {
+    await pool.end();
+  }
+}
+
+export async function resetDb(connectionString: string): Promise<void> {
+  const pool = new Pool({ connectionString });
+  try {
+    await pool.query('DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;');
+    // pg-boss keeps its own schema; drop it too so reset is total.
+    await pool.query('DROP SCHEMA IF EXISTS pgboss CASCADE;');
+  } finally {
+    await pool.end();
+  }
+  await migrateUp(connectionString);
+}
+
+async function main(): Promise<void> {
+  const cmd = process.argv[2] ?? 'up';
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    console.error('DATABASE_URL is not set');
+    process.exit(1);
+  }
+  if (cmd === 'up') {
+    const applied = await migrateUp(connectionString);
+    console.log(applied.length ? `Applied: ${applied.join(', ')}` : 'No pending migrations.');
+  } else if (cmd === 'reset') {
+    await resetDb(connectionString);
+    console.log('Database reset and re-migrated.');
+  } else {
+    console.error(`Unknown migrate command: ${cmd}`);
+    process.exit(1);
+  }
+}
+
+// Run only when invoked directly (not when imported by tests).
+if (import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith('migrate.ts')) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}
