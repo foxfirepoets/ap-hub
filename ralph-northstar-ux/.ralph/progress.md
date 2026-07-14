@@ -125,3 +125,32 @@ Judgment calls:
 Gate: migrate:up && lint && typecheck && test → exit 0. Tests: 128 passed (128) — up from 114. Six-guarantee suite (lockdown, posting dedup, proof_fail_safe, gatekeeper_hold, no_prod_write, white_label) all green.
 Guardrail check: src/qbo/write.ts, src/gatekeeper/forwarder.ts, and src/pipeline/* UNTOUCHED (git-confirmed). No new QBO-write or email-send path. No recipient parameter anywhere in new code.
 <promise>CHUNK COMPLETE: CHUNK_4_ACTION</promise>
+
+## Iteration 6 — CHUNK_5_FRONTEND (COMPLETE)
+Built the Next.js App Router human-review UX under app/ (desktop web; thin client — renders API data + calls existing action routes; no business logic, no new QBO-write/send path).
+Files created:
+ - Build wiring: tsconfig.web.json (jsx+DOM libs, web-only), next.config.mjs (typescript.tsconfigPath→tsconfig.web.json, eslint.ignoreDuringBuilds, webpack extensionAlias .js→.ts/.tsx), app/globals.css
+ - Shell: app/page.tsx (redirect→/today), app/login/page.tsx, app/(app)/layout.tsx (SessionGuard shell), app/(app)/Nav.tsx, app/lib/session.tsx (client SessionGuard+useSession; GET /api/me, anon→/login)
+ - Pages: app/(app)/today, /exceptions (keyboard triage J/K/A/R/E/O), /transactions (+/[id] detail), /settings, /audit
+ - Shared: app/components/EvidencePanel.tsx (email/attachment+sha256/extracted fields+confidence/prior rule/proof refs/QBO link; onLoaded callback), app/components/ActionBar.tsx (role-gated), app/components/RemapForm.tsx
+ - Lib: app/lib/types.ts (response-shape mirrors, type-only), app/lib/api.ts (apiGet/apiPost + proposalRefId), app/lib/permissions.ts (mirrors ROLE_PERMISSIONS), app/lib/format.ts
+ - API: app/api/me/route.ts (thin runRead echo of ctx.email/role/tenantId)
+ - E2E: playwright.config.ts (webServer next build+start :3100, reuseExistingServer), e2e/app.spec.ts (4 tests, all /api + Google login stubbed)
+ - Modified: app/layout.tsx (import globals.css), package.json (+@playwright/test devDep, +e2e script), AGENTS.md (Web UI section), .gitignore (.next/next-env/test-results)
+Validation (all GREEN):
+ - lint: exit 0 (eslint src/**+test/** — app/ intentionally outside src gate)
+ - typecheck: exit 0 (tsc --noEmit; tsconfig.json still src/test only — git-confirmed untouched)
+ - test: 128 passed (128), 16 files — six-guarantee suite green
+ - web:build: Compiled successfully, 20 routes, typechecks all app/ via tsconfig.web.json
+ - e2e: 4/4 passed (Playwright/Chromium headless) INCLUDING mandatory happy path: mock Google login → Today → open exception → view evidence → approve → Posted notice + QBO sandbox link. Edge tests: anon→/login redirect; bookkeeper shows "Send to Owner" + no approve-btn; cpa read-only (no approve/reject/edit).
+E2E EXECUTION STATUS: AUTHORED AND EXECUTED GREEN in this environment (Chromium binaries present). `npm run e2e` builds+serves the prod app on :3100 with all /api and the Google login redirect stubbed via page.route, so it runs without a live DB or Google — CI-ready.
+Judgment calls:
+ - Client-fetch pages (not RSC) so the API contract is consumed literally ("GET /api/today") AND the E2E can stub every /api call via page.route without a DB/Google. Auth guard is client-side (fetch /api/me → redirect); real authZ is still enforced server-side by every route (403/401). This is UX redirect, not the security boundary.
+ - app/ typechecking: added tsconfig.web.json + next.config typescript.tsconfigPath so `next build` fully typechecks React/pages WITHOUT modifying the src gate's tsconfig.json (Next auto-added isolatedModules to the WEB tsconfig only). Closes the "app/ is outside the gate" guardrail: app/ now has real type coverage via web:build + behavioral coverage via E2E.
+ - webpack extensionAlias (.js→.ts) added so pre-existing CHUNK_3/4 route handlers (which use .js ESM specifiers resolving to .ts) compile under next build; route files untouched.
+ - "Mock Google login" = stub GET /api/auth/login → 302 /today (the real Google consent/callback is CHUNK_1's job and out of scope for a UI E2E). Clicking the real "Sign in with Google" link exercises that seam.
+ - "Send to Owner" (bookkeeper) is a client-only escalation notice — there is no server escalation endpoint and none may be invented (no new QBO-write/send path). Label differs per role per spec; server still forbids bookkeeper approve→post (403).
+ - Settings is read-only (no settings-mutation API in this phase); owner-only "Manage" buttons rendered disabled (connections are config-provisioned). No tenant-specific value hard-coded.
+ - Action notice hoisted above the queue/detail split so a "Posted" result survives the approved item leaving the queue; notice cleared only on explicit J/K/click navigation.
+Guardrail check: src/qbo/write.ts, src/gatekeeper/forwarder.ts, src/pipeline/* UNTOUCHED (git-confirmed). No new QBO-write or email-send path; UI only calls existing CHUNK_3 read + CHUNK_4 action routes. No recipient field introduced. tsconfig.json (src gate) unchanged.
+<promise>CHUNK COMPLETE: CHUNK_5_FRONTEND</promise>

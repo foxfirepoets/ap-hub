@@ -37,3 +37,9 @@ Thumbs.db
 .ralph/activity.log
 .ralph/errors.log
 .claude/cbv/
+
+# Next.js / Playwright build artifacts (CHUNK_5)
+.next/
+next-env.d.ts
+test-results/
+playwright-report/
