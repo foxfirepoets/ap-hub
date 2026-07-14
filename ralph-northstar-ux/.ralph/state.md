@@ -1,11 +1,11 @@
 # Ralph State
 
-**Current Iteration:** 1
+**Current Iteration:** 2
 
-Current chunk: CHUNK_1_AUTH
+Current chunk: CHUNK_2_SERVICES
 Current task: 6 of 6 (all complete)
-Last completed: CHUNK_1_AUTH — all 6 tasks; gate GREEN (91/91, was 62/62)
-Status: COMPLETE — CHUNK_1_AUTH done. Gate `migrate:up && lint && typecheck && test` exit 0. DATABASE_URL=postgres://aphub:aphub@127.0.0.1:5432/aphub. Next: CHUNK_2_SERVICES.
+Last completed: CHUNK_2_SERVICES — all 6 tasks; gate GREEN (101/101, was 91/91)
+Status: COMPLETE — CHUNK_2_SERVICES done. Gate `migrate:up && lint && typecheck && test` exit 0. DATABASE_URL=postgres://aphub:aphub@127.0.0.1:5432/aphub. Shared service layer src/services/* (approve/reject/retry/remap/learn/reply + withAudit) built; CLI delegates to it; write.ts/forwarder.ts/pipeline untouched. Next: CHUNK_3_READ.
 
 ## Instructions for ralph
 

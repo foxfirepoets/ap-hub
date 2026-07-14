@@ -88,9 +88,10 @@ tenantOpt(
     .requiredOption('--field <field>')
     .requiredOption('--value <value>'),
 ).action(async (o) => {
-  await query(
-    `INSERT INTO corrections (tenant_id, proposal_id, field, new_value) VALUES ($1,$2,$3,$4)`,
-    [Number(o.tenant), Number(o.proposal), o.field, o.value],
+  const { learnCorrection } = await import('./services/mappings.js');
+  await learnCorrection(
+    { userId: 0, tenantId: Number(o.tenant), role: 'owner_controller', actor: 'cli' },
+    { proposalId: Number(o.proposal), field: o.field, newValue: o.value, remember: false },
   );
   console.log('correction recorded');
   await closePool();
@@ -124,24 +125,18 @@ tenantOpt(gk.command('held').description('list held/failed forwards').option('--
 
 tenantOpt(gk.command('release').description('release a held forward (audited)').requiredOption('--id <id>')).action(
   async (o) => {
-    const cfg = config();
-    const { getForward, setForwardStatus } = await import('./gatekeeper/repo.js');
-    const { createLockedForwarder } = await import('./gatekeeper/forwarder.js');
-    const { getGmailClient } = await import('./gmail/adapter.js');
-    const { writeAudit } = await import('./audit.js');
+    // Delegates to the shared service layer — the same single send path the API uses.
+    const { sendReply } = await import('./services/reply.js');
     const tenantId = Number(o.tenant);
-    const fwd = await getForward(tenantId, Number(o.id));
-    if (!fwd) {
-      console.error('forward not found');
-      await closePool();
-      return;
+    try {
+      const res = await sendReply(
+        { userId: 0, tenantId, role: 'owner_controller', actor: 'cli' },
+        Number(o.id),
+      );
+      console.log(`released forward ${res.forwardId} → ${res.to}`);
+    } catch (err) {
+      console.error(String((err as Error).message));
     }
-    const msg = (await query<{ gmail_message_id: string }>('SELECT gmail_message_id FROM messages WHERE id=$1', [fwd.message_id])).rows[0];
-    const forwarder = createLockedForwarder(cfg.QBO_FORWARDING_ADDRESS, await getGmailClient(tenantId));
-    const sent = await forwarder.forward(msg!.gmail_message_id);
-    await setForwardStatus(fwd.id, 'forwarded', { gmailSendId: sent.sendId, releasedBy: 'cli' });
-    await writeAudit({ tenantId, action: 'gatekeep.release', entity: `forward:${fwd.id}`, detail: { by: 'cli' } });
-    console.log(`released forward ${fwd.id} → ${sent.to}`);
     await closePool();
   },
 );
