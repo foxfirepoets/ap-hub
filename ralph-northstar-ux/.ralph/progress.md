@@ -107,3 +107,21 @@ importing from CHUNK_2 approve.ts, keeping the read layer self-contained; (e) ru
 token in addition to the signed cookie to make the wrapper unit-testable.
 Gate: `migrate:up && lint && typecheck && test` exit 0 — 114/114 tests (was 101/101), +13 new.
 <promise>CHUNK COMPLETE: CHUNK_3_READ</promise>
+
+[2026-07-14 CHUNK_4_ACTION] BUILD complete — role-gated action routes over the CHUNK_2 service layer.
+Files created:
+ - src/services/action/index.ts (gate-covered): runApprove/runReject/runRetry/runRemap/runLearn/runSendReply
+   + internal runAction wrapper (auth-guard→parse-body→role-gate→service→JSON), postResultResponse
+   (posted→201, duplicate→409 ALREADY_POSTED, held→202 HELD_FOR_REVIEW, skipped→404), qboRetryOnThrow
+   (QBO throw→202 QBO_RETRY), serviceErrorResponse (*_not_found→404), and the RECIPIENT_FIELDS lockdown check.
+ - app/api/proposals/[id]/approve/route.ts, .../reject/route.ts, .../retry/route.ts (thin POST wrappers)
+ - app/api/mappings/remap/route.ts, app/api/corrections/learn/route.ts, app/api/replies/[id]/send/route.ts
+ - test/action.test.ts (14 DB/integration tests)
+Judgment calls:
+ - Role gating enforced at TWO layers: requireSession(role) in runAction + ensurePermission inside each service (defence in depth). Bookkeeper approve → 403 before any writer call.
+ - numOrUndef coerces numeric-string ids (proposal ids are bigint → pg/JSON present them as strings) so body proposalId/exceptionId scope-check runs (else proposal_id stored NULL).
+ - Concurrent double-approve asserts the true invariant: exactly ONE posting row; loser is 201 (idempotent upsert) / 409 (dedup) / 202 (safe retry on row contention) — never a 5xx, never a second post.
+ - Fail-safe hold (missing proof coverage / below threshold / verify mismatch) → 202 HELD_FOR_REVIEW (never fail-open).
+Gate: migrate:up && lint && typecheck && test → exit 0. Tests: 128 passed (128) — up from 114. Six-guarantee suite (lockdown, posting dedup, proof_fail_safe, gatekeeper_hold, no_prod_write, white_label) all green.
+Guardrail check: src/qbo/write.ts, src/gatekeeper/forwarder.ts, and src/pipeline/* UNTOUCHED (git-confirmed). No new QBO-write or email-send path. No recipient parameter anywhere in new code.
+<promise>CHUNK COMPLETE: CHUNK_4_ACTION</promise>
