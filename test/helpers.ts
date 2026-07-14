@@ -3,9 +3,9 @@ import { query, closePool } from '../src/db/pool.js';
 /** Truncate all domain tables between tests (keeps schema + _migrations). */
 export async function resetTables(): Promise<void> {
   await query(`
-    TRUNCATE forwards, proof_refs, postings, reconciliation, corrections, exceptions,
-             proposals, extractions, mappings, attachments, attachment_blobs, messages,
-             oauth_tokens, audit_log, llm_calls, tenants RESTART IDENTITY CASCADE;
+    TRUNCATE sessions, users, forwards, proof_refs, postings, reconciliation, corrections,
+             exceptions, proposals, extractions, mappings, attachments, attachment_blobs,
+             messages, oauth_tokens, audit_log, llm_calls, tenants RESTART IDENTITY CASCADE;
   `);
 }
 
@@ -13,6 +13,25 @@ export async function createTenant(name = 'Test Co'): Promise<number> {
   const { rows } = await query<{ id: number }>(
     'INSERT INTO tenants (name) VALUES ($1) RETURNING id',
     [name],
+  );
+  return rows[0]!.id;
+}
+
+export async function createUser(
+  tenantId: number,
+  opts: { email?: string; role?: string; status?: string; googleSub?: string; name?: string } = {},
+): Promise<number> {
+  const { rows } = await query<{ id: number }>(
+    `INSERT INTO users (tenant_id, email, name, role, google_sub, status)
+     VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+    [
+      tenantId,
+      opts.email ?? `user-${Math.floor(performance.now() * 1000)}@example.com`,
+      opts.name ?? 'Test User',
+      opts.role ?? 'owner_controller',
+      opts.googleSub ?? `sub-${Math.floor(performance.now() * 1000)}`,
+      opts.status ?? 'active',
+    ],
   );
   return rows[0]!.id;
 }

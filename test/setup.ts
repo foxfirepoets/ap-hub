@@ -14,6 +14,9 @@ process.env.GMAIL_CLIENT_SECRET ||= 'test-gmail-secret';
 process.env.SWARMSYNC_API_KEY ||= 'ssk_live_testkey123';
 process.env.QBO_ENV ||= 'sandbox';
 process.env.QBO_SANDBOX_COMPANY_NAME ||= 'Sandbox Company_US_1';
+process.env.SESSION_COOKIE_SECRET ||= 'test-session-cookie-secret';
+process.env.GOOGLE_SSO_CLIENT_ID ||= 'test-sso-id';
+process.env.GOOGLE_SSO_CLIENT_SECRET ||= 'test-sso-secret';
 process.env.LOG_LEVEL ||= 'silent';
 
 let migrated = false;

@@ -57,6 +57,13 @@ const RawSchema = z.object({
   REVIEW_THRESHOLD: z.coerce.number().min(0).max(1).default(0.6),
   AMOUNT_CEILING: z.coerce.number().nonnegative().default(10000),
 
+  // --- Human UX auth (CHUNK_1_AUTH): Google SSO + tenant-scoped sessions ---
+  GOOGLE_SSO_CLIENT_ID: z.string().default(''),
+  GOOGLE_SSO_CLIENT_SECRET: z.string().default(''),
+  SESSION_COOKIE_SECRET: z.string().default(''),
+  SESSION_TTL_HOURS: z.coerce.number().positive().default(12),
+  WEB_BASE_URL: z.string().url().default('http://localhost:3000'),
+
   // --- Runtime ---
   POLL_INTERVAL_SECONDS: z.coerce.number().int().positive().default(180),
   PORT: z.coerce.number().int().positive().default(3000),
