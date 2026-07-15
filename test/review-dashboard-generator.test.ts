@@ -113,6 +113,17 @@ describe('build-review-dashboard.mjs', () => {
     expect(html).toMatch(/localStorage/);
   });
 
+  it('HKO-audit MEDIUM fix: CSV export neutralizes leading formula-trigger characters (CWE-1236)', () => {
+    const inPath = writeSnapshot('snap5.json', baseSnapshot);
+    const outPath = join(dir, 'out5.html');
+    run([inPath, outPath]);
+    const html = readFileSync(outPath, 'utf8');
+    // csvEscape must exist and guard against a field starting with =, +, -, or @
+    // (a formula-injection payload that would execute when opened in Excel/Sheets).
+    expect(html).toMatch(/function csvEscape/);
+    expect(html).toMatch(/\^\[=\+@\\t\\r-\]/);
+  });
+
   it('BAD_SNAPSHOT: malformed JSON exits non-zero and writes no HTML', () => {
     const inPath = join(dir, 'bad.json');
     writeFileSync(inPath, 'not json', 'utf8');

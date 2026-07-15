@@ -587,6 +587,11 @@ const CLIENT_JS = `
 
   function csvEscape(value) {
     var s = String(value === undefined || value === null ? "" : value);
+    // CSV/formula-injection guard (CWE-1236): a field beginning with =, +, -, @,
+    // or a tab/CR can execute as a formula when opened in Excel/Sheets. Source
+    // strings here (vendor/finding/source) come from AP email content, so they
+    // are attacker-influenced. Prefix with a literal-text quote to neutralize.
+    if (/^[=+@\\t\\r-]/.test(s)) s = "'" + s;
     if (/[",\\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
     return s;
   }

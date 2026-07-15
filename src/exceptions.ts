@@ -31,6 +31,8 @@ export const REASON_CODES = [
   'unscannable_format',
   'forward_failed',
   'alert_failed',
+  // CHUNK_6_ONBOARDING
+  'dry_run_locked',
 ] as const;
 
 export type ReasonCode = (typeof REASON_CODES)[number];
