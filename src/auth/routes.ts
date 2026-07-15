@@ -10,15 +10,15 @@ export function registerAuthRoutes(): void {
   if (registered) return;
   registered = true;
 
-  registerRoute(async (method, url, respond) => {
+  registerRoute(async (method, url, respond, redirect) => {
     if (method === 'GET' && url.pathname === '/oauth/gmail/callback') {
       const { handleGmailCallback } = await import('./gmail-oauth.js');
-      await handleGmailCallback(url, respond);
+      await handleGmailCallback(url, respond, redirect);
       return true;
     }
     if (method === 'GET' && url.pathname === '/oauth/qbo/callback') {
       const { handleQboCallback } = await import('./qbo-oauth.js');
-      await handleQboCallback(url, respond);
+      await handleQboCallback(url, respond, redirect);
       return true;
     }
     return false;

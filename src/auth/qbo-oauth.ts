@@ -4,6 +4,7 @@ import { createQboReadClient } from '../qbo/client.js';
 import { writeAudit } from '../audit.js';
 import { raiseException } from '../exceptions.js';
 import { logger } from '../logger.js';
+import { verifyConnectState } from './connect-state.js';
 
 /**
  * QBO OAuth callback (CHUNK_2). Exchanges the code, then performs a confirm-realm
@@ -54,13 +55,25 @@ export async function exchangeQboCode(
 export async function handleQboCallback(
   url: URL,
   respond: (status: number, body: unknown) => void,
+  redirect: (location: string) => void,
 ): Promise<void> {
   const cfg = config();
+  const verified = verifyConnectState(url.searchParams.get('state') ?? '');
+  if (!verified) {
+    respond(400, { error: 'invalid_state' });
+    return;
+  }
+  const { tenantId } = verified;
+
+  const errorParam = url.searchParams.get('error');
   const code = url.searchParams.get('code');
   const realmId = url.searchParams.get('realmId') ?? cfg.QBO_SANDBOX_REALM_ID;
-  const tenantId = Number(url.searchParams.get('state') ?? '1');
+  if (errorParam) {
+    redirect(`${config().WEB_BASE_URL}/onboarding?connect_error=qbo&reason=denied`);
+    return;
+  }
   if (!code) {
-    respond(400, { error: 'missing_code' });
+    redirect(`${config().WEB_BASE_URL}/onboarding?connect_error=qbo&reason=missing_code`);
     return;
   }
   try {
@@ -87,7 +100,7 @@ export async function handleQboCallback(
       realm: realmId,
       detail: { company: info.CompanyName },
     });
-    respond(200, { connected: true, company: info.CompanyName, realm: realmId });
+    redirect(`${config().WEB_BASE_URL}/onboarding?connected=qbo`);
   } catch (err) {
     logger.warn({ err: String(err) }, 'qbo connect refused');
     await raiseException({
@@ -96,6 +109,7 @@ export async function handleQboCallback(
       entityRef: `qbo:${realmId}`,
       detail: (err as Error).message,
     }).catch(() => {});
-    respond(400, { connected: false, error: (err as Error).message });
+    const reason = /confirm-realm failed/.test((err as Error).message) ? 'wrong_company' : 'exchange_failed';
+    redirect(`${config().WEB_BASE_URL}/onboarding?connect_error=qbo&reason=${reason}`);
   }
 }

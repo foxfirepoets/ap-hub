@@ -11,6 +11,7 @@ export type Route = (
   method: string,
   url: URL,
   respond: (status: number, body: unknown) => void,
+  redirect: (location: string) => void,
 ) => boolean | Promise<boolean>;
 
 const routes: Route[] = [];
@@ -25,6 +26,10 @@ export function createHttpServer(): Server {
     const respond = (status: number, body: unknown) => {
       res.writeHead(status, { 'content-type': 'application/json' });
       res.end(JSON.stringify(body));
+    };
+    const redirect = (location: string) => {
+      res.writeHead(302, { Location: location });
+      res.end();
     };
 
     if (url.pathname === '/health') {
@@ -41,7 +46,7 @@ export function createHttpServer(): Server {
 
     for (const route of routes) {
       try {
-        if (await route(req.method ?? 'GET', url, respond)) return;
+        if (await route(req.method ?? 'GET', url, respond, redirect)) return;
       } catch (err) {
         logger.error({ err: String(err) }, 'route handler error');
         respond(500, { error: 'internal_error' });

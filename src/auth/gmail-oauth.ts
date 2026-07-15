@@ -2,6 +2,7 @@ import { config } from '../config.js';
 import { saveToken } from './tokens.js';
 import { writeAudit } from '../audit.js';
 import { logger } from '../logger.js';
+import { verifyConnectState } from './connect-state.js';
 
 /**
  * Gmail OAuth callback (CHUNK_2). Completes the flow at `gmail.readonly` scope
@@ -33,11 +34,23 @@ export async function exchangeGmailCode(
 export async function handleGmailCallback(
   url: URL,
   respond: (status: number, body: unknown) => void,
+  redirect: (location: string) => void,
 ): Promise<void> {
+  const verified = verifyConnectState(url.searchParams.get('state') ?? '');
+  if (!verified) {
+    respond(400, { error: 'invalid_state' });
+    return;
+  }
+  const { tenantId } = verified;
+
+  const errorParam = url.searchParams.get('error');
   const code = url.searchParams.get('code');
-  const tenantId = Number(url.searchParams.get('state') ?? '1');
+  if (errorParam) {
+    redirect(`${config().WEB_BASE_URL}/onboarding?connect_error=gmail&reason=denied`);
+    return;
+  }
   if (!code) {
-    respond(400, { error: 'missing_code' });
+    redirect(`${config().WEB_BASE_URL}/onboarding?connect_error=gmail&reason=missing_code`);
     return;
   }
   try {
@@ -50,9 +63,9 @@ export async function handleGmailCallback(
       realm: null,
     });
     await writeAudit({ tenantId, action: 'gmail.connect', entity: 'gmail' });
-    respond(200, { connected: true });
+    redirect(`${config().WEB_BASE_URL}/onboarding?connected=gmail`);
   } catch (err) {
     logger.warn({ err: String(err) }, 'gmail connect failed');
-    respond(400, { connected: false, error: (err as Error).message });
+    redirect(`${config().WEB_BASE_URL}/onboarding?connect_error=gmail&reason=exchange_failed`);
   }
 }
