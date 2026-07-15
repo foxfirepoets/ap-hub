@@ -245,3 +245,14 @@ change from this chunk). Six-guarantee suite green.
 
 <promise>BUILD COMPLETE</promise>
 All 8 chunks green. Next: spec-vs-build-brutal-audit / HKO-truth-audit, then PR (per operator instructions — do not merge without the owner).
+
+## HKO-truth-audit (post-build) — FAIL -> PASS
+Independent fresh-context security review of the full 9de30fc..HEAD diff found 1 HIGH (automatic
+propose->post_sandbox pipeline path bypassed the CHUNK_6 DRY_RUN_LOCKED guard — only the manual
+approve/retry actions checked it) + 1 MEDIUM (CSV formula-injection in the reviewer-dashboard export)
++ 1 LOW (disclosed, not fixed). Both HIGH and MEDIUM fixed this session (commit 66d999f): a new
+guardedPostSandboxHandler in src/pipeline/register.ts gates every post_sandbox job on
+isDryRunLocked without touching mapping.ts/posting.ts; csvEscape now neutralizes formula-trigger
+leading characters (self-caught a regex range bug in the first attempt before committing). 183/183
+green. Full findings + verified-safe list + residual risks in .claude/audits/HKO/HKO-certificate.md.
+Verdict: PASS (post-remediation). Next: open a PR, do not merge without the owner.
