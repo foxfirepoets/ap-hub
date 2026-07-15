@@ -19,7 +19,11 @@ export function OnboardingStepper({ steps, currentStep }: OnboardingStepperProps
   return (
     <ol className="stepper" data-testid="onboarding-stepper">
       {steps.map((s, i) => {
-        const status = i < currentIndex ? 'completed' : i === currentIndex ? 'current' : 'upcoming';
+        // HKO-audit LOW finding (2026-07-15): if currentStep matches no entry (currentIndex
+        // === -1 — not currently reachable since the backend validates step against this
+        // same set, but defensive rather than silently rendering every item "upcoming"),
+        // mark every item explicitly unknown instead of misleadingly "upcoming".
+        const status = currentIndex < 0 ? 'unknown' : i < currentIndex ? 'completed' : i === currentIndex ? 'current' : 'upcoming';
         return (
           <li
             key={s.key}
