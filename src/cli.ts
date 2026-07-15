@@ -2,6 +2,8 @@ import { Command } from 'commander';
 import { config } from './config.js';
 import { query, closePool } from './db/pool.js';
 import { logger } from './logger.js';
+import { signConnectState } from './auth/connect-state.js';
+import { buildGmailAuthorizeUrl, buildQboAuthorizeUrl } from './auth/connect-urls.js';
 
 /**
  * ap-hub CLI (CHUNK_3/5/6/7/8). Operator surface: no web UI. Commands cover the
@@ -222,26 +224,23 @@ tenantOpt(
   await closePool();
 });
 
-program
-  .command('connect')
-  .description('print the OAuth authorization URL for gmail|qbo')
-  .argument('<provider>', 'gmail | qbo')
-  .option('--env <env>', 'sandbox', 'sandbox')
-  .action((provider) => {
-    const cfg = config();
-    if (provider === 'gmail') {
-      const scope = 'https://www.googleapis.com/auth/gmail.readonly';
-      console.log(
-        `https://accounts.google.com/o/oauth2/v2/auth?client_id=${cfg.GMAIL_CLIENT_ID}&redirect_uri=${encodeURIComponent(cfg.GMAIL_REDIRECT_URI)}&response_type=code&access_type=offline&prompt=consent&scope=${encodeURIComponent(scope)}`,
-      );
-    } else if (provider === 'qbo') {
-      console.log(
-        `https://appcenter.intuit.com/connect/oauth2?client_id=${cfg.QBO_SANDBOX_CLIENT_ID}&redirect_uri=${encodeURIComponent(cfg.QBO_SANDBOX_REDIRECT_URI)}&response_type=code&scope=com.intuit.quickbooks.accounting&state=1`,
-      );
-    } else {
-      console.error('provider must be gmail or qbo');
-    }
-  });
+tenantOpt(
+  program
+    .command('connect')
+    .description('print the OAuth authorization URL for gmail|qbo')
+    .argument('<provider>', 'gmail | qbo')
+    .option('--env <env>', 'sandbox', 'sandbox'),
+).action((provider, o) => {
+  const cfg = config();
+  const state = signConnectState(Number(o.tenant));
+  if (provider === 'gmail') {
+    console.log(buildGmailAuthorizeUrl(cfg, state));
+  } else if (provider === 'qbo') {
+    console.log(buildQboAuthorizeUrl(cfg, state));
+  } else {
+    console.error('provider must be gmail or qbo');
+  }
+});
 
 program.parseAsync(process.argv).catch((err) => {
   logger.error({ err: String(err) }, 'cli error');
