@@ -12,6 +12,9 @@ import type { PostDeps } from '../../pipeline/posting.js';
 // action-layer import surface, matching the CHUNK_4 routes below.
 export { runOnboardingGet, runOnboardingStep, runOnboardingDryRunAction } from './onboarding.js';
 
+// CHUNK_7_DIGEST action bridge (POST /api/notifications/:id/read).
+export { runMarkNotificationRead } from './notifications.js';
+
 /**
  * CHUNK_4_ACTION — the thin bridge between an `app/api/**` POST route and the
  * gate-covered CHUNK_2 service functions. The `app/` tree is OUTSIDE the validation

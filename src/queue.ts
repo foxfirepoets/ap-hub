@@ -38,5 +38,6 @@ export const JOBS = {
   propose: 'propose',
   post_sandbox: 'post_sandbox',
   audit_anchor: 'audit_anchor',
+  digest: 'digest',
   noop: 'noop',
 } as const;

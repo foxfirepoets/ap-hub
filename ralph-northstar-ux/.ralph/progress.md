@@ -180,3 +180,28 @@ Gate (orchestrator-verified independently): lint clean, typecheck clean, 145/145
 +11 new), migrate:up idempotent, web:build 24 routes (was 20). Protected-file diff (write.ts,
 forwarder.ts, src/pipeline/) empty vs 9858eaa.
 <promise>CHUNK COMPLETE: CHUNK_6_ONBOARDING</promise>
+
+## Iteration 8 — CHUNK_7_DIGEST (COMPLETE)
+Built via ralph Mode A (Agent-tool subagent), orchestrator independently re-ran the full gate
+before committing.
+Files created:
+ - migrations/005_notifications.sql + .down.sql (notifications table + idx_notifications_tenant_batch
+   + a partial unique index uq_notifications_daily_digest on (tenant_id, digest_batch) WHERE
+   kind='daily_digest' — enforces one batch/day/tenant at the DB level)
+ - src/services/digest.ts — generateDailyDigest (reuses getTodayCounts from CHUNK_3, the same source
+   Today uses; defers with no row written if the counts source throws — never emits wrong/zero counts),
+   maybeRaiseRiskAlert (fires only for bank_change_warning/duplicate/fraud_flag — the material-risk
+   reason codes the severity classifier produces), digestHandler/scheduleDigest (pg-boss job)
+ - src/services/notifications.ts + action bridge (mark-read, audited) + src/services/read/notifications.ts
+ - app/api/notifications{,/[id]/read}/route.ts
+ - test/digest.test.ts (12 tests)
+Files modified:
+ - src/exceptions.ts (raiseException now calls maybeRaiseRiskAlert — the only way to catch
+   mapping.ts's severity-classifier-driven exceptions without touching the forbidden pipeline/mapping.ts)
+ - src/pipeline/register.ts (additive only: registers the digest job), src/queue.ts (+digest to JOBS)
+ - app/(app)/today/page.tsx, app/lib/types.ts (Today renders digest/risk_alert panel + mark-read)
+Gate (orchestrator-verified independently): lint clean, typecheck clean, 157/157 tests (was 145/145,
++12 new), migrate:up idempotent, web:build 25 routes (was 24). Protected-file diff (write.ts,
+forwarder.ts, src/pipeline/mapping.ts, src/pipeline/posting.ts) empty vs 9858eaa; register.ts diff
+reviewed and confirmed small/additive.
+<promise>CHUNK COMPLETE: CHUNK_7_DIGEST</promise>

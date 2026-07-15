@@ -1,5 +1,6 @@
 import type { PoolClient } from 'pg';
 import { query } from './db/pool.js';
+import { maybeRaiseRiskAlert } from './services/digest.js';
 
 /**
  * The complete typed exception taxonomy (brainstorm §12 + Amendment A1 + Phase 0.5).
@@ -49,6 +50,10 @@ export async function raiseException(
                VALUES ($1, $2, $3, $4) RETURNING id`;
   const params = [input.tenantId, input.reasonCode, input.entityRef ?? null, input.detail ?? null];
   const res = client ? await client.query(sql, params) : await query(sql, params);
+  // CHUNK_7_DIGEST: material-risk reason codes (only ever raised from the severity
+  // classifier's critical/high verdict — see swarmsync/severity.ts) also earn an
+  // immediate risk_alert notification. Routine reason codes raise nothing.
+  await maybeRaiseRiskAlert(input.tenantId, input.reasonCode, input.entityRef, input.detail, client);
   return res.rows[0].id as number;
 }
 

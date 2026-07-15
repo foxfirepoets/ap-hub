@@ -128,6 +128,17 @@ export interface Evidence {
   missing: string[];
 }
 
+// CHUNK_7_DIGEST — mirrors src/services/read/notifications.ts's NotificationRow.
+export interface NotificationRow {
+  id: number;
+  kind: string; // daily_digest | risk_alert
+  severity: string; // info | high | critical
+  payload: Record<string, unknown>;
+  digestBatch: string | null;
+  readAt: string | null;
+  createdAt: string;
+}
+
 export interface AuditRow {
   id: number;
   actor: string;

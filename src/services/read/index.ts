@@ -9,3 +9,4 @@ export * from './exceptions.js';
 export * from './transactions.js';
 export * from './evidence.js';
 export * from './audit.js';
+export * from './notifications.js';

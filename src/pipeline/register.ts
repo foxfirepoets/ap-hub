@@ -6,7 +6,7 @@ import { logger } from '../logger.js';
 /**
  * Wires every pipeline job handler onto pg-boss. Each chunk contributes its jobs:
  * CHUNK_3 poll, CHUNK_4 gatekeep, CHUNK_5 classify/extract, CHUNK_6 map/propose,
- * CHUNK_7 post_sandbox, CHUNK_8 audit_anchor.
+ * CHUNK_7 post_sandbox + digest, CHUNK_8 audit_anchor.
  */
 export async function registerPipelineJobs(boss: PgBoss, cfg: Config): Promise<void> {
   const { pollHandler, schedulePoll } = await import('./poll.js');
@@ -15,6 +15,7 @@ export async function registerPipelineJobs(boss: PgBoss, cfg: Config): Promise<v
   const { mapHandler, proposeHandler } = await import('./mapping.js');
   const { postSandboxHandler } = await import('./posting.js');
   const { auditAnchorHandler, scheduleAuditAnchor } = await import('./audit-anchor.js');
+  const { digestHandler, scheduleDigest } = await import('../services/digest.js');
 
   await boss.work(JOBS.poll, (job: any) => pollHandler(job));
   await boss.work(JOBS.gatekeep, (job: any) => gatekeepHandler(job));
@@ -24,9 +25,11 @@ export async function registerPipelineJobs(boss: PgBoss, cfg: Config): Promise<v
   await boss.work(JOBS.propose, (job: any) => proposeHandler(job));
   await boss.work(JOBS.post_sandbox, (job: any) => postSandboxHandler(job));
   await boss.work(JOBS.audit_anchor, (job: any) => auditAnchorHandler(job));
+  await boss.work(JOBS.digest, (job: any) => digestHandler(job));
 
   await schedulePoll(boss, cfg);
   await scheduleAuditAnchor(boss);
+  await scheduleDigest(boss);
 
   logger.info('pipeline jobs registered');
 }

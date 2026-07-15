@@ -1,11 +1,13 @@
 # Ralph State
 
-**Current Iteration:** 7
+**Current Iteration:** 8
 
-Current chunk: CHUNK_7_DIGEST
+Current chunk: CHUNK_8_REVIEWDASH
 Current task: not started
-Last completed: CHUNK_6_ONBOARDING — all 5 tasks; gate GREEN (145/145) + web:build GREEN (24 routes).
-Status: COMPLETE — CHUNK_6_ONBOARDING done (commit pending in this message, see progress.md Iteration 7).
+Last completed: CHUNK_7_DIGEST — all 5 tasks; gate GREEN (157/157) + web:build GREEN (25 routes).
+Status: COMPLETE — CHUNK_6_ONBOARDING (commit 42a4672) and CHUNK_7_DIGEST done. See progress.md
+Iterations 7-8 for detail. Remaining: CHUNK_8_REVIEWDASH (spec + guardrail signs exist from the
+c91e624 scaffold commit; code does not exist yet).
 NOTE (session continuity, 2026-07-15): this file's CHECKPOINT block below (originally written after
 CHUNK_5) was STALE relative to disk — two commits landed after it without updating this file:
 c91e624 (CHUNK_8 scaffold: specs/SPEC-reviewer-dashboard.md, specs/08_CHUNK_8_REVIEWDASH.md, guardrail

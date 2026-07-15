@@ -5,7 +5,7 @@ export async function resetTables(): Promise<void> {
   await query(`
     TRUNCATE sessions, users, forwards, proof_refs, postings, reconciliation, corrections,
              exceptions, proposals, extractions, mappings, attachments, attachment_blobs,
-             messages, oauth_tokens, audit_log, llm_calls, tenants RESTART IDENTITY CASCADE;
+             messages, oauth_tokens, audit_log, llm_calls, notifications, tenants RESTART IDENTITY CASCADE;
   `);
 }
 
