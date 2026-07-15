@@ -61,6 +61,41 @@ Mitigation: those files are OUT OF SCOPE; the existing guarantee suite must stay
 - DO NOT BUILD: any new QBO-write or Gmail-send code path (guarantees 1/2/3 — call write.ts/forwarder.ts only).
 - DO NOT BUILD: any change to the CHUNK_1-8 pipeline (stable dependency — do not touch).
 
+## CHUNK_8_REVIEWDASH — Risks (from SPEC-reviewer-dashboard.md §14)
+
+### SIGN: replay becomes a second QBO-write path
+apply-review-decisions must post ONLY via `src/services/approve.approveProposal` (→ write.ts). Any direct QBO write is a guarantee-1/3 violation.
+Mitigation: replay may only call src/services/approve|proposals; guarantee tests + `git diff` on write.ts catch bypass.
+
+### SIGN: replay is not idempotent
+Replaying the same decisions file twice must NOT double-post.
+Mitigation: rely on existing `UNIQUE(tenant,idempotency_key)` + status gate; explicit idempotent-replay test (re-run → zero new postings).
+
+### SIGN: fail-open on an unproven approved item
+An `approved` item lacking proof coverage must be held, never posted.
+Mitigation: `approveProposal` holds on missing proof; the CLI exits non-zero and names it; explicit test (guarantee 5).
+
+### SIGN: XSS via injected vendor/finding text in the generated HTML
+Generated artifact must render all data with `textContent` and escape `<`→`<` in the embedded `const DATA`.
+Mitigation: generator test greps output for the escape + for the ABSENCE of external hosts; injected `<script>` renders as text.
+
+### SIGN: secret/PII leakage into the artifact
+The snapshot/artifact is a local file that may be shared; it must not contain tokens/secrets/bank fields.
+Mitigation: snapshot excludes anything the logger redacts (`ssk_`, tokens, bank details); test asserts no token-shaped strings in the snapshot.
+
+### SIGN: cross-tenant replay
+A decisions file must never apply to another tenant's proposals.
+Mitigation: every id resolved via `scopedQuery`; foreign ids skipped; cross-tenant test.
+
+## CHUNK_8_REVIEWDASH — Scope Exclusions (Do Not Build, from spec §2)
+
+- DO NOT BUILD: a new QBO-write or Gmail-send path — replay calls approveProposal/rejectProposal only.
+- DO NOT BUILD: a live/hosted dashboard with a backend — the artifact is offline/no-backend; the exported file is the only wire back.
+- DO NOT BUILD: browser→DB decision writes — the dashboard has no network calls (localStorage + export only).
+- DO NOT BUILD: a new "reviewer" role or auth surface — reuse existing CPA/owner_controller RBAC.
+- DO NOT BUILD: remap/edit from the dashboard — approve/reject only offline; remap stays in the live app (CHUNK_4).
+- DO NOT BUILD: any change to write.ts, forwarder.ts, or the pipeline; and NO new migration/table for this chunk.
+
 ## Standing Guardrails (always active)
 
 - DO NOT add npm dependencies without updating AGENTS.md.

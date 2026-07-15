@@ -44,6 +44,22 @@ npm run typecheck           # tsc --noEmit
 npm run build               # tsc -> dist/
 ```
 
+## Web UI (Next.js App Router — human review layer, under `app/`)
+
+```bash
+npm run web:dev             # next dev (HTTP UI on :3000)
+npm run web:build           # next build — typechecks app/ via tsconfig.web.json (web-only)
+npm run e2e                 # Playwright E2E (builds + serves on :3100, all /api stubbed)
+```
+
+- The src gate (`tsc --noEmit` on tsconfig.json) covers `src/**` + `test/**` only. The `app/`
+  tree is typechecked by `next build` using **tsconfig.web.json** (jsx + DOM libs), so the src
+  gate's tsconfig stays scoped to the pipeline. `next.config.mjs` sets `typescript.tsconfigPath`
+  to that web tsconfig and a webpack `extensionAlias` so `.js` ESM specifiers resolve to `.ts`.
+- New deps (CHUNK_5): `@playwright/test` (devDependency) for the E2E. `next`/`react`/`react-dom`
+  were added in CHUNK_1.
+- E2E browsers: `npx playwright install chromium` (Chromium is used headless).
+
 ## Validation Gate (ralph runs after every task — must exit 0)
 
 ```bash
@@ -51,3 +67,4 @@ npm run lint && npm run typecheck && npm test
 ```
 
 Gate = lint + type check + unit tests. test:int needs live sandbox creds; run it at chunk boundaries, not every task.
+Frontend (CHUNK_5) additionally requires `npm run web:build` to pass (typechecks `app/`); `npm run e2e` is the behavioral cover.
