@@ -29,7 +29,7 @@ const RawSchema = z.object({
   // --- Gmail (read-only in all phases; send scope added only for the gatekeeper relay) ---
   GMAIL_CLIENT_ID: z.string().min(1, 'GMAIL_CLIENT_ID is required'),
   GMAIL_CLIENT_SECRET: z.string().min(1, 'GMAIL_CLIENT_SECRET is required'),
-  GMAIL_REDIRECT_URI: z.string().url().default('http://localhost:3000/oauth/gmail/callback'),
+  GMAIL_REDIRECT_URI: z.string().url().default('http://localhost:3001/oauth/gmail/callback'),
   WATCHED_LABEL: z.string().default('AP-Inbox'),
 
   // --- QBO (read-only lists in P1; SANDBOX writes in P2) ---
@@ -39,7 +39,7 @@ const RawSchema = z.object({
   QBO_SANDBOX_CLIENT_SECRET: z.string().default(''),
   QBO_SANDBOX_REALM_ID: z.string().default(''),
   QBO_SANDBOX_COMPANY_NAME: z.string().default(''),
-  QBO_SANDBOX_REDIRECT_URI: z.string().url().default('http://localhost:3000/oauth/qbo/callback'),
+  QBO_SANDBOX_REDIRECT_URI: z.string().url().default('http://localhost:3001/oauth/qbo/callback'),
 
   // --- SwarmSync proof suite (Amendment A1) ---
   SWARMSYNC_API_BASE: z.string().url().default('https://api.swarmsync.ai'),
@@ -66,7 +66,7 @@ const RawSchema = z.object({
 
   // --- Runtime ---
   POLL_INTERVAL_SECONDS: z.coerce.number().int().positive().default(180),
-  PORT: z.coerce.number().int().positive().default(3000),
+  PORT: z.coerce.number().int().positive().default(3001),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
 });
 
