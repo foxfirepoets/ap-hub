@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { apiGet, apiPost, ApiError } from '../../lib/api';
 import { EvidencePanel } from '../../components/EvidencePanel';
+import { OnboardingBlockerCard } from '../../components/OnboardingBlockerCard';
 import { OnboardingStepper } from '../../components/OnboardingStepper';
 import { OnboardingWelcome } from '../../components/OnboardingWelcome';
 import { RemapForm, type RemapValues } from '../../components/RemapForm';
@@ -39,6 +40,19 @@ const STEP_LABEL: Record<Step, string> = {
   review_sample: 'Review sample',
   approve_rules: 'Approve initial rules',
   complete: 'Enable auto-post',
+};
+
+// CHUNK_4_EXPLAINERS — one plain-English sentence per step: what it needs and why.
+const STEP_EXPLAINER: Record<Step, string> = {
+  connect_gmail: 'AP Hub reads accounting email from this mailbox — nothing else is touched.',
+  connect_qbo: 'AP Hub needs a QuickBooks Online connection so it can eventually write approved transactions there.',
+  select_company: 'Everything AP Hub creates goes into one QuickBooks sandbox company you pick here — never production.',
+  configure_mode: 'AP Hub scans the connected mailbox for accounting documents in this mode and date range.',
+  automation_level: 'This sets how much AP Hub can do on its own — it stays OFF until you choose otherwise after review.',
+  dry_run: 'A dry-run shows what AP Hub would find and propose, without posting anything to QuickBooks.',
+  review_sample: 'Reviewing one real example lets you confirm AP Hub read the document correctly before trusting the rest.',
+  approve_rules: 'Confirming a vendor/account mapping now means future matching invoices apply it automatically.',
+  complete: 'Choosing an automation level here is what actually unlocks posting — everything stays OFF until you do.',
 };
 
 type Notice = { kind: 'good' | 'warn' | 'bad'; text: string };
@@ -168,9 +182,7 @@ export default function OnboardingPage() {
             <div key={group} style={{ marginBottom: 12 }}>
               <div style={{ fontWeight: 600 }}>{group}</div>
               {items.map((b) => (
-                <div key={b.code} className="notice warn" data-testid={`blocker-${b.code}`}>
-                  {b.message} <strong>Fix:</strong> {b.fix}
-                </div>
+                <OnboardingBlockerCard key={b.code} group={group} message={b.message} fix={b.fix} code={b.code} />
               ))}
             </div>
           ))}
@@ -198,6 +210,7 @@ export default function OnboardingPage() {
       <div className="panel">
         {step === 'connect_gmail' ? (
           <>
+            <p className="muted step-explainer">{STEP_EXPLAINER.connect_gmail}</p>
             <h2>Connect Gmail</h2>
             <p className="muted">
               {state.connections.gmailConnected ? 'Gmail is connected.' : 'Connect the Gmail account AP Hub should read.'}
@@ -210,6 +223,7 @@ export default function OnboardingPage() {
 
         {step === 'connect_qbo' ? (
           <>
+            <p className="muted step-explainer">{STEP_EXPLAINER.connect_qbo}</p>
             <h2>Connect QuickBooks</h2>
             <p className="muted">
               {state.connections.qboConnected ? 'QuickBooks Online (sandbox) is connected.' : 'Connect QuickBooks Online sandbox.'}
@@ -222,6 +236,7 @@ export default function OnboardingPage() {
 
         {step === 'select_company' ? (
           <>
+            <p className="muted step-explainer">{STEP_EXPLAINER.select_company}</p>
             <h2>Select company</h2>
             <p className="muted">
               {state.connections.qboCompanySelected
@@ -236,6 +251,7 @@ export default function OnboardingPage() {
 
         {step === 'configure_mode' ? (
           <>
+            <p className="muted step-explainer">{STEP_EXPLAINER.configure_mode}</p>
             <h2>Mode & date range</h2>
             <p className="muted">AP Hub scans email for accounting documents in the connected mailbox.</p>
             <button className="primary" disabled={busy} onClick={() => void goStep('automation_level')}>
@@ -246,6 +262,7 @@ export default function OnboardingPage() {
 
         {step === 'automation_level' ? (
           <>
+            <p className="muted step-explainer">{STEP_EXPLAINER.automation_level}</p>
             <h2>Automation level</h2>
             <p className="muted">
               Automation stays OFF through setup. You will choose the level after reviewing a dry-run — nothing
@@ -259,6 +276,7 @@ export default function OnboardingPage() {
 
         {step === 'dry_run' ? (
           <>
+            <p className="muted step-explainer">{STEP_EXPLAINER.dry_run}</p>
             <h2>Dry-run scan</h2>
             <p className="muted">Scans existing mail/QBO data through proposal generation. Nothing is posted.</p>
             <div className="btn-row">
@@ -296,6 +314,7 @@ export default function OnboardingPage() {
 
         {step === 'review_sample' ? (
           <>
+            <p className="muted step-explainer">{STEP_EXPLAINER.review_sample}</p>
             <h2>Review a sample</h2>
             {sampleProposalId != null ? (
               <EvidencePanel proposalId={sampleProposalId} />
@@ -310,6 +329,7 @@ export default function OnboardingPage() {
 
         {step === 'approve_rules' ? (
           <>
+            <p className="muted step-explainer">{STEP_EXPLAINER.approve_rules}</p>
             <h2>Approve initial rules</h2>
             <p className="muted">Confirm the vendor/account mapping so future matches apply automatically.</p>
             <RemapForm onSubmit={(v) => void approveRule(v)} onCancel={() => void goStep('complete')} busy={busy} />
@@ -321,6 +341,7 @@ export default function OnboardingPage() {
 
         {step === 'complete' ? (
           <>
+            <p className="muted step-explainer">{STEP_EXPLAINER.complete}</p>
             <h2>Enable auto-post</h2>
             <p className="muted">
               Choose how much AP Hub may do on its own. Posting is locked (DRY_RUN_LOCKED) until you pick anything

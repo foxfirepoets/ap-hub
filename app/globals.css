@@ -150,3 +150,11 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .stepper-item.current { color: var(--text); font-weight: 600; background: var(--bg); }
 .stepper-item.current .stepper-dot { background: var(--accent); }
 .stepper-item.upcoming { color: var(--muted); }
+
+.step-explainer { margin-top: -4px; margin-bottom: 12px; }
+
+/* --- Onboarding blocker cards --- */
+.blocker-card { display: flex; gap: 10px; align-items: flex-start; }
+.blocker-card-icon { font-size: 16px; line-height: 1.4; flex-shrink: 0; }
+.blocker-card-body { display: flex; flex-direction: column; gap: 2px; }
+.blocker-card-group { font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
