@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { apiGet, apiPost, ApiError } from '../../lib/api';
 import { EvidencePanel } from '../../components/EvidencePanel';
+import { OnboardingStepper } from '../../components/OnboardingStepper';
 import { OnboardingWelcome } from '../../components/OnboardingWelcome';
 import { RemapForm, type RemapValues } from '../../components/RemapForm';
 import { useSession } from '../../lib/session';
@@ -153,9 +154,9 @@ export default function OnboardingPage() {
   return (
     <div data-testid="onboarding-page">
       <h1>Set up AP Hub</h1>
+      <OnboardingStepper steps={STEPS.map((s) => ({ key: s, label: STEP_LABEL[s] }))} currentStep={step} />
       <p className="page-sub">
-        Step {STEPS.indexOf(step) + 1} of {STEPS.length}: {STEP_LABEL[step]}
-        {state.automationLevel === 'off' ? ' · Automation is OFF — nothing can post yet.' : ` · Automation: ${state.automationLevel}`}
+        {state.automationLevel === 'off' ? 'Automation is OFF — nothing can post yet.' : `Automation: ${state.automationLevel}`}
       </p>
 
       {notice ? <div className={`notice ${notice.kind}`} data-testid="onboarding-notice">{notice.text}</div> : null}
