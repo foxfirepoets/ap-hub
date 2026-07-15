@@ -1,6 +1,6 @@
 import { getForward, setForwardStatus } from '../gatekeeper/repo.js';
 import type { LockedForwarder } from '../gatekeeper/forwarder.js';
-import { ensurePermission, withAudit, actorLabel, ServiceError, type ActorContext } from './index.js';
+import { ensurePermission, withAudit, actorLabel, ServiceError, assertEntityId, type ActorContext } from './index.js';
 
 /**
  * sendReply — the human "release/send the gatekeeper forward" action. It invokes the
@@ -45,6 +45,7 @@ export async function sendReply(
   replyId: number,
   deps?: ReplyDeps,
 ): Promise<SendReplyResult> {
+  assertEntityId(replyId);
   ensurePermission(ctx, 'reply');
   return withAudit(
     ctx,

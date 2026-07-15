@@ -49,6 +49,23 @@ export class ServiceError extends Error {
 }
 
 /**
+ * True for a usable entity id. Accepts a positive integer as a number OR a
+ * numeric string — pg returns `bigint` columns as strings, so ids threaded from
+ * the DB arrive as strings, while route params arrive as `Number(...)` (NaN if
+ * the segment was non-numeric). Both forms are validated the same way, matching
+ * the numeric-string tolerance of `scopedQuery`.
+ */
+export function isValidId(id: number | string): boolean {
+  const n = typeof id === 'number' ? id : Number(id);
+  return Number.isInteger(n) && n > 0;
+}
+
+/** Guard an action-path id: a non-numeric route segment → 400 VALIDATION, not a 500. */
+export function assertEntityId(id: number | string): void {
+  if (!isValidId(id)) throw new ServiceError('VALIDATION', 'invalid id');
+}
+
+/**
  * Run a mutation and, on success, append exactly one human-actor `audit_log` row.
  * A thrown mutation writes no audit row (nothing changed).
  */

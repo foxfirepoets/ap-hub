@@ -1,4 +1,5 @@
 import { scopedQuery } from '../../db/scoped.js';
+import { isValidId } from '../index.js';
 import { sandboxLink } from './http.js';
 
 /**
@@ -76,6 +77,7 @@ export interface Evidence {
 }
 
 export async function getEvidence(tenantId: number, proposalId: number): Promise<Evidence | null> {
+  if (!isValidId(proposalId)) return null;
   const proposal = (
     await scopedQuery<{
       id: number;

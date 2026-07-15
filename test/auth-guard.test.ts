@@ -99,19 +99,30 @@ describe('scopedQuery tenant isolation', () => {
   });
 });
 
-describe('completeLogin (SSO upsert + session)', () => {
-  it('upserts a user, activates on first login, and mints a session', async () => {
+describe('completeLogin (SSO activate pre-invited user + session)', () => {
+  it('activates a pre-invited user on first login and mints a session', async () => {
     const t = await createTenant();
-    const r = await completeLogin(t, { sub: 'g-123', email: 'new@example.com', name: 'New User' });
+    await createUser(t, { email: 'inv@example.com', status: 'invited' });
+    const r = await completeLogin(t, { sub: 'g-123', email: 'inv@example.com', name: 'Inv User' });
     expect(r.tenantId).toBe(t);
-    expect(await countRows('users', 'tenant_id=$1', [t])).toBe(1);
+    expect(await countRows('users', "tenant_id=$1 AND email='inv@example.com' AND status='active'", [t])).toBe(1);
     const ctx = await requireSession(r.session.token);
-    expect(ctx.email).toBe('new@example.com');
+    expect(ctx.email).toBe('inv@example.com');
     expect(ctx.tenantId).toBe(t);
   });
 
-  it('re-login of the same email does not create a duplicate user', async () => {
+  it('REFUSES a stranger with no invite — no user created, no session (cross-tenant self-provision is blocked)', async () => {
     const t = await createTenant();
+    await expect(
+      completeLogin(t, { sub: 'g-x', email: 'stranger@evil.com', name: 'Attacker' }),
+    ).rejects.toThrow(/no invited account/);
+    expect(await countRows('users', "tenant_id=$1 AND email='stranger@evil.com'", [t])).toBe(0);
+    expect(await countRows('sessions')).toBe(0);
+  });
+
+  it('re-login of the same active user does not create a duplicate user', async () => {
+    const t = await createTenant();
+    await createUser(t, { email: 'dup@example.com', status: 'invited' });
     await completeLogin(t, { sub: 'g-1', email: 'dup@example.com' });
     await completeLogin(t, { sub: 'g-1', email: 'dup@example.com' });
     expect(await countRows('users', 'tenant_id=$1', [t])).toBe(1);
@@ -126,6 +137,7 @@ describe('completeLogin (SSO upsert + session)', () => {
 
   it('writes an auth.login audit row with the human actor', async () => {
     const t = await createTenant();
+    await createUser(t, { email: 'actor@example.com', status: 'invited' });
     await completeLogin(t, { sub: 'g-3', email: 'actor@example.com' });
     const n = await countRows('audit_log', "tenant_id=$1 AND action='auth.login' AND actor='actor@example.com'", [t]);
     expect(n).toBe(1);

@@ -1,4 +1,5 @@
 import { scopedQuery } from '../../db/scoped.js';
+import { isValidId } from '../index.js';
 import { sandboxLink } from './http.js';
 
 /**
@@ -112,6 +113,7 @@ export async function listTransactions(
 }
 
 export async function getTransactionById(tenantId: number, id: number): Promise<TransactionRow | null> {
+  if (!isValidId(id)) return null;
   const { rows } = await scopedQuery<TxnDbRow>(
     tenantId,
     `${BASE_SELECT} WHERE p.tenant_id = $1 AND p.id = $2`,

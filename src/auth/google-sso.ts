@@ -71,22 +71,31 @@ export interface UpsertedUser {
 }
 
 /**
- * Upsert the user within a tenant, matched by (tenant_id, email). An existing
- * invited user is activated on first login; google_sub and name are refreshed.
- * A disabled user is NOT reactivated by logging in.
+ * Activate a PRE-EXISTING user within a tenant, matched by (tenant_id, email).
+ * SSO login NEVER self-provisions: the user must already have been invited
+ * (status 'invited') or be 'active'. An invited user is activated on first
+ * login; google_sub and name are refreshed; a disabled user stays disabled.
+ * Returns null when no row exists for (tenant_id, email) — i.e. not invited.
+ *
+ * Rationale (security): the tenant id arrives from an attacker-controllable
+ * login param; auto-INSERT here would let any Google account mint an active
+ * session in any tenant and read its financial data. First-owner provisioning
+ * must happen out-of-band (seed/CLI/onboarding invite), not via public SSO.
  */
-export async function upsertUser(tenantId: number, profile: GoogleProfile): Promise<UpsertedUser> {
+export async function activateUserForLogin(
+  tenantId: number,
+  profile: GoogleProfile,
+): Promise<UpsertedUser | null> {
   const { rows } = await query<UpsertedUser>(
-    `INSERT INTO users (tenant_id, email, name, google_sub, status)
-     VALUES ($1,$2,$3,$4,'active')
-     ON CONFLICT (tenant_id, email) DO UPDATE SET
-       name = COALESCE(EXCLUDED.name, users.name),
-       google_sub = EXCLUDED.google_sub,
-       status = CASE WHEN users.status = 'disabled' THEN 'disabled' ELSE 'active' END
+    `UPDATE users SET
+       name = COALESCE($3, name),
+       google_sub = $4,
+       status = CASE WHEN status = 'invited' THEN 'active' ELSE status END
+     WHERE tenant_id = $1 AND email = $2
      RETURNING id, role, status`,
     [tenantId, profile.email, profile.name ?? null, profile.sub],
   );
-  return rows[0]!;
+  return rows[0] ?? null;
 }
 
 export interface LoginResult {
@@ -103,14 +112,18 @@ export async function loginWithGoogle(code: string, tenantId: number): Promise<L
 }
 
 /**
- * Upsert + session mint from an already-verified profile. Split out so the DB path
- * is testable without contacting Google. Refuses a disabled user (they get no session).
+ * Activate a pre-invited user + mint a session from an already-verified profile.
+ * Split out so the DB path is testable without contacting Google. Refuses a
+ * stranger (not invited → no row) and a disabled user (neither gets a session).
  */
 export async function completeLogin(
   tenantId: number,
   profile: GoogleProfile,
 ): Promise<LoginResult> {
-  const user = await upsertUser(tenantId, profile);
+  const user = await activateUserForLogin(tenantId, profile);
+  if (!user) {
+    throw new Error('no invited account for this email in this tenant');
+  }
   if (user.status !== 'active') {
     throw new Error('user is disabled');
   }

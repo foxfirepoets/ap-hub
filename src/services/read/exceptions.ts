@@ -1,4 +1,5 @@
 import { scopedQuery } from '../../db/scoped.js';
+import { isValidId } from '../index.js';
 
 /**
  * CHUNK_3_READ — the exception queue. Read-only, tenant-scoped. `getExceptionById`
@@ -68,6 +69,7 @@ export async function listExceptions(
 }
 
 export async function getExceptionById(tenantId: number, id: number): Promise<ExceptionRow | null> {
+  if (!isValidId(id)) return null;
   const { rows } = await scopedQuery<ExceptionDbRow>(
     tenantId,
     `SELECT ${SELECT_COLS} FROM exceptions WHERE tenant_id = $1 AND id = $2`,

@@ -2,7 +2,7 @@ import { scopedQuery } from '../db/scoped.js';
 import { raiseException } from '../exceptions.js';
 import type { PostDeps } from '../pipeline/posting.js';
 import { defaultPostDeps, runPostAndMap, type ApproveResult } from './approve.js';
-import { ensurePermission, withAudit, ServiceError, type ActorContext } from './index.js';
+import { ensurePermission, withAudit, ServiceError, assertEntityId, type ActorContext } from './index.js';
 
 /**
  * Proposal lifecycle actions other than approve. `rejectProposal` marks a proposal
@@ -20,6 +20,7 @@ export async function rejectProposal(
   proposalId: number,
   opts: { reason: string; markDuplicate?: boolean },
 ): Promise<RejectResult> {
+  assertEntityId(proposalId);
   ensurePermission(ctx, 'reject');
   return withAudit(
     ctx,
@@ -51,6 +52,7 @@ export async function retryProposal(
   proposalId: number,
   deps?: PostDeps,
 ): Promise<ApproveResult> {
+  assertEntityId(proposalId);
   ensurePermission(ctx, 'retry');
   return withAudit(
     ctx,

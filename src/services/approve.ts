@@ -1,6 +1,6 @@
 import { query } from '../db/pool.js';
 import { postOnce, type PostDeps, type PostResult } from '../pipeline/posting.js';
-import { ensurePermission, withAudit, type ActorContext } from './index.js';
+import { ensurePermission, withAudit, assertEntityId, type ActorContext } from './index.js';
 
 /**
  * approveProposal — the human "approve → post to QBO sandbox" action. It routes through
@@ -36,7 +36,10 @@ export async function defaultPostDeps(tenantId: number): Promise<PostDeps> {
     anchor: (output) => swarmsync().auditProof(output),
     loadPdf: async (attachmentId) => {
       const sha = (
-        await query<{ sha256: string }>('SELECT sha256 FROM attachments WHERE id=$1', [attachmentId])
+        await query<{ sha256: string }>(
+          'SELECT sha256 FROM attachments WHERE tenant_id=$1 AND id=$2',
+          [tenantId, attachmentId],
+        )
       ).rows[0]?.sha256;
       return sha ? loadAttachmentBytes(sha) : null;
     },
@@ -83,6 +86,7 @@ export async function approveProposal(
   proposalId: number,
   deps?: PostDeps,
 ): Promise<ApproveResult> {
+  assertEntityId(proposalId);
   ensurePermission(ctx, 'approve');
   return withAudit(
     ctx,
