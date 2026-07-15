@@ -7,6 +7,7 @@ import { OnboardingBlockerCard } from '../../components/OnboardingBlockerCard';
 import { OnboardingStepper } from '../../components/OnboardingStepper';
 import { OnboardingWelcome } from '../../components/OnboardingWelcome';
 import { RemapForm, type RemapValues } from '../../components/RemapForm';
+import { friendlyOnboardingError } from '../../lib/onboardingErrors.js';
 import { useSession } from '../../lib/session';
 import type { OnboardingState, DryRunSummary, TodayDigest } from '../../lib/types';
 
@@ -55,7 +56,7 @@ const STEP_EXPLAINER: Record<Step, string> = {
   complete: 'Choosing an automation level here is what actually unlocks posting — everything stays OFF until you do.',
 };
 
-type Notice = { kind: 'good' | 'warn' | 'bad'; text: string };
+type Notice = { kind: 'good' | 'warn' | 'bad'; text: string; raw?: string; retryable?: boolean };
 
 export default function OnboardingPage() {
   const me = useSession();
@@ -66,6 +67,9 @@ export default function OnboardingPage() {
   const [dryRun, setDryRun] = useState<DryRunSummary | null>(null);
   const [sampleProposalId, setSampleProposalId] = useState<number | null>(null);
   const [welcomeDismissed, setWelcomeDismissed] = useState(false);
+  // CHUNK_5_INTEGRATION — holds the retry callback for whichever action last failed, so
+  // a retryable friendly-error notice can re-invoke it with its original arguments.
+  const [retryAction, setRetryAction] = useState<(() => void) | null>(null);
 
   const load = useCallback(() => {
     apiGet<OnboardingState>('/api/onboarding')
@@ -82,12 +86,16 @@ export default function OnboardingPage() {
     async (nextStep: Step, automationLevel?: string) => {
       setBusy(true);
       setNotice(null);
+      setRetryAction(null);
       try {
         const res = await apiPost('/api/onboarding/step', { step: nextStep, automationLevel });
         if (res.ok) {
           load();
         } else {
-          setNotice({ kind: 'bad', text: res.error?.message ?? 'Could not advance onboarding.' });
+          const fallback = res.error?.message ?? 'Something went wrong.';
+          const friendly = friendlyOnboardingError(res.error?.code ?? '', fallback);
+          setNotice({ kind: 'bad', text: friendly.text, raw: fallback, retryable: friendly.retryable });
+          setRetryAction(friendly.retryable ? () => () => void goStep(nextStep, automationLevel) : null);
         }
       } finally {
         setBusy(false);
@@ -99,6 +107,7 @@ export default function OnboardingPage() {
   const runDryRun = useCallback(async () => {
     setBusy(true);
     setNotice(null);
+    setRetryAction(null);
     try {
       const res = await apiPost<DryRunSummary>('/api/onboarding/dry-run');
       if (res.ok && res.data) {
@@ -113,7 +122,10 @@ export default function OnboardingPage() {
         }
         load();
       } else {
-        setNotice({ kind: 'bad', text: res.error?.message ?? 'Dry-run failed.' });
+        const fallback = res.error?.message ?? 'Something went wrong.';
+        const friendly = friendlyOnboardingError(res.error?.code ?? '', fallback);
+        setNotice({ kind: 'bad', text: friendly.text, raw: fallback, retryable: friendly.retryable });
+        setRetryAction(friendly.retryable ? () => () => void runDryRun() : null);
       }
     } finally {
       setBusy(false);
@@ -124,12 +136,16 @@ export default function OnboardingPage() {
     async (v: RemapValues) => {
       setBusy(true);
       setNotice(null);
+      setRetryAction(null);
       try {
         const res = await apiPost<{ became_rule: boolean }>('/api/mappings/remap', v);
         if (res.ok) {
           setNotice({ kind: 'good', text: `Rule saved${res.data?.became_rule ? ' and remembered.' : '.'}` });
         } else {
-          setNotice({ kind: 'bad', text: res.error?.message ?? 'Could not save the rule.' });
+          const fallback = res.error?.message ?? 'Something went wrong.';
+          const friendly = friendlyOnboardingError(res.error?.code ?? '', fallback);
+          setNotice({ kind: 'bad', text: friendly.text, raw: fallback, retryable: friendly.retryable });
+          setRetryAction(friendly.retryable ? () => () => void approveRule(v) : null);
         }
       } finally {
         setBusy(false);
@@ -173,7 +189,22 @@ export default function OnboardingPage() {
         {state.automationLevel === 'off' ? 'Automation is OFF — nothing can post yet.' : `Automation: ${state.automationLevel}`}
       </p>
 
-      {notice ? <div className={`notice ${notice.kind}`} data-testid="onboarding-notice">{notice.text}</div> : null}
+      {notice ? (
+        <div className={`notice ${notice.kind}`} data-testid="onboarding-notice">
+          <div>{notice.text}</div>
+          {notice.retryable && retryAction ? (
+            <button disabled={busy} onClick={() => retryAction()} data-testid="onboarding-retry">
+              Try again
+            </button>
+          ) : null}
+          {notice.raw ? (
+            <details>
+              <summary>Details</summary>
+              {notice.raw}
+            </details>
+          ) : null}
+        </div>
+      ) : null}
 
       {groups.size > 0 ? (
         <div className="panel" data-testid="setup-blockers">
