@@ -17,6 +17,9 @@ export async function boot(): Promise<() => Promise<void>> {
 
   const boss = await startQueue(cfg.DATABASE_URL);
 
+  // pg-boss v10 requires the queue to exist before .work() can target it.
+  await boss.createQueue(JOBS.noop);
+
   // Trivial no-op job proves the queue round-trips (CHUNK_1 acceptance).
   await boss.work(JOBS.noop, async () => {
     logger.debug('noop job ran');

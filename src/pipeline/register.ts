@@ -48,6 +48,22 @@ export async function registerPipelineJobs(boss: PgBoss, cfg: Config): Promise<v
   const { auditAnchorHandler, scheduleAuditAnchor } = await import('./audit-anchor.js');
   const { digestHandler, scheduleDigest } = await import('../services/digest.js');
 
+  // pg-boss v10 requires each queue to be explicitly created before .work()/.send()/.schedule()
+  // can target it (no more implicit auto-create on first use). createQueue is idempotent.
+  for (const name of [
+    JOBS.poll,
+    JOBS.gatekeep,
+    JOBS.classify,
+    JOBS.extract,
+    JOBS.map,
+    JOBS.propose,
+    JOBS.post_sandbox,
+    JOBS.audit_anchor,
+    JOBS.digest,
+  ]) {
+    await boss.createQueue(name);
+  }
+
   await boss.work(JOBS.poll, (job: any) => pollHandler(job));
   await boss.work(JOBS.gatekeep, (job: any) => gatekeepHandler(job));
   await boss.work(JOBS.classify, (job: any) => classifyHandler(job));
