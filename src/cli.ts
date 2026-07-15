@@ -162,6 +162,24 @@ tenantOpt(program.command('poll').description('run one poll cycle').option('--on
 });
 
 program
+  .command('bootstrap-tenant')
+  .description('create a new tenant and its first invited owner_controller (out-of-band; SSO login never self-provisions)')
+  .requiredOption('--name <name>', 'tenant name')
+  .requiredOption('--owner-email <email>', 'first owner\'s email (invited; activates on first Google login)')
+  .option('--owner-name <name>', 'first owner\'s display name')
+  .action(async (o) => {
+    const { bootstrapTenant } = await import('./services/provisioning.js');
+    try {
+      const res = await bootstrapTenant({ tenantName: o.name, ownerEmail: o.ownerEmail, ownerName: o.ownerName });
+      console.log(`tenant ${res.tenantId} created; owner ${res.ownerEmail} invited as user ${res.userId}`);
+    } catch (err) {
+      console.error(String((err as Error).message));
+      process.exitCode = 1;
+    }
+    await closePool();
+  });
+
+program
   .command('connect')
   .description('print the OAuth authorization URL for gmail|qbo')
   .argument('<provider>', 'gmail | qbo')
