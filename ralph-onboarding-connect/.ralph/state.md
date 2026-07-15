@@ -1,11 +1,18 @@
 # Ralph State
 
-**Current Iteration:** 0
+**Current Iteration:** 5
 
-Current chunk: CHUNK_1_STATETOKEN
-Current task: 0 of TBD (set by planning)
-Last completed: (none — not started)
-Status: NOT_STARTED
+Current chunk: none — BUILD COMPLETE
+Current task: none
+Last completed: CHUNK_5_PAGEREDESIGN — all 5 chunks done. Gate GREEN (212/212) + web:build GREEN (27 routes).
+Status: BUILD COMPLETE — CHUNK_1_STATETOKEN (9aa7902), CHUNK_2_REDIRECT (43a8938),
+CHUNK_3_CONFIG (658d1b8), CHUNK_4_STARTROUTES (a1e7074), CHUNK_5_PAGEREDESIGN (4009c50).
+test/onboarding.test.ts (11 tests, backend/action layer) re-verified unmodified and green after
+every chunk. Protected files (src/qbo/write.ts, src/gatekeeper/forwarder.ts, src/pipeline/**,
+migrations/**) confirmed byte-for-byte untouched across the whole feature. No live Google/Intuit
+OAuth round-trip executed (no real provider credentials in this sandbox) — code-level gates only,
+disclosed per the spec's own honesty requirement. Next: /HKO-truth-audit, fix any issues, push to
+github (per operator instruction).
 
 ## Instructions for ralph
 
