@@ -8,6 +8,10 @@ import { remapMapping, learnCorrection, type RemapInput } from '../mappings.js';
 import { sendReply, type ReplyDeps } from '../reply.js';
 import type { PostDeps } from '../../pipeline/posting.js';
 
+// CHUNK_6_ONBOARDING action bridge (GET/POST /api/onboarding*) — re-exported for a single
+// action-layer import surface, matching the CHUNK_4 routes below.
+export { runOnboardingGet, runOnboardingStep, runOnboardingDryRunAction } from './onboarding.js';
+
 /**
  * CHUNK_4_ACTION — the thin bridge between an `app/api/**` POST route and the
  * gate-covered CHUNK_2 service functions. The `app/` tree is OUTSIDE the validation
@@ -46,7 +50,13 @@ async function parseBody(request: Request): Promise<Record<string, unknown>> {
 
 /** Map a service-layer `ServiceError` to an HTTP response (`*_not_found` → 404). */
 function serviceErrorResponse(err: ServiceError): Response {
-  const status = err.code.endsWith('_not_found') ? 404 : err.code === 'source_message_missing' ? 422 : 400;
+  const status = err.code.endsWith('_not_found')
+    ? 404
+    : err.code === 'source_message_missing'
+      ? 422
+      : err.code === 'dry_run_locked' // CHUNK_6_ONBOARDING: locked until automation_level ≠ 'off'.
+        ? 403
+        : 400;
   return errorResponse(err.code.toUpperCase(), err.message, status);
 }
 

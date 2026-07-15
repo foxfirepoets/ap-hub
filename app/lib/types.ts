@@ -146,3 +146,42 @@ export interface ApprovePosted {
   qbo_link: string | null;
   mode: string;
 }
+
+// CHUNK_6_ONBOARDING — mirrors src/services/onboarding.ts return shapes.
+export interface OnboardingConnections {
+  gmailConnected: boolean;
+  gmailScopeOk: boolean;
+  qboConnected: boolean;
+  qboCompanySelected: boolean;
+  qboCompanyName: string | null;
+}
+
+export interface SetupBlocker {
+  code: string;
+  group: string;
+  message: string;
+  fix: string;
+}
+
+export interface OnboardingPriorData {
+  emails: number;
+  invoices: number;
+  vendorsKnown: number;
+}
+
+export interface OnboardingState {
+  step: string;
+  dryRunComplete: boolean;
+  automationLevel: string;
+  updatedAt: string | null;
+  connections: OnboardingConnections;
+  blockers: SetupBlocker[];
+  priorData: OnboardingPriorData;
+}
+
+export interface DryRunSummary {
+  emailsScanned: number;
+  invoicesFound: number;
+  vendorsMatched: number;
+  proposalsCreated: number;
+}

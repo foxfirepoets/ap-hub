@@ -1,6 +1,7 @@
 import { query } from '../db/pool.js';
 import { postOnce, type PostDeps, type PostResult } from '../pipeline/posting.js';
 import { ensurePermission, withAudit, assertEntityId, type ActorContext } from './index.js';
+import { assertNotDryRunLocked } from './onboarding.js';
 
 /**
  * approveProposal — the human "approve → post to QBO sandbox" action. It routes through
@@ -93,6 +94,8 @@ export async function approveProposal(
     'proposal.approve',
     `proposal:${proposalId}`,
     async () => {
+      // CHUNK_6_ONBOARDING: DRY_RUN_LOCKED — no post while automation_level is 'off'.
+      await assertNotDryRunLocked(ctx.tenantId);
       const postDeps = deps ?? (await defaultPostDeps(ctx.tenantId));
       return runPostAndMap(ctx.tenantId, proposalId, postDeps);
     },

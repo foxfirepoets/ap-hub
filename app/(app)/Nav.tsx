@@ -8,6 +8,7 @@ const LINKS = [
   { href: '/today', label: 'Today' },
   { href: '/exceptions', label: 'Exceptions' },
   { href: '/transactions', label: 'Transactions' },
+  { href: '/onboarding', label: 'Setup' },
   { href: '/settings', label: 'Settings' },
   { href: '/audit', label: 'Audit Trail' },
 ];

@@ -1,7 +1,23 @@
 # Ralph State
 
-**Current Iteration:** 6
+**Current Iteration:** 7
 
+Current chunk: CHUNK_7_DIGEST
+Current task: not started
+Last completed: CHUNK_6_ONBOARDING — all 5 tasks; gate GREEN (145/145) + web:build GREEN (24 routes).
+Status: COMPLETE — CHUNK_6_ONBOARDING done (commit pending in this message, see progress.md Iteration 7).
+NOTE (session continuity, 2026-07-15): this file's CHECKPOINT block below (originally written after
+CHUNK_5) was STALE relative to disk — two commits landed after it without updating this file:
+c91e624 (CHUNK_8 scaffold: specs/SPEC-reviewer-dashboard.md, specs/08_CHUNK_8_REVIEWDASH.md, guardrail
+signs — spec only, no code) and 9de30fc (HKO-audit CRITICAL fix: SSO login is now invite-gated/
+UPDATE-only; activateUserForLogin refuses a non-invited email; first-owner provisioning explicitly
+called out as out-of-band). Both gaps flagged by that audit are now closed: IMPLEMENTATION_PLAN.md
+has a CHUNK_8_REVIEWDASH section (commit b4fc3a4), and src/services/provisioning.ts:bootstrapTenant
++ `cli bootstrap-tenant` closes first-owner provisioning (commit 20e788a). CHUNK_6_ONBOARDING is now
+also done. Remaining: CHUNK_7_DIGEST, CHUNK_8_REVIEWDASH (spec exists, code does not). Always trust
+`git log`/`git diff` over this file when they disagree — this file is best-effort narration.
+
+--- superseded (kept for history; see NOTE above) ---
 Current chunk: CHUNK_5_FRONTEND
 Current task: 7 of 7 (all complete)
 Last completed: CHUNK_5_FRONTEND — all 7 tasks; gate GREEN (128/128) + web:build GREEN + E2E 4/4 GREEN

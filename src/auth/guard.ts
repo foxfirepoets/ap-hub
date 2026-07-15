@@ -16,11 +16,11 @@ import { validateSession, type SessionReason } from './session.js';
 export const ROLES = ['owner_controller', 'bookkeeper', 'cpa'] as const;
 export type Role = (typeof ROLES)[number];
 
-export type Permission = 'read' | 'approve' | 'reject' | 'remap' | 'learn' | 'retry' | 'reply';
+export type Permission = 'read' | 'approve' | 'reject' | 'remap' | 'learn' | 'retry' | 'reply' | 'onboard';
 
 /** Role → permission matrix. CPA is read-only; bookkeeper cannot approve→post. */
 export const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
-  owner_controller: new Set<Permission>(['read', 'approve', 'reject', 'remap', 'learn', 'retry', 'reply']),
+  owner_controller: new Set<Permission>(['read', 'approve', 'reject', 'remap', 'learn', 'retry', 'reply', 'onboard']),
   bookkeeper: new Set<Permission>(['read', 'reject', 'remap', 'learn']),
   cpa: new Set<Permission>(['read']),
 };

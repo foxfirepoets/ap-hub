@@ -3,6 +3,7 @@ import { raiseException } from '../exceptions.js';
 import type { PostDeps } from '../pipeline/posting.js';
 import { defaultPostDeps, runPostAndMap, type ApproveResult } from './approve.js';
 import { ensurePermission, withAudit, ServiceError, assertEntityId, type ActorContext } from './index.js';
+import { assertNotDryRunLocked } from './onboarding.js';
 
 /**
  * Proposal lifecycle actions other than approve. `rejectProposal` marks a proposal
@@ -59,6 +60,8 @@ export async function retryProposal(
     'proposal.retry',
     `proposal:${proposalId}`,
     async () => {
+      // CHUNK_6_ONBOARDING: DRY_RUN_LOCKED — no post while automation_level is 'off'.
+      await assertNotDryRunLocked(ctx.tenantId);
       const postDeps = deps ?? (await defaultPostDeps(ctx.tenantId));
       return runPostAndMap(ctx.tenantId, proposalId, postDeps);
     },

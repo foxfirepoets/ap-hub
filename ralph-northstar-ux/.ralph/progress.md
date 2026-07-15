@@ -154,3 +154,29 @@ Judgment calls:
  - Action notice hoisted above the queue/detail split so a "Posted" result survives the approved item leaving the queue; notice cleared only on explicit J/K/click navigation.
 Guardrail check: src/qbo/write.ts, src/gatekeeper/forwarder.ts, src/pipeline/* UNTOUCHED (git-confirmed). No new QBO-write or email-send path; UI only calls existing CHUNK_3 read + CHUNK_4 action routes. No recipient field introduced. tsconfig.json (src gate) unchanged.
 <promise>CHUNK COMPLETE: CHUNK_5_FRONTEND</promise>
+
+## Iteration 7 — CHUNK_6_ONBOARDING (COMPLETE)
+Built via ralph Mode A (Agent-tool subagent), orchestrator independently re-ran the full gate
+before committing (did not trust the subagent's own report).
+Files created:
+ - migrations/004_onboarding.sql + .down.sql (onboarding_state: tenant_id PK FK tenants, step,
+   dry_run_complete, automation_level, updated_at)
+ - src/services/onboarding.ts — state/discovery (Gmail/QBO/prior-data read before prompting),
+   blocker cards, advanceOnboardingStep, runOnboardingDryRun (reuses the EXISTING proposeOnce from
+   src/pipeline/mapping.ts with no enqueuePost dependency — structurally cannot reach post_sandbox),
+   isDryRunLocked/assertNotDryRunLocked (DRY_RUN_LOCKED gate)
+ - src/services/action/onboarding.ts (thin HTTP bridge) + app/api/onboarding{,/step,/dry-run}/route.ts
+ - app/(app)/onboarding/page.tsx — wizard UI (discovery panel, grouped exact-fix blocker cards,
+   dry-run summary, EvidencePanel review, RemapForm for approving initial rules, automation selector)
+ - test/onboarding.test.ts (11 tests)
+Files modified:
+ - src/auth/guard.ts (+'onboard' permission, owner_controller only)
+ - src/services/approve.ts, src/services/proposals.ts (call assertNotDryRunLocked before posting)
+ - src/services/action/index.ts (dry_run_locked → 403), app/lib/types.ts, app/(app)/Nav.tsx (+Setup link)
+Judgment call (disclosed): DRY_RUN_LOCKED only gates a tenant that has an onboarding_state row —
+a tenant with no row (e.g. pre-existing CHUNK_4 tests) is not gated, for backward compatibility.
+Tested explicitly.
+Gate (orchestrator-verified independently): lint clean, typecheck clean, 145/145 tests (was 134/134,
++11 new), migrate:up idempotent, web:build 24 routes (was 20). Protected-file diff (write.ts,
+forwarder.ts, src/pipeline/) empty vs 9858eaa.
+<promise>CHUNK COMPLETE: CHUNK_6_ONBOARDING</promise>
