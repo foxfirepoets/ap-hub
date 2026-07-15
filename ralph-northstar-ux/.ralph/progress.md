@@ -205,3 +205,43 @@ Gate (orchestrator-verified independently): lint clean, typecheck clean, 157/157
 forwarder.ts, src/pipeline/mapping.ts, src/pipeline/posting.ts) empty vs 9858eaa; register.ts diff
 reviewed and confirmed small/additive.
 <promise>CHUNK COMPLETE: CHUNK_7_DIGEST</promise>
+
+## Iteration 9 — CHUNK_8_REVIEWDASH (COMPLETE — final chunk)
+Built via ralph Mode A (Agent-tool subagent), orchestrator independently re-ran the full gate,
+reviewed the two new service files line-by-line (idempotency reason string cross-checked against
+src/pipeline/posting.ts:58/155; redaction confirmed in snapshot.ts), and confirmed a real end-to-end
+run (snapshot -> generator -> HTML -> replay) before committing. No schema change (none required).
+Files created:
+ - src/services/review/snapshot.ts — buildReviewSnapshot (tenant-scoped via scopedQuery, minor-unit
+   amount_cents from proposed_txn, deriveRisk reusing the existing severity flag vocabulary
+   bank_change_warning/duplicate/fraud_flag=high, confidence<REVIEW_THRESHOLD=med else low, whole
+   snapshot passed through src/logger.ts redact() before return)
+ - src/services/review/apply-decisions.ts — applyDecisions: approved->approveProposal,
+   rejected->rejectProposal, pending/unknown->skip; every id resolved under the caller's tenant via
+   scopedQuery BEFORE any action (foreign/nonexistent id -> skipped); idempotent replay detected via
+   held reason 'status=posted_sandbox' (posting.ts's own re-run gate) counted as posted, not error;
+   any other held (e.g. missing_proof_coverage) -> error + drives non-zero CLI exit; postDeps (needs
+   a connected QBO client) built LAZILY only when an approved decision is actually reached, so a
+   reject-only replay never requires a QBO connection (bug found+fixed during the subagent's own
+   manual E2E verification, before reporting done)
+ - scripts/build-review-dashboard.mjs — zero-dependency Node generator; self-contained HTML,
+   textContent-only rendering, `<` escaped in embedded DATA, localStorage key aphub-review-<runId>,
+   JSON+CSV export keyed by proposal_id
+ - src/cli.ts: `review-snapshot --tenant <id> --out <path>` and `apply-review-decisions <file>
+   --tenant <id>` subcommands (thin wrappers over the two services above)
+ - test/review-snapshot.test.ts (10), test/review-apply-decisions.test.ts (6),
+   test/review-dashboard-generator.test.ts (6) — 22 new tests
+Real E2E verification performed by the subagent (not just unit tests): seeded a live tenant/proposal,
+ran review-snapshot -> real JSON, ran the generator -> single self-contained HTML file, grepped it for
+zero external hosts and correct <script>-payload neutralization, ran apply-review-decisions for real
+(reject path succeeded; approve path correctly fail-safed non-zero since this synthetic tenant has no
+live QBO sandbox OAuth connection — expected, no unproven write).
+Gate (orchestrator-verified independently): lint clean, typecheck clean, 179/179 tests (was 157/157,
++22 new), web:build still exactly 25 routes (zero new UI surface, as expected — no app/ work in this
+chunk), no new migration (confirmed: none added). Protected-file diff (write.ts, forwarder.ts,
+src/pipeline/) empty vs 9858eaa except the already-committed CHUNK_7 register.ts addition (no further
+change from this chunk). Six-guarantee suite green.
+<promise>CHUNK COMPLETE: CHUNK_8_REVIEWDASH</promise>
+
+<promise>BUILD COMPLETE</promise>
+All 8 chunks green. Next: spec-vs-build-brutal-audit / HKO-truth-audit, then PR (per operator instructions — do not merge without the owner).

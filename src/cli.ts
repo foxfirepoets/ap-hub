@@ -179,6 +179,49 @@ program
     await closePool();
   });
 
+tenantOpt(
+  program
+    .command('review-snapshot')
+    .description('write a read-only, tenant-scoped review snapshot JSON (CHUNK_8_REVIEWDASH)')
+    .requiredOption('--out <path>', 'output JSON path'),
+).action(async (o) => {
+  const { buildReviewSnapshot } = await import('./services/review/snapshot.js');
+  const { writeFile } = await import('node:fs/promises');
+  try {
+    const snapshot = await buildReviewSnapshot(Number(o.tenant));
+    await writeFile(o.out, JSON.stringify(snapshot, null, 2), 'utf8');
+    console.log(`wrote ${snapshot.proposals.length} proposal(s) to ${o.out}`);
+  } catch (err) {
+    console.error(String((err as Error).message));
+    process.exitCode = 1;
+  }
+  await closePool();
+});
+
+tenantOpt(
+  program
+    .command('apply-review-decisions')
+    .description('replay exported reviewer decisions through the guarded approve/reject services (CHUNK_8_REVIEWDASH)')
+    .argument('<file>', 'decisions.json path'),
+).action(async (file, o) => {
+  const { readFile } = await import('node:fs/promises');
+  const { applyDecisions } = await import('./services/review/apply-decisions.js');
+  try {
+    const raw = JSON.parse(await readFile(file, 'utf8'));
+    const ctx = { userId: 0, tenantId: Number(o.tenant), role: 'owner_controller', actor: 'cli:apply-review-decisions' };
+    const result = await applyDecisions(ctx, raw);
+    console.log(JSON.stringify(result));
+    if (result.errors.length > 0) {
+      for (const e of result.errors) console.error(`NOT posted safely — proposal ${e.id}: ${e.reason}`);
+      process.exitCode = 1;
+    }
+  } catch (err) {
+    console.error(String((err as Error).message));
+    process.exitCode = 1;
+  }
+  await closePool();
+});
+
 program
   .command('connect')
   .description('print the OAuth authorization URL for gmail|qbo')

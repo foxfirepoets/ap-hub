@@ -1,13 +1,16 @@
 # Ralph State
 
-**Current Iteration:** 8
+**Current Iteration:** 9
 
-Current chunk: CHUNK_8_REVIEWDASH
-Current task: not started
-Last completed: CHUNK_7_DIGEST — all 5 tasks; gate GREEN (157/157) + web:build GREEN (25 routes).
-Status: COMPLETE — CHUNK_6_ONBOARDING (commit 42a4672) and CHUNK_7_DIGEST done. See progress.md
-Iterations 7-8 for detail. Remaining: CHUNK_8_REVIEWDASH (spec + guardrail signs exist from the
-c91e624 scaffold commit; code does not exist yet).
+Current chunk: none — BUILD COMPLETE
+Current task: none
+Last completed: CHUNK_8_REVIEWDASH — all 4 tasks; gate GREEN (179/179) + web:build GREEN (25 routes,
+unchanged — no UI in this chunk). No new migration (none required).
+Status: BUILD COMPLETE — all 8 chunks done (CHUNK_1 087c97a, CHUNK_2 46a5a8c, CHUNK_3 32c252e,
+CHUNK_4 247556f, CHUNK_5 366841f, CHUNK_6 42a4672, CHUNK_7 5a6aca8, CHUNK_8 pending commit this
+session — see progress.md Iteration 9). Both HKO-audit gaps closed (plan fix b4fc3a4, first-owner
+provisioning 20e788a). Next: spec-vs-build-brutal-audit / HKO-truth-audit, then open a PR — do not
+merge without the owner (per operator instructions).
 NOTE (session continuity, 2026-07-15): this file's CHECKPOINT block below (originally written after
 CHUNK_5) was STALE relative to disk — two commits landed after it without updating this file:
 c91e624 (CHUNK_8 scaffold: specs/SPEC-reviewer-dashboard.md, specs/08_CHUNK_8_REVIEWDASH.md, guardrail
