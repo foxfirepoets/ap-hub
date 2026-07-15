@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { apiGet, apiPost, ApiError } from '../../lib/api';
 import { EvidencePanel } from '../../components/EvidencePanel';
+import { OnboardingWelcome } from '../../components/OnboardingWelcome';
 import { RemapForm, type RemapValues } from '../../components/RemapForm';
 import { useSession } from '../../lib/session';
 import type { OnboardingState, DryRunSummary, TodayDigest } from '../../lib/types';
@@ -49,6 +50,7 @@ export default function OnboardingPage() {
   const [notice, setNotice] = useState<Notice | null>(null);
   const [dryRun, setDryRun] = useState<DryRunSummary | null>(null);
   const [sampleProposalId, setSampleProposalId] = useState<number | null>(null);
+  const [welcomeDismissed, setWelcomeDismissed] = useState(false);
 
   const load = useCallback(() => {
     apiGet<OnboardingState>('/api/onboarding')
@@ -129,6 +131,15 @@ export default function OnboardingPage() {
       <div data-testid="onboarding-page">
         <h1>Onboarding</h1>
         <p className="page-sub">Only the account owner can complete setup.</p>
+      </div>
+    );
+  }
+
+  if (!welcomeDismissed) {
+    return (
+      <div data-testid="onboarding-page">
+        <h1>Set up AP Hub</h1>
+        <OnboardingWelcome onGetStarted={() => setWelcomeDismissed(true)} />
       </div>
     );
   }
