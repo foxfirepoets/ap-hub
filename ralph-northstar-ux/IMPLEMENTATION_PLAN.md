@@ -14,6 +14,7 @@ Validation gate (every chunk): `npm run lint && npm run typecheck && npm test` �
 5. CHUNK_5_FRONTEND — Next.js shell, core pages, shared Evidence panel.
 6. CHUNK_6_ONBOARDING — first-run wizard with a dry-run that posts nothing.
 7. CHUNK_7_DIGEST — daily digest + immediate risk alerts, reusing the severity classifier.
+8. CHUNK_8_REVIEWDASH — offline reviewer dashboard; replay decisions only via approveProposal/rejectProposal.
 
 ---
 
@@ -129,7 +130,33 @@ Validation gate (every chunk): `npm run lint && npm run typecheck && npm test` �
 
 ---
 
+## Chunk 8: CHUNK_8_REVIEWDASH
+
+Adds a portable, offline review capability on top of the North Star UX build. A build-time Node
+generator turns a tenant's current proposals/exceptions (+ evidence + SwarmSync proof verdicts)
+into a single self-contained HTML artifact — no backend, no framework, no external hosts — where
+a licensed reviewer (CPA persona) approves/rejects each item and exports decisions. A CLI then
+replays those decisions **only through the existing guarded services**
+(`approveProposal`/`rejectProposal`), applying approved items to the QBO sandbox with the same
+rails as the live app. Comes last; depends on CHUNK_2/3/4 (independent of CHUNK_6/7). No new
+tables, no new migration, no new QBO-write/Gmail-send path.
+Design source: `reviewer-dashboard-guide.md`; full spec: `specs/SPEC-reviewer-dashboard.md`;
+chunk spec: `specs/08_CHUNK_8_REVIEWDASH.md`.
+
+### Tasks (in order)
+1. Create `src/services/review/snapshot.ts` + `cli review-snapshot --tenant <id> --out <path.json>`: writes a read-only, tenant-scoped snapshot (proposals with vendor, integer minor-unit amount from `proposed_txn`, derived risk, source/evidence refs, `proof_refs` verdict, per-vendor totals, summary). A foreign tenant's proposal must never appear; no token/secret-shaped strings present.
+2. Create `scripts/build-review-dashboard.mjs <snapshot.json> <out.html>`: writes a self-contained artifact (inline CSS+JS, NO `http(s)://` resource refs); `const DATA` has `<` escaped to `<`; all data rendered via `textContent` (an injected `<script>` in a vendor name must render as text); DRAFT stamp, KPI band, per-vendor cards cross-filtering the table, proof panel, risk/vendor/decision filters + search, severity-stripe table, per-row Approve/Reject persisted in `localStorage` under `aphub-review-<runId>` (survives reload), JSON+CSV export keyed by `proposal_id`, both light/dark themes at the token level.
+3. Create `src/services/review/apply-decisions.ts` + `cli apply-review-decisions <decisions.json> [--tenant <id>]`: approved → `approveProposal`, rejected → `rejectProposal`, pending/unknown → skip. One approved item → exactly one sandbox `postings` row + one `audit_log` row; re-running the same file → zero new postings (idempotent); an approved item lacking proof coverage → held, CLI exits non-zero and names it; foreign-tenant ids skipped.
+4. Write Vitest unit + DB tests covering every acceptance criterion above (happy path, `<script>`-injection escaping + zero external hosts, missing-proof hold + non-zero exit, idempotent replay, cross-tenant skip). Confirm `src/qbo/write.ts`, `src/gatekeeper/forwarder.ts`, and the pipeline are untouched (`git diff` empty); the six-guarantee suite stays green.
+### Validation
+- Command: `npm run lint && npm run typecheck && npm test`
+- Expected: exit 0, all tests green (including the six-guarantee suite); `git diff <base> -- src/qbo/write.ts src/gatekeeper/forwarder.ts src/pipeline/` empty
+### Promise
+<promise>CHUNK COMPLETE: CHUNK_8_REVIEWDASH</promise>
+
+---
+
 ## Build Complete
-When all 7 chunks are done and validation is green, emit:
+When all 8 chunks are done and validation is green, emit:
 <promise>BUILD COMPLETE</promise>
-Then run spec-vs-build-brutal-audit against `specs/SPEC-northstar-ux-v1.md`.
+Then run spec-vs-build-brutal-audit against `specs/SPEC-northstar-ux-v1.md` and `specs/SPEC-reviewer-dashboard.md`.
