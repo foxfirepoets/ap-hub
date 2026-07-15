@@ -1,0 +1,33 @@
+# HKO-Truth-Audit Report: Onboarding Real-Connect Redesign
+**Date:** 2026-07-15 | **Threshold:** HIGH | **Scope:** onboarding-real-connect-redesign (5 chunks, FULL tier), on branch northstar-ux-v1 | **Base range:** `9aa7902^..4009c50`
+
+Verdict: **PASS**. 0 CRITICAL/HIGH/MEDIUM findings; 2 LOW findings evaluated and consciously left unfixed with documented reasoning (not reflexively patched). This report is the audit ledger for this feature, kept separate from the other two audit pairs written this session (CHUNK_6-8 and guided-onboarding-installer) to keep each build's audit trail distinct.
+
+**Method note (same as prior audits this session):** HK layer run as an independent, fresh-context `security-engineer` subagent reviewing the real diff `9aa7902^..HEAD`, with no stake in having built this code and explicit instructions to be adversarial given this is a real OAuth/CSRF surface. OTA and RIO are direct empirical checks (gate re-runs, protected-file diffs, source reads) — never against a subagent's self-report.
+
+## Findings
+
+| # | Sev | Finding | Disposition |
+|---|-----|---------|-----------|
+| 1 | LOW (confidence 0.6) | `src/auth/connect-state.ts:58` — `Math.abs(now() - timestamp) > MAX_AGE_MS` accepts a timestamp up to 5 minutes in the future as well as the past, doubling the theoretical validity window to ~10 minutes | **Evaluated, NOT fixed, deliberately.** The signer (Next.js "start" route) and verifier (plain HTTP server callback) are two separate processes that may have minor clock drift between them — this is exactly the cross-process architecture this feature was built to support (see spec's Alternative Designs §17, rejecting a same-process move). `Math.abs` tolerates skew in either direction; restricting to `[0, MAX_AGE_MS]` would reject valid tokens whenever the verifier's clock runs even slightly behind the signer's, trading a real reliability risk for closing a non-exploitable, low-confidence theoretical edge case — the HMAC signature already prevents timestamp forgery regardless of which direction is tolerated. Documented as a deliberate design tradeoff, not a bug. |
+| 2 | LOW (confidence 0.6) | `src/config.ts` — `SESSION_COOKIE_SECRET` defaults to `''` if unset; this feature adds a second consumer (CSRF state-token signing) of that same secret | **Not fixed — genuinely out of scope.** This default predates this feature entirely (from CHUNK_1_AUTH's session-cookie signing); this diff does not touch `src/config.ts`'s handling of this variable at all. The auditor explicitly flagged it as an operational concern for the repo generally, not a defect in this PR. Noted as a residual risk below. |
+
+**No CRITICAL, HIGH, or MEDIUM findings.** The independent reviewer specifically checked (and found clean): CSRF state-token correctness (genuinely constant-time via `timingSafeEqual` with a safe length pre-check; malformed inputs rejected before any HMAC/parsing work; wrapped in try/catch, never throws); state-verification-before-exchange ordering on every code path in both callback handlers; tenantId provenance (session-only, an explicit smuggling test proves a request-supplied tenant id has no effect); no open redirect (target always `WEB_BASE_URL` + a fixed shape, `reason` drawn from a hardcoded enum, never echoed raw); no secret exposure (only public `client_id` values in authorize URLs); guarantee-bearing files byte-for-byte untouched, with the four OAuth-exchange functions confirmed unchanged; `automation_level` never touched by the automatic step-walk (every `goStep` call omits the argument entirely; server-side `COALESCE` preserves the existing value); no XSS (no `dangerouslySetInnerHTML` anywhere in the new/modified components); the QBO wrong-company reason classification has no exploitable bypass; and the returning-owner automatic walk-through is provably idempotent (a plain `UPDATE...SET` for step advancement, a `LEFT JOIN...WHERE p.id IS NULL` guard against duplicate proposals, and structurally no path to `post_sandbox`/`write.ts` at all).
+
+**Notable finding, not a defect:** the reviewer confirmed the pre-diff code literally trusted an **unsigned** `state=<tenantId>` query parameter as the tenant identity on both OAuth callbacks (`const tenantId = Number(url.searchParams.get('state') ?? '1')`) — a real IDOR that let anyone connect a Gmail/QBO account to an arbitrary tenant by forging that parameter. This feature's CHUNK_1/CHUNK_2 work removes that vulnerability as a structural side effect of adding the signed state token, not as a separate fix.
+
+## Verification Summary
+
+| Command | Result | Scope |
+|---|---|---|
+| `npm run migrate:up && npm run lint && npm run typecheck && npm test && npm run web:build` | passed — **212/212** throughout all 5 chunks | in-scope |
+| `npx vitest run test/onboarding.test.ts` | passed — **11/11**, unmodified across all 5 chunks (re-verified after CHUNK_5) | backend regression proof |
+| `git diff 9aa7902^..HEAD -- src/qbo/write.ts src/gatekeeper/forwarder.ts src/pipeline/ migrations/` | empty | guarantee check |
+| `web:build` route count | 27 (25 baseline + exactly the 2 new `/api/connections/*/start` routes) | in-scope |
+| Function-body diff on `exchangeGmailCode`/`exchangeQboCode`/`assertExpectedCompany`/`saveToken` | zero lines changed | guarantee-adjacent reuse check |
+
+## Crux
+This is the first audit this session where the independent reviewer's conclusion was "this diff makes the codebase MORE secure than before, not just no-worse" — the signed CSRF state token replaces a real, exploitable IDOR (a forgeable tenant id in an unsigned OAuth `state` param, present in the code since CHUNK_2 of the original build and never previously flagged). The two LOW findings are the kind of finding a careful review process should surface even when nothing is broken: neither warranted a reflexive patch, and forcing a "fix" onto finding #1 in particular would have traded a real reliability property (cross-process clock tolerance) for closing a window the signature already protects. Judgment, not mechanical remediation, was the right response here.
+
+## Handoff
+PASS — eligible input to `truth-before-launch` when shipping; NOT launch approval by itself. **Before this is truly launch-ready**, a human must complete one real end-to-end OAuth click-through (Gmail consent + QuickBooks consent) against real Google/Intuit sandbox credentials in an environment this session's sandbox does not have access to — every code-level property is verified, but the live provider response shapes (error query param names, token response fields) were never exercised against the real APIs. Next step per operator instruction: push to GitHub (updating the existing open PR #1) — do not merge without the owner.
