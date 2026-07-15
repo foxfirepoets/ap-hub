@@ -36,3 +36,20 @@ export function friendlyOnboardingError(code: string, fallbackMessage: string): 
       };
   }
 }
+
+// CHUNK_5_PAGEREDESIGN — plain-English text for the `?connect_error=...&reason=<code>`
+// redirect codes emitted by src/auth/gmail-oauth.ts / src/auth/qbo-oauth.ts. Distinct from
+// friendlyOnboardingError above (which maps API error codes, not OAuth redirect reasons);
+// kept separate rather than overloading that switch with unrelated codes.
+export function friendlyConnectReason(reason: string): string {
+  switch (reason) {
+    case 'denied':
+      return "You'll need to allow access to continue.";
+    case 'wrong_company':
+      return "That QuickBooks company doesn't match the one this workspace is set up for.";
+    case 'missing_code':
+    case 'exchange_failed':
+    default:
+      return 'Something went wrong connecting — please try again.';
+  }
+}

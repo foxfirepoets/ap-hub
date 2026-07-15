@@ -1,75 +1,61 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { apiGet, apiPost, ApiError } from '../../lib/api';
+import { ConnectPrompt } from '../../components/ConnectPrompt';
 import { EvidencePanel } from '../../components/EvidencePanel';
 import { OnboardingBlockerCard } from '../../components/OnboardingBlockerCard';
-import { OnboardingStepper } from '../../components/OnboardingStepper';
 import { OnboardingWelcome } from '../../components/OnboardingWelcome';
 import { RemapForm, type RemapValues } from '../../components/RemapForm';
-import { friendlyOnboardingError } from '../../lib/onboardingErrors.js';
+import { friendlyOnboardingError, friendlyConnectReason } from '../../lib/onboardingErrors.js';
 import { useSession } from '../../lib/session';
 import type { OnboardingState, DryRunSummary, TodayDigest } from '../../lib/types';
 
-// CHUNK_6_ONBOARDING — the first-run wizard. Discovery-before-asking: GET /api/onboarding
-// pulls Gmail/QBO connection state + prior-data counts BEFORE any step asks the human to
-// choose anything. The dry-run (POST /api/onboarding/dry-run) runs the pipeline through
-// `propose` only — it can never post — and its result is a business-specific summary, not
-// a blank dashboard. `automation_level` stays 'off' (auto-post DRY_RUN_LOCKED) until the
-// final step explicitly sets it away from 'off'.
+// CHUNK_5_PAGEREDESIGN — collapses the former 9-screen wizard to ONE "Connect your accounts"
+// screen with two real Connect actions (CHUNK_4's session-gated start routes). Once both
+// connections are genuinely true (re-checked on every load — not only right after a
+// `?connected=` redirect, so a returning owner with connections already done still
+// auto-completes), the remaining intermediate step values and the dry-run run automatically
+// with zero further required clicks, landing on one combined summary screen.
+// `automation_level` is never touched here — it stays the existing 'off' default
+// (DRY_RUN_LOCKED) until a human changes it from Settings. The OnboardingStepper from the
+// earlier guided-installer feature implied 9 user-facing steps; with only "connect" /
+// "setting up" / "done" left, a stepper misrepresents the flow more than it clarifies it, so
+// it's dropped from this page (the component file itself is left in place, unused).
+// See specs/SPEC-onboarding-real-connect-redesign.md §5 (User Flows) and §7 (Error Handling).
 
-const STEPS = [
-  'connect_gmail',
-  'connect_qbo',
-  'select_company',
-  'configure_mode',
-  'automation_level',
-  'dry_run',
-  'review_sample',
-  'approve_rules',
-  'complete',
-] as const;
-type Step = (typeof STEPS)[number];
-
-const STEP_LABEL: Record<Step, string> = {
-  connect_gmail: 'Connect Gmail',
-  connect_qbo: 'Connect QuickBooks',
-  select_company: 'Select company',
-  configure_mode: 'Mode & date range',
-  automation_level: 'Automation level',
-  dry_run: 'Dry-run scan',
-  review_sample: 'Review sample',
-  approve_rules: 'Approve initial rules',
-  complete: 'Enable auto-post',
-};
-
-// CHUNK_4_EXPLAINERS — one plain-English sentence per step: what it needs and why.
-const STEP_EXPLAINER: Record<Step, string> = {
-  connect_gmail: 'AP Hub reads accounting email from this mailbox — nothing else is touched.',
-  connect_qbo: 'AP Hub needs a QuickBooks Online connection so it can eventually write approved transactions there.',
-  select_company: 'Everything AP Hub creates goes into one QuickBooks sandbox company you pick here — never production.',
-  configure_mode: 'AP Hub scans the connected mailbox for accounting documents in this mode and date range.',
-  automation_level: 'This sets how much AP Hub can do on its own — it stays OFF until you choose otherwise after review.',
-  dry_run: 'A dry-run shows what AP Hub would find and propose, without posting anything to QuickBooks.',
-  review_sample: 'Reviewing one real example lets you confirm AP Hub read the document correctly before trusting the rest.',
-  approve_rules: 'Confirming a vendor/account mapping now means future matching invoices apply it automatically.',
-  complete: 'Choosing an automation level here is what actually unlocks posting — everything stays OFF until you do.',
-};
+const AUTO_STEPS = ['connect_qbo', 'select_company', 'configure_mode', 'automation_level'] as const;
 
 type Notice = { kind: 'good' | 'warn' | 'bad'; text: string; raw?: string; retryable?: boolean };
 
 export default function OnboardingPage() {
+  // useSearchParams requires a Suspense boundary in the App Router.
+  return (
+    <Suspense fallback={<div className="muted">Loading onboarding…</div>}>
+      <OnboardingPageInner />
+    </Suspense>
+  );
+}
+
+function OnboardingPageInner() {
   const me = useSession();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
   const [state, setState] = useState<OnboardingState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [settingUp, setSettingUp] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [dryRun, setDryRun] = useState<DryRunSummary | null>(null);
   const [sampleProposalId, setSampleProposalId] = useState<number | null>(null);
   const [welcomeDismissed, setWelcomeDismissed] = useState(false);
-  // CHUNK_5_INTEGRATION — holds the retry callback for whichever action last failed, so
-  // a retryable friendly-error notice can re-invoke it with its original arguments.
   const [retryAction, setRetryAction] = useState<(() => void) | null>(null);
+  const [connectErrors, setConnectErrors] = useState<{ gmail?: string; qbo?: string }>({});
+
+  // Guards the automatic walk-through so it fires at most once per page load.
+  const autoSetupStarted = useRef(false);
 
   const load = useCallback(() => {
     apiGet<OnboardingState>('/api/onboarding')
@@ -79,24 +65,39 @@ export default function OnboardingPage() {
 
   useEffect(load, [load]);
 
-  const owner = me.role === 'owner_controller';
-  const step = (state?.step as Step) ?? 'connect_gmail';
+  // Resolve ?connected=/?connect_error= exactly once on mount, then strip the query string
+  // (a refresh must not re-trigger the same branch).
+  useEffect(() => {
+    const connected = searchParams.get('connected');
+    const connectErr = searchParams.get('connect_error');
+    const reason = searchParams.get('reason');
+    if (connected === 'gmail' || connected === 'qbo') {
+      load();
+      router.replace('/onboarding');
+    } else if (connectErr === 'gmail' || connectErr === 'qbo') {
+      setConnectErrors((prev) => ({ ...prev, [connectErr]: friendlyConnectReason(reason ?? '') }));
+      router.replace('/onboarding');
+    }
+    // Intentionally runs once on mount only — re-reading on every searchParams identity
+    // change would re-trigger after our own router.replace() strips the params.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const goStep = useCallback(
-    async (nextStep: Step, automationLevel?: string) => {
+    async (nextStep: string): Promise<boolean> => {
       setBusy(true);
       setNotice(null);
       setRetryAction(null);
       try {
-        const res = await apiPost('/api/onboarding/step', { step: nextStep, automationLevel });
+        const res = await apiPost('/api/onboarding/step', { step: nextStep });
         if (res.ok) {
           load();
-        } else {
-          const fallback = res.error?.message ?? 'Something went wrong.';
-          const friendly = friendlyOnboardingError(res.error?.code ?? '', fallback);
-          setNotice({ kind: 'bad', text: friendly.text, raw: fallback, retryable: friendly.retryable });
-          setRetryAction(friendly.retryable ? () => () => void goStep(nextStep, automationLevel) : null);
+          return true;
         }
+        const fallback = res.error?.message ?? 'Something went wrong.';
+        const friendly = friendlyOnboardingError(res.error?.code ?? '', fallback);
+        setNotice({ kind: 'bad', text: friendly.text, raw: fallback, retryable: friendly.retryable });
+        return false;
       } finally {
         setBusy(false);
       }
@@ -104,7 +105,7 @@ export default function OnboardingPage() {
     [load],
   );
 
-  const runDryRun = useCallback(async () => {
+  const runDryRun = useCallback(async (): Promise<boolean> => {
     setBusy(true);
     setNotice(null);
     setRetryAction(null);
@@ -121,41 +122,78 @@ export default function OnboardingPage() {
           setSampleProposalId(null);
         }
         load();
-      } else {
-        const fallback = res.error?.message ?? 'Something went wrong.';
-        const friendly = friendlyOnboardingError(res.error?.code ?? '', fallback);
-        setNotice({ kind: 'bad', text: friendly.text, raw: fallback, retryable: friendly.retryable });
-        setRetryAction(friendly.retryable ? () => () => void runDryRun() : null);
+        return true;
       }
+      const fallback = res.error?.message ?? 'Something went wrong.';
+      const friendly = friendlyOnboardingError(res.error?.code ?? '', fallback);
+      setNotice({ kind: 'bad', text: friendly.text, raw: fallback, retryable: friendly.retryable });
+      return false;
     } finally {
       setBusy(false);
     }
   }, [load]);
 
-  const approveRule = useCallback(
-    async (v: RemapValues) => {
-      setBusy(true);
-      setNotice(null);
-      setRetryAction(null);
-      try {
-        const res = await apiPost<{ became_rule: boolean }>('/api/mappings/remap', v);
-        if (res.ok) {
-          setNotice({ kind: 'good', text: `Rule saved${res.data?.became_rule ? ' and remembered.' : '.'}` });
-        } else {
-          const fallback = res.error?.message ?? 'Something went wrong.';
-          const friendly = friendlyOnboardingError(res.error?.code ?? '', fallback);
-          setNotice({ kind: 'bad', text: friendly.text, raw: fallback, retryable: friendly.retryable });
-          setRetryAction(friendly.retryable ? () => () => void approveRule(v) : null);
+  // The automatic walk-through: once both connections are true, silently advance the step
+  // machine through the remaining intermediate values (no automationLevel argument passed —
+  // the existing 'off' default is preserved) and run the dry-run. A failure anywhere in the
+  // chain surfaces the usual friendly-error notice, with its retry re-running this whole
+  // (idempotent) chain rather than only the one step that failed.
+  const runAutoSetup = useCallback(async () => {
+    setSettingUp(true);
+    try {
+      for (const step of AUTO_STEPS) {
+        const ok = await goStep(step);
+        if (!ok) {
+          setRetryAction(() => () => void runAutoSetup());
+          return;
         }
-      } finally {
-        setBusy(false);
       }
-    },
-    [],
-  );
+      const ok = await runDryRun();
+      if (!ok) {
+        setRetryAction(() => () => void runAutoSetup());
+      }
+    } finally {
+      setSettingUp(false);
+    }
+  }, [goStep, runDryRun]);
+
+  const approveRule = useCallback(async (v: RemapValues) => {
+    setBusy(true);
+    setNotice(null);
+    setRetryAction(null);
+    try {
+      const res = await apiPost<{ became_rule: boolean }>('/api/mappings/remap', v);
+      if (res.ok) {
+        setNotice({ kind: 'good', text: `Rule saved${res.data?.became_rule ? ' and remembered.' : '.'}` });
+      } else {
+        const fallback = res.error?.message ?? 'Something went wrong.';
+        const friendly = friendlyOnboardingError(res.error?.code ?? '', fallback);
+        setNotice({ kind: 'bad', text: friendly.text, raw: fallback, retryable: friendly.retryable });
+        setRetryAction(friendly.retryable ? () => () => void approveRule(v) : null);
+      }
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  const bothConnected = Boolean(state?.connections.gmailConnected && state?.connections.qboConnected);
+
+  // Runs on every load where both connections are true — including a returning owner whose
+  // connections were already done in a prior session (Flow D) — not only right after a
+  // `?connected=` redirect. Re-running the chain is safe/idempotent (COALESCE step updates,
+  // dry-run only proposes not-yet-proposed extractions), which is also how a returning owner
+  // whose dry-run already ran gets real, freshly-fetched summary counts on this load.
+  useEffect(() => {
+    if (bothConnected && !dryRun && !autoSetupStarted.current) {
+      autoSetupStarted.current = true;
+      void runAutoSetup();
+    }
+  }, [bothConnected, dryRun, runAutoSetup]);
 
   if (error) return <div className="notice bad">{error}</div>;
   if (!state) return <div className="muted">Loading onboarding…</div>;
+
+  const owner = me.role === 'owner_controller';
 
   if (!owner) {
     return (
@@ -175,7 +213,7 @@ export default function OnboardingPage() {
     );
   }
 
-  // Setup blockers, grouped into exact-fix cards (acceptance criterion).
+  // Setup blockers, grouped into exact-fix cards (acceptance criterion, unchanged from CHUNK_4).
   const groups = new Map<string, typeof state.blockers>();
   for (const b of state.blockers) {
     groups.set(b.group, [...(groups.get(b.group) ?? []), b]);
@@ -184,7 +222,6 @@ export default function OnboardingPage() {
   return (
     <div data-testid="onboarding-page">
       <h1>Set up AP Hub</h1>
-      <OnboardingStepper steps={STEPS.map((s) => ({ key: s, label: STEP_LABEL[s] }))} currentStep={step} />
       <p className="page-sub">
         {state.automationLevel === 'off' ? 'Automation is OFF — nothing can post yet.' : `Automation: ${state.automationLevel}`}
       </p>
@@ -193,7 +230,7 @@ export default function OnboardingPage() {
         <div className={`notice ${notice.kind}`} data-testid="onboarding-notice">
           <div>{notice.text}</div>
           {notice.retryable && retryAction ? (
-            <button disabled={busy} onClick={() => retryAction()} data-testid="onboarding-retry">
+            <button disabled={busy || settingUp} onClick={() => retryAction()} data-testid="onboarding-retry">
               Try again
             </button>
           ) : null}
@@ -238,165 +275,76 @@ export default function OnboardingPage() {
         </div>
       </div>
 
-      <div className="panel">
-        {step === 'connect_gmail' ? (
-          <>
-            <p className="muted step-explainer">{STEP_EXPLAINER.connect_gmail}</p>
-            <h2>Connect Gmail</h2>
-            <p className="muted">
-              {state.connections.gmailConnected ? 'Gmail is connected.' : 'Connect the Gmail account AP Hub should read.'}
-            </p>
-            <button className="primary" disabled={busy} onClick={() => void goStep('connect_qbo')}>
-              Continue
-            </button>
-          </>
-        ) : null}
-
-        {step === 'connect_qbo' ? (
-          <>
-            <p className="muted step-explainer">{STEP_EXPLAINER.connect_qbo}</p>
-            <h2>Connect QuickBooks</h2>
-            <p className="muted">
-              {state.connections.qboConnected ? 'QuickBooks Online (sandbox) is connected.' : 'Connect QuickBooks Online sandbox.'}
-            </p>
-            <button className="primary" disabled={busy} onClick={() => void goStep('select_company')}>
-              Continue
-            </button>
-          </>
-        ) : null}
-
-        {step === 'select_company' ? (
-          <>
-            <p className="muted step-explainer">{STEP_EXPLAINER.select_company}</p>
-            <h2>Select company</h2>
-            <p className="muted">
-              {state.connections.qboCompanySelected
-                ? `Sandbox company: ${state.connections.qboCompanyName ?? 'selected'}.`
-                : 'Select the QuickBooks sandbox company to write to.'}
-            </p>
-            <button className="primary" disabled={busy} onClick={() => void goStep('configure_mode')}>
-              Continue
-            </button>
-          </>
-        ) : null}
-
-        {step === 'configure_mode' ? (
-          <>
-            <p className="muted step-explainer">{STEP_EXPLAINER.configure_mode}</p>
-            <h2>Mode & date range</h2>
-            <p className="muted">AP Hub scans email for accounting documents in the connected mailbox.</p>
-            <button className="primary" disabled={busy} onClick={() => void goStep('automation_level')}>
-              Continue
-            </button>
-          </>
-        ) : null}
-
-        {step === 'automation_level' ? (
-          <>
-            <p className="muted step-explainer">{STEP_EXPLAINER.automation_level}</p>
-            <h2>Automation level</h2>
-            <p className="muted">
-              Automation stays OFF through setup. You will choose the level after reviewing a dry-run — nothing
-              posts until then.
-            </p>
-            <button className="primary" disabled={busy} onClick={() => void goStep('dry_run')}>
-              Continue
-            </button>
-          </>
-        ) : null}
-
-        {step === 'dry_run' ? (
-          <>
-            <p className="muted step-explainer">{STEP_EXPLAINER.dry_run}</p>
-            <h2>Dry-run scan</h2>
-            <p className="muted">Scans existing mail/QBO data through proposal generation. Nothing is posted.</p>
-            <div className="btn-row">
-              <button className="primary" disabled={busy} onClick={() => void runDryRun()}>
-                Run dry-run scan
-              </button>
-              {dryRun ? (
-                <button disabled={busy} onClick={() => void goStep('review_sample')}>
-                  Continue
-                </button>
-              ) : null}
+      {!bothConnected ? (
+        <div className="panel" data-testid="connect-accounts">
+          <h2>Connect your accounts</h2>
+          <p className="muted">
+            Two real connections are all that&apos;s required — everything else (company confirmation, an initial
+            scan, and a safe automation-off default) happens automatically once both are done.
+          </p>
+          <ConnectPrompt
+            provider="Gmail"
+            description="You'll sign in with Google and grant AP Hub read-only access to one mailbox — you'll land right back here."
+            href="/api/connections/gmail/start"
+            connected={state.connections.gmailConnected}
+            errorText={connectErrors.gmail}
+            testId="connect-prompt-gmail"
+          />
+          <ConnectPrompt
+            provider="QuickBooks"
+            description="You'll sign in to Intuit and connect the QuickBooks Online sandbox company — AP Hub only ever writes to this sandbox, never production."
+            href="/api/connections/qbo/start"
+            connected={state.connections.qboConnected}
+            errorText={connectErrors.qbo}
+            testId="connect-prompt-qbo"
+          />
+        </div>
+      ) : !dryRun ? (
+        <div className="panel" data-testid="onboarding-setting-up">
+          <h2>Setting up…</h2>
+          <p className="muted">
+            {settingUp
+              ? 'Confirming your connections and running an initial scan — this only takes a moment.'
+              : 'Setup is paused — see the message above.'}
+          </p>
+        </div>
+      ) : (
+        <div className="panel" data-testid="onboarding-summary">
+          <h2>You&apos;re set up</h2>
+          <div className="counts" data-testid="dry-run-summary">
+            <div className="count-card">
+              <div className="n">{dryRun.emailsScanned}</div>
+              <div className="l">Emails scanned</div>
             </div>
-            {dryRun ? (
-              <div className="counts" style={{ marginTop: 16 }} data-testid="dry-run-summary">
-                <div className="count-card">
-                  <div className="n">{dryRun.emailsScanned}</div>
-                  <div className="l">Emails scanned</div>
-                </div>
-                <div className="count-card">
-                  <div className="n">{dryRun.invoicesFound}</div>
-                  <div className="l">Invoices found</div>
-                </div>
-                <div className="count-card">
-                  <div className="n">{dryRun.vendorsMatched}</div>
-                  <div className="l">Vendors matched</div>
-                </div>
-                <div className="count-card">
-                  <div className="n">{dryRun.proposalsCreated}</div>
-                  <div className="l">Proposals created</div>
-                </div>
-              </div>
-            ) : null}
-          </>
-        ) : null}
-
-        {step === 'review_sample' ? (
-          <>
-            <p className="muted step-explainer">{STEP_EXPLAINER.review_sample}</p>
-            <h2>Review a sample</h2>
-            {sampleProposalId != null ? (
-              <EvidencePanel proposalId={sampleProposalId} />
-            ) : (
-              <p className="muted">No sample proposal available yet.</p>
-            )}
-            <button className="primary" disabled={busy} style={{ marginTop: 12 }} onClick={() => void goStep('approve_rules')}>
-              Continue
-            </button>
-          </>
-        ) : null}
-
-        {step === 'approve_rules' ? (
-          <>
-            <p className="muted step-explainer">{STEP_EXPLAINER.approve_rules}</p>
-            <h2>Approve initial rules</h2>
-            <p className="muted">Confirm the vendor/account mapping so future matches apply automatically.</p>
-            <RemapForm onSubmit={(v) => void approveRule(v)} onCancel={() => void goStep('complete')} busy={busy} />
-            <button disabled={busy} style={{ marginTop: 12 }} onClick={() => void goStep('complete')}>
-              Continue
-            </button>
-          </>
-        ) : null}
-
-        {step === 'complete' ? (
-          <>
-            <p className="muted step-explainer">{STEP_EXPLAINER.complete}</p>
-            <h2>Enable auto-post</h2>
-            <p className="muted">
-              Choose how much AP Hub may do on its own. Posting is locked (DRY_RUN_LOCKED) until you pick anything
-              other than Off.
-            </p>
-            <div className="btn-row">
-              <button disabled={busy} onClick={() => void goStep('complete', 'off')}>
-                Off — review everything
-              </button>
-              <button className="primary" disabled={busy} onClick={() => void goStep('complete', 'assisted')}>
-                Assisted — auto-post high-confidence items
-              </button>
-              <button disabled={busy} onClick={() => void goStep('complete', 'auto')}>
-                Auto — post whenever the pipeline says ready
-              </button>
+            <div className="count-card">
+              <div className="n">{dryRun.invoicesFound}</div>
+              <div className="l">Invoices found</div>
             </div>
-            {state.automationLevel !== 'off' ? (
-              <p className="notice good" style={{ marginTop: 12 }}>
-                Setup complete. Automation level: {state.automationLevel}.
-              </p>
-            ) : null}
-          </>
-        ) : null}
-      </div>
+            <div className="count-card">
+              <div className="n">{dryRun.vendorsMatched}</div>
+              <div className="l">Vendors matched</div>
+            </div>
+            <div className="count-card">
+              <div className="n">{dryRun.proposalsCreated}</div>
+              <div className="l">Proposals created</div>
+            </div>
+          </div>
+
+          <h3 style={{ marginTop: 16 }}>Review a sample</h3>
+          {sampleProposalId != null ? (
+            <EvidencePanel proposalId={sampleProposalId} />
+          ) : (
+            <p className="muted">No sample proposal available yet.</p>
+          )}
+
+          <h3 style={{ marginTop: 16 }}>Approve an initial rule (optional)</h3>
+          <RemapForm onSubmit={(v) => void approveRule(v)} onCancel={() => setNotice(null)} busy={busy} />
+
+          <p className="notice warn" style={{ marginTop: 16 }}>
+            Automation is OFF — turn it on in <a href="/settings">Settings</a> when you&apos;re ready.
+          </p>
+        </div>
+      )}
     </div>
   );
 }
