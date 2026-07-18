@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-16"?>
+<!--
+  aphub-watchdog.xml — non-elevated Task Scheduler definition (CHUNK_7).
+
+  Runs the supervisor (start-aphub.ps1) at logon AND every 5 minutes as a safety net:
+  if the supervisor itself is force-killed, the 5-minute trigger relaunches it (a cold
+  start; the supervisor then finds no live children and restarts all three, emitting
+  watchdog_restart reason=cold_start). RunLevel=LeastPrivilege = NO elevation, NO UAC.
+  MultipleInstancesPolicy=IgnoreNew means a fire while the supervisor is already running
+  is ignored (the supervisor's own supervisor.lock is belt-and-braces).
+
+  install-pilot.ps1 substitutes __SUPERVISOR_PATH__ and __WORKDIR__ before importing.
+-->
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Description>AP-Hub pilot supervisor watchdog (non-elevated). Keeps the three pilot processes alive.</Description>
+    <URI>\APHubWatchdog</URI>
+  </RegistrationInfo>
+  <Triggers>
+    <LogonTrigger>
+      <Enabled>true</Enabled>
+      <Repetition>
+        <Interval>PT5M</Interval>
+        <StopAtDurationEnd>false</StopAtDurationEnd>
+      </Repetition>
+    </LogonTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author">
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>LeastPrivilege</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+    <AllowStartOnDemand>true</AllowStartOnDemand>
+    <Enabled>true</Enabled>
+    <Hidden>false</Hidden>
+    <RunOnlyIfIdle>false</RunOnlyIfIdle>
+    <WakeToRun>false</WakeToRun>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <Priority>7</Priority>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>powershell.exe</Command>
+      <Arguments>-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "__SUPERVISOR_PATH__"</Arguments>
+      <WorkingDirectory>__WORKDIR__</WorkingDirectory>
+    </Exec>
+  </Actions>
+</Task>
