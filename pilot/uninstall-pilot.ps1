@@ -1,5 +1,5 @@
 <#
-  uninstall-pilot.ps1 — remove the AP-Hub pilot (CHUNK_7). NON-elevated.
+  uninstall-pilot.ps1 - remove the AP-Hub pilot (CHUNK_7). NON-elevated.
 
   Default: unregister the watchdog task, stop the supervisor + child processes, and STOP.
   It PRESERVES all local accounting data by default. Deleting the data (the Postgres
@@ -41,7 +41,7 @@ if (-not $PurgeData) {
 if (-not $NonInteractive) {
   Write-Host "This will PERMANENTLY DELETE all local AP-Hub data under $AppDir." -ForegroundColor Red
   $confirm = Read-Host 'Type DELETE ALL DATA to confirm'
-  if ($confirm -ne 'DELETE ALL DATA') { Write-Host 'Confirmation not given — data preserved.'; return }
+  if ($confirm -ne 'DELETE ALL DATA') { Write-Host 'Confirmation not given - data preserved.'; return }
 }
 
 Remove-Item -Recurse -Force $AppDir -ErrorAction SilentlyContinue

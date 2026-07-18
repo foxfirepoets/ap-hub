@@ -1,5 +1,5 @@
 <#
-  start-aphub.ps1 — AP-Hub pilot supervisor (CHUNK_7). NON-elevated.
+  start-aphub.ps1 - AP-Hub pilot supervisor (CHUNK_7). NON-elevated.
 
   Supervises the three pilot processes and keeps them alive:
     - postgres.exe  -D <data\pg>  -p 55432   (portable Postgres, private port)
@@ -11,7 +11,7 @@
   - Emits an `alive` heartbeat every 60s and a `watchdog_restart` on any restart
     (reason=cold_start when it launches everything from a cold machine).
   - Heartbeat sends are FAIL-SAFE: a broker error or outage is logged and dropped and
-    NEVER stops supervision. No API keys are ever read or sent — telemetry is liveness only.
+    NEVER stops supervision. No API keys are ever read or sent - telemetry is liveness only.
 #>
 [CmdletBinding()]
 param(
@@ -20,6 +20,10 @@ param(
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+
+# Windows PowerShell 5.1 defaults to TLS 1.0/1.1; the broker (and any modern HTTPS host)
+# requires TLS 1.2+. Without this, Invoke-RestMethod to https://...onrender.com times out.
+[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
 $RunDir   = Join-Path $AppDir 'run'
 $LogDir   = Join-Path $AppDir 'logs'
@@ -65,7 +69,7 @@ function Send-Heartbeat {
     if ($Detail) { $body.detail = $Detail }
     Invoke-RestMethod -Method Post -Uri ("{0}/v1/heartbeat" -f $script:BrokerBaseUrl.TrimEnd('/')) `
       -Headers @{ Authorization = "Bearer $script:BrokerToken" } `
-      -ContentType 'application/json' -Body ($body | ConvertTo-Json -Compress) -TimeoutSec 5 | Out-Null
+      -ContentType 'application/json' -Body ($body | ConvertTo-Json -Compress) -TimeoutSec 15 | Out-Null
   } catch {
     Write-Warning "heartbeat '$Event' dropped: $($_.Exception.Message)"
   }
@@ -118,7 +122,7 @@ $stop = $false
 $null = Register-EngineEvent -SourceIdentifier ([System.Management.Automation.PsEngineEvent]::Exiting) -Action { $script:stop = $true }
 
 try {
-  # Cold start: nothing is listening yet → start all three, emit cold_start.
+  # Cold start: nothing is listening yet -> start all three, emit cold_start.
   $coldStart = -not (Test-PortListening -Port $PgPort)
   foreach ($label in 'postgres','backend','ui') {
     $children[$label] = & $starters[$label]

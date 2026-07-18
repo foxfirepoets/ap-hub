@@ -1,11 +1,11 @@
 # Ralph State
 
-**Current Iteration:** 7
+**Current Iteration:** 8
 
-Current chunk: CHUNK_8_DEPLOY (OWNER-GATED: Render deploy + on-machine pilot + reboot)
-Current task: 0 of (not yet started)
-Last completed: CHUNK_7_HARNESS — HostAdapter seam (Windows+macOS) + pilot .ps1/.xml harness. ap-hub 239/239; broker 39/39; contract suite green on Windows.
-Status: CHUNK_COMPLETE (CHUNK_7) → next CHUNK_8_DEPLOY (needs operator approval for deploy + reboot)
+Current chunk: CHUNK_8_DEPLOY — COMPLETE (with documented caveats)
+Current task: done
+Last completed: CHUNK_8_DEPLOY — broker LIVE+keyless on Render (aphub-broker.onrender.com; health/token/bearer/revoke verified); on-machine pilot verified (portable PG 55432 no-collision, 3 procs, heartbeats at deployed broker, kill-recovery ~20s, key-grep=0, soak started).
+Status: ALL 8 CHUNKS COMPLETE. Caveated/deferred per plan: clean-machine install, non-admin/no-UAC, watchdog task registration (denied in automation session), reboot-recovery (fresh-session).
 
 ## History
 - CHUNK_1_BASELINE: 212/212 baseline verified + .env.example port drift fixed (3000→3001). Commit 1beffd6.

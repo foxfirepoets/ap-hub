@@ -1,5 +1,5 @@
 <#
-  install-pilot.ps1 — AP-Hub pilot installer (CHUNK_7). NON-elevated; requests NO UAC.
+  install-pilot.ps1 - AP-Hub pilot installer (CHUNK_7). NON-elevated; requests NO UAC.
 
   Installs a self-contained pilot into %LOCALAPPDATA%\APHub:
     - consent screen (must type "I AGREE"; lists exactly what telemetry is collected)
@@ -18,6 +18,10 @@
 param(
   [Parameter(Mandatory = $true)][string]$BrokerBaseUrl,
   [Parameter(Mandatory = $true)][string]$InstallToken,
+  # Gmail OAuth client (the operator's app credentials - NOT an LLM/SwarmSync API key).
+  # Required for the tester to connect Gmail; placeholders let the service boot idle.
+  [string]$GmailClientId = 'pilot-placeholder-gmail-id',
+  [string]$GmailClientSecret = 'pilot-placeholder-gmail-secret',
   # Portable runtimes: local zip paths (preferred for an offline install) or https URLs.
   [string]$NodeZip = $env:APHUB_NODE_ZIP,
   [string]$PostgresZip = $env:APHUB_PG_ZIP,
@@ -50,7 +54,7 @@ $telemetry = @'
 AP-Hub pilot collects LIVENESS TELEMETRY ONLY, sent to the key broker:
   - event: one of alive | watchdog_restart | pg_health | shutdown
   - pg_ok: whether the local database answered a health check
-  - detail: a short status code (e.g. "backend_exit_1") — never invoice content
+  - detail: a short status code (e.g. "backend_exit_1") - never invoice content
   - tz_offset_minutes: your timezone offset, to compute business-hours uptime
 It NEVER collects invoice content, vendor names, amounts, emails, or API keys.
 No accounting API keys are ever stored on this machine.
@@ -70,7 +74,7 @@ foreach ($port in @($PgPort, $BackendPort, $UiPort)) {
   $c = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
   if ($c) {
     $p = Get-Process -Id $c.OwningProcess -ErrorAction SilentlyContinue
-    Fail ("port {0} is already in use by PID {1} ({2}). Free it and re-run — the pilot will not silently move ports (it would break the OAuth redirect URI)." -f $port, $c.OwningProcess, $p.ProcessName)
+    Fail ("port {0} is already in use by PID {1} ({2}). Free it and re-run - the pilot will not silently move ports (it would break the OAuth redirect URI)." -f $port, $c.OwningProcess, $p.ProcessName)
   }
 }
 
@@ -80,6 +84,7 @@ New-Item -ItemType Directory -Force -Path $AppDir, $BinDir, $RunDir, $LogDir, (S
 & icacls "$AppDir" /inheritance:r /grant:r "$($env:USERNAME):(OI)(CI)F" | Out-Null
 
 # --- 5. Portable Node + Postgres ---
+Add-Type -AssemblyName System.IO.Compression.FileSystem
 function Install-Portable([string]$src, [string]$destName) {
   if (-not $src) { Fail "missing runtime source for $destName (pass -NodeZip/-PostgresZip or set APHUB_NODE_ZIP/APHUB_PG_ZIP)" }
   $zip = $src
@@ -89,24 +94,39 @@ function Install-Portable([string]$src, [string]$destName) {
   }
   $dest = Join-Path $BinDir $destName
   if (Test-Path $dest) { Remove-Item -Recurse -Force $dest }
-  Expand-Archive -Path $zip -DestinationPath $dest -Force
+  # ZipFile::ExtractToDirectory is far faster than Expand-Archive on large archives
+  # (the PostgreSQL binaries zip is ~300 MB).
+  [System.IO.Compression.ZipFile]::ExtractToDirectory($zip, $dest)
 }
 Install-Portable $NodeZip 'node'
 Install-Portable $PostgresZip 'pgsql'
 
-# Flatten single-root zips (e.g. node-v20.x-win-x64\...) so bin\node\node.exe is stable.
+# Flatten single-root zips so the expected executables are at a stable path:
+#   bin\node\node.exe        (node zip roots at node-v20.x-win-x64\node.exe)
+#   bin\pgsql\bin\postgres.exe (EDB pg zip roots at pgsql\bin\postgres.exe)
+$markers = @{ node = 'node.exe'; pgsql = 'bin\postgres.exe' }
 foreach ($d in @('node','pgsql')) {
   $root = Join-Path $BinDir $d
-  $inner = Get-ChildItem $root -Directory | Where-Object { Test-Path (Join-Path $_.FullName 'bin') -PathType Container -ErrorAction SilentlyContinue } | Select-Object -First 1
-  if (-not (Test-Path (Join-Path $root 'bin')) -and $inner) {
-    Get-ChildItem $inner.FullName | Move-Item -Destination $root -Force
+  if (-not (Test-Path (Join-Path $root $markers[$d]))) {
+    $inner = Get-ChildItem $root -Directory | Select-Object -First 1
+    if ($inner) {
+      Get-ChildItem $inner.FullName -Force | Move-Item -Destination $root -Force
+      Remove-Item $inner.FullName -Recurse -Force -ErrorAction SilentlyContinue
+    }
   }
 }
 
-# --- 6. Copy the app code (excluding local data) ---
+# --- 6. Copy the app code (excluding local data AND any .env) ---
+# CRITICAL: never copy a source .env into the pilot - a developer/source .env can carry
+# real API keys, and the pilot must hold NO API keys on disk. The pilot's own keyless
+# .env is generated fresh at $AppDir\.env below (loaded by the supervisor into the
+# child env; the app's dotenv.config() then finds no .env in $AppCode and no-ops).
 if (Test-Path $AppCode) { Remove-Item -Recurse -Force $AppCode }
 New-Item -ItemType Directory -Force -Path $AppCode | Out-Null
-robocopy $AppSource $AppCode /E /XD node_modules .git data (Join-Path $AppSource 'pilot\data') /NFL /NDL /NJH /NJS /NC /NS | Out-Null
+# Exclude dev-only trees: node_modules (reinstalled), .git, local data, and the test
+# suites (a pilot never runs them, and their fixtures contain literal key-shaped strings
+# like "ssk_live_testkey123" that would otherwise show up in a key-custody scan).
+robocopy $AppSource $AppCode /E /XD node_modules .git data test e2e coverage playwright-report (Join-Path $AppSource 'pilot\data') /XF .env .env.* *.local /NFL /NDL /NJH /NJS /NC /NS | Out-Null
 
 # --- 7. initdb the private cluster ---
 $initdb = Join-Path $BinDir 'pgsql\bin\initdb.exe'
@@ -136,14 +156,16 @@ $env:PGPASSWORD = 'aphub'
   if ($_ -ne '1') { & $psql -h 127.0.0.1 -p $PgPort -U aphub -d postgres -c 'CREATE DATABASE aphub' | Out-Null }
 }
 
-# --- 9. Write .env — broker URL + install token; NO API keys, ever ---
+# --- 9. Write .env - broker URL + install token; NO API keys, ever ---
 $encKey = -join ((1..64) | ForEach-Object { '{0:x}' -f (Get-Random -Max 16) })
 @"
-# AP-Hub pilot .env — generated by install-pilot.ps1. NO API keys live here.
+# AP-Hub pilot .env - generated by install-pilot.ps1. NO API keys live here.
 DATABASE_URL=postgres://aphub:aphub@127.0.0.1:$PgPort/aphub
 BROKER_BASE_URL=$BrokerBaseUrl
 BROKER_INSTALL_TOKEN=$InstallToken
 ENCRYPTION_KEY=$encKey
+GMAIL_CLIENT_ID=$GmailClientId
+GMAIL_CLIENT_SECRET=$GmailClientSecret
 PORT=$BackendPort
 QBO_ENV=sandbox
 LOG_LEVEL=info
@@ -160,14 +182,21 @@ function Protect-Secret([string]$name, [string]$value) {
 Protect-Secret 'encryption_key' $encKey
 Protect-Secret 'broker_install_token' $InstallToken
 
-# --- 10. Install deps + run migrations ---
+# --- 10. Install deps, build the UI, run migrations ---
+# devDependencies ARE needed at runtime: the backend runs via tsx (src/index.ts) and
+# the UI is served by `next start`, which requires a production build first. Playwright
+# browsers are not needed by the pilot, so skip that heavy postinstall download.
 $node = Join-Path $BinDir 'node\node.exe'
 $npm  = Join-Path $BinDir 'node\npm.cmd'
 Push-Location $AppCode
-& $npm install --omit=dev --no-audit --no-fund | Out-Null
+$env:PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = '1'
 $env:DATABASE_URL = "postgres://aphub:aphub@127.0.0.1:$PgPort/aphub"
+& $npm install --no-audit --no-fund | Out-Null
+if ($LASTEXITCODE -ne 0) { Pop-Location; Fail 'npm install failed.' }
+& $npm run web:build | Out-Null
+if ($LASTEXITCODE -ne 0) { Pop-Location; Fail 'web:build (next build) failed - UI cannot start without it.' }
 & $npm run migrate:up | Out-Null
-if ($LASTEXITCODE -ne 0) { Pop-Location; Fail 'migrations failed — install aborted (no half-migrated state left running).' }
+if ($LASTEXITCODE -ne 0) { Pop-Location; Fail 'migrations failed - install aborted (no half-migrated state left running).' }
 Pop-Location
 
 # --- 11. Register the non-elevated watchdog + start the supervisor ---
