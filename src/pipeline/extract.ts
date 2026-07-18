@@ -207,11 +207,11 @@ export async function extractOnce(
 
 export async function extractHandler(job: { data: ExtractJob }): Promise<void> {
   const { config } = await import('../config.js');
-  const { getAnthropicExtractor } = await import('../extract/model.js');
+  const { getExtractor } = await import('../extract/model.js');
   const { swarmsync } = await import('../services.js');
   const { getQueue } = await import('../queue.js');
   const cfg = config();
-  const extractor = await getAnthropicExtractor(cfg.ANTHROPIC_API_KEY);
+  const extractor = await getExtractor(cfg);
   await extractOnce(job.data.tenantId, job.data, {
     extractor,
     verify: (output, evidence) => swarmsync().verifyDocument(output, evidence),

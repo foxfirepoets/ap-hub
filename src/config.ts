@@ -24,7 +24,9 @@ const RawSchema = z.object({
   ENCRYPTION_KEY: z
     .string()
     .min(64, 'ENCRYPTION_KEY must be a 32-byte hex string (64 hex chars). Generate: openssl rand -hex 32'),
-  ANTHROPIC_API_KEY: z.string().min(1, 'ANTHROPIC_API_KEY is required'),
+  // Optional so BROKER MODE (keys held by the broker) can boot without it. In
+  // DIRECT mode (no BROKER_BASE_URL) it is required — enforced post-parse below.
+  ANTHROPIC_API_KEY: z.string().default(''),
 
   // --- Gmail (read-only in all phases; send scope added only for the gatekeeper relay) ---
   GMAIL_CLIENT_ID: z.string().min(1, 'GMAIL_CLIENT_ID is required'),
@@ -45,6 +47,12 @@ const RawSchema = z.object({
   SWARMSYNC_API_BASE: z.string().url().default('https://api.swarmsync.ai'),
   SWARMSYNC_WEB_BASE: z.string().url().default('https://swarmsync.ai'),
   SWARMSYNC_API_KEY: z.string().default(''),
+
+  // --- Key broker (CHUNK_4): when BROKER_BASE_URL is set, ap-hub runs in BROKER
+  // MODE — Claude + SwarmSync(verify/proof) calls go through the broker, which
+  // holds the keys, and no ANTHROPIC/SWARMSYNC key need live on this machine.
+  BROKER_BASE_URL: z.string().url().optional(),
+  BROKER_INSTALL_TOKEN: z.string().default(''),
 
   // --- Phase 0.5 gatekeeper (proof-gated forwarding relay) ---
   GATEKEEPER_ENABLED: boolish(false),
@@ -94,6 +102,22 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     throw new ConfigError(
       `QBO_ENV="${cfg.QBO_ENV}" is refused. This build only ever writes to a QuickBooks ` +
         `SANDBOX company; there is no production write path. Set QBO_ENV=sandbox.`,
+    );
+  }
+
+  // Broker URL, when set, must be https — except http://127.0.0.1 for local tests.
+  if (cfg.BROKER_BASE_URL) {
+    const isHttps = cfg.BROKER_BASE_URL.startsWith('https://');
+    const isLocalTest = cfg.BROKER_BASE_URL.startsWith('http://127.0.0.1');
+    if (!isHttps && !isLocalTest) {
+      throw new ConfigError(
+        `BROKER_BASE_URL must be https:// (or http://127.0.0.1 in tests); got "${cfg.BROKER_BASE_URL}".`,
+      );
+    }
+  } else if (!cfg.ANTHROPIC_API_KEY) {
+    // DIRECT mode (no broker) requires a local Anthropic key.
+    throw new ConfigError(
+      'ANTHROPIC_API_KEY is required in direct mode. Set it, or set BROKER_BASE_URL to run in broker mode.',
     );
   }
 

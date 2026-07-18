@@ -1,11 +1,11 @@
 # Ralph State
 
-**Current Iteration:** 3
+**Current Iteration:** 4
 
-Current chunk: CHUNK_4_BROKERMODE
+Current chunk: CHUNK_5_CONNECTOR
 Current task: 0 of (not yet started)
-Last completed: CHUNK_3_BROKERPROXY — fail-closed proxy routes + spend cap + rate limit. broker 27/27; ap-hub 212/212; lint/typecheck/web:build green.
-Status: CHUNK_COMPLETE (CHUNK_3) → next CHUNK_4_BROKERMODE
+Last completed: CHUNK_4_BROKERMODE — ap-hub broker-mode rewiring; 4 outage cases HOLD. ap-hub 221/221; broker 27/27; green.
+Status: CHUNK_COMPLETE (CHUNK_4) → next CHUNK_5_CONNECTOR
 
 ## History
 - CHUNK_1_BASELINE: 212/212 baseline verified + .env.example port drift fixed (3000→3001). Commit 1beffd6.

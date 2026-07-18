@@ -49,6 +49,8 @@ const SENSITIVE_KEYS = new Set(
 
 const TOKEN_PATTERNS: RegExp[] = [
   /\bssk_(live|test)_[A-Za-z0-9]+/g, // SwarmSync API keys
+  /\baph_[A-Za-z0-9_-]{20,}/g, // broker install tokens (CHUNK_4)
+  /\bsk-ant-[A-Za-z0-9_-]+/g, // Anthropic API keys
   /\bBearer\s+[A-Za-z0-9._-]+/gi, // bearer tokens
   /\b\d{6,}:[A-Za-z0-9_-]{20,}/g, // Telegram bot token form 123456:ABC...
   /\b[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\b/g, // JWT-ish

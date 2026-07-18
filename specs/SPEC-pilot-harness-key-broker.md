@@ -451,9 +451,15 @@ GET /health — Auth: none
 200: { status: "ok", db: true } | 503 { status: "degraded", db: false }
 
 POST /v1/extract — Auth: bearer
-Req: { bytes_b64?: string, mime?: string, bodyText?: string, docTypeHint?: string, directionHint?: string }
-200: <raw model JSON, verbatim — the pipeline's validateRaw() parses it, the broker does not>
-400 VALIDATION | 401 UNAUTHENTICATED | 403 TOKEN_REVOKED | 429 RATE_LIMITED | 429 SPEND_CAP_EXCEEDED | 502 UPSTREAM_FAILED | 503 DEGRADED
+Req: an Anthropic Messages API request object { model, max_tokens, messages, ... }
+     (built by ap-hub's getBrokerExtractor via the SHARED buildAnthropicRequest() — so the
+     extraction prompt + vision-content logic lives in ONE place, src/extract/model.ts. The
+     broker is a thin passthrough: it injects the Anthropic key and forwards to
+     api.anthropic.com/v1/messages. This replaces the earlier {bytes_b64,...} draft shape —
+     forwarding the built request keeps the broker from duplicating prompt logic, per §4's
+     thin-passthrough rule. [Implemented CHUNK_3/CHUNK_4, 2026-07-18.])
+200: <raw Anthropic Messages response, verbatim — ap-hub parses the text block → JSON>
+400 VALIDATION (body not a JSON object) | 401 UNAUTHENTICATED | 403 TOKEN_REVOKED | 429 RATE_LIMITED | 429 SPEND_CAP_EXCEEDED | 502 UPSTREAM_FAILED | 503 DEGRADED
 Rate limit: 60/min/install. Spend: counted against weekly_cap_usd.
 
 POST /api/verify — Auth: bearer   (path mirrors SwarmSync exactly so SwarmSyncClient needs no code change)
