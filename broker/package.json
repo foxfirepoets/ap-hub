@@ -1,0 +1,29 @@
+{
+  "name": "@ap-hub/broker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "AP-Hub key broker — holds Ben's Anthropic + SwarmSync keys, per-install bearer-token auth, pilot telemetry. No business data ever stored.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "migrate:up": "tsx src/db.ts up",
+    "cli": "tsx src/cli.ts"
+  },
+  "dependencies": {
+    "commander": "^12.1.0",
+    "pg": "^8.13.1",
+    "pino": "^9.5.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/pg": "^8.11.10",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

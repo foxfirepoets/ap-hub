@@ -1,11 +1,14 @@
 # Ralph State
 
-**Current Iteration:** 1
+**Current Iteration:** 2
 
-Current chunk: CHUNK_2_BROKERAUTH
-Current task: 0 of (planning not yet run for CHUNK_2)
-Last completed: CHUNK_1_BASELINE — baseline verified 212/212 + lint + typecheck + web:build all green; .env.example OAuth port drift fixed (3000→3001 on GMAIL_REDIRECT_URI, QBO_SANDBOX_REDIRECT_URI, PORT). Only .env.example changed; zero source/test files touched.
-Status: CHUNK_COMPLETE (CHUNK_1) → next CHUNK_2_BROKERAUTH
+Current chunk: CHUNK_3_BROKERPROXY
+Current task: 0 of (not yet started)
+Last completed: CHUNK_2_BROKERAUTH — broker/ package built (node:http server, Zod config, Pino w/ aph_ redaction, pg + migration runner, installs/heartbeats/spend_ledger migration UP/DOWN verify=3, token issue/revoke/list CLI, bearer auth 401/401/403/200, /health DB probe). broker tests 18/18 green; broker typecheck green; ap-hub suite still 212/212; only broker/ added. Uses separate db aphub_broker on 5432.
+Status: CHUNK_COMPLETE (CHUNK_2) → next CHUNK_3_BROKERPROXY
+
+## History
+- CHUNK_1_BASELINE: 212/212 baseline verified + .env.example port drift fixed (3000→3001). Commit 1beffd6.
 
 ## Baseline (immutable floor)
 
