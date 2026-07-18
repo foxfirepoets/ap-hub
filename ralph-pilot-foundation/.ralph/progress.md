@@ -13,3 +13,6 @@ Total chunks: 8
 
 [2026-07-18T04:37:00Z] CHUNK_2_BROKERAUTH: broker service skeleton + per-install token auth — DONE. broker/ package (node:http, Zod, Pino, pg), migrations 001 UP/DOWN (verify=3), token issue/revoke/list CLI, bearer auth (401/401/403/200), /health. broker tests 18/18 green; typecheck green; ap-hub suite still 212/212; only broker/ added.
 <promise>CHUNK COMPLETE: CHUNK_2_BROKERAUTH</promise>
+
+[2026-07-18T04:55:00Z] CHUNK_3_BROKERPROXY: fail-closed proxy (/v1/extract→Anthropic, /api/verify, /api/scan/invoices, /api/proof/:id/export/verify→SwarmSync), per-install spend cap + rate limit — DONE. broker 27/27 (9 new proxy tests: verbatim passthrough, non-2xx→502, throw→502, empty-200 relayed, cap→429 upstream-not-called, ratelimit→429, malformed→400, db-down→503, chain-verify). ap-hub 212/212; lint/typecheck/web:build green. Note: repointed one CHUNK_2 placeholder broker test (/v1/extract 501 → /v1/heartbeat 501) since /v1/extract is now implemented; additive test helpers. No ap-hub test or src/qbo/write.ts touched.
+<promise>CHUNK COMPLETE: CHUNK_3_BROKERPROXY</promise>

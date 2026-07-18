@@ -38,14 +38,16 @@ describe('broker server', () => {
     expect(r.body).toEqual({ status: 'degraded', db: false });
   });
 
-  it('authed route not implemented in this chunk → 501 NOT_IMPLEMENTED', async () => {
+  it('authed route not yet implemented (heartbeat = CHUNK_6) → 501 NOT_IMPLEMENTED', async () => {
+    // /v1/extract is now implemented (CHUNK_3); /v1/heartbeat remains a placeholder
+    // until CHUNK_6, so it is the honest target for the "authed but unimplemented" case.
     const { token } = await seedInstall();
-    const r = await call('POST', '/v1/extract', `Bearer ${token}`);
+    const r = await call('POST', '/v1/heartbeat', `Bearer ${token}`);
     expect(r.status).toBe(501);
     expect(r.body).toMatchObject({ error: { code: 'NOT_IMPLEMENTED' } });
   });
 
-  it('auth runs FIRST — an unauthed request to a non-health route is 401, never 501', async () => {
+  it('auth runs FIRST — an unauthed request to a non-health route is 401, never 501/400', async () => {
     const r = await call('POST', '/v1/extract');
     expect(r.status).toBe(401);
     expect(r.body).toMatchObject({ error: { code: 'UNAUTHENTICATED' } });

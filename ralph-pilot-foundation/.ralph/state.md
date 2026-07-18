@@ -1,14 +1,16 @@
 # Ralph State
 
-**Current Iteration:** 2
+**Current Iteration:** 3
 
-Current chunk: CHUNK_3_BROKERPROXY
+Current chunk: CHUNK_4_BROKERMODE
 Current task: 0 of (not yet started)
-Last completed: CHUNK_2_BROKERAUTH — broker/ package built (node:http server, Zod config, Pino w/ aph_ redaction, pg + migration runner, installs/heartbeats/spend_ledger migration UP/DOWN verify=3, token issue/revoke/list CLI, bearer auth 401/401/403/200, /health DB probe). broker tests 18/18 green; broker typecheck green; ap-hub suite still 212/212; only broker/ added. Uses separate db aphub_broker on 5432.
-Status: CHUNK_COMPLETE (CHUNK_2) → next CHUNK_3_BROKERPROXY
+Last completed: CHUNK_3_BROKERPROXY — fail-closed proxy routes + spend cap + rate limit. broker 27/27; ap-hub 212/212; lint/typecheck/web:build green.
+Status: CHUNK_COMPLETE (CHUNK_3) → next CHUNK_4_BROKERMODE
 
 ## History
 - CHUNK_1_BASELINE: 212/212 baseline verified + .env.example port drift fixed (3000→3001). Commit 1beffd6.
+- CHUNK_2_BROKERAUTH: broker skeleton + per-install token auth. broker 18/18. Commit 2beae0e.
+- CHUNK_3_BROKERPROXY: /v1/extract→Anthropic + 3 SwarmSync proxy routes; upstream.ts fail-closed invariant (never 2xx on upstream failure); spend.ts weekly cap; ratelimit.ts 60/min. broker 27/27 (9 new). Key design: /v1/extract forwards an Anthropic Messages request (prompt-building stays in ap-hub, one place) — spec §12 to align in CHUNK_4.
 
 ## Baseline (immutable floor)
 
