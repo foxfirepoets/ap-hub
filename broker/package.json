@@ -9,6 +9,7 @@
   },
   "scripts": {
     "test": "vitest run",
+    "start": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
     "migrate:up": "tsx src/db.ts up",
     "cli": "tsx src/cli.ts"

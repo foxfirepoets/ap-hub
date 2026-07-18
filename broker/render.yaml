@@ -1,0 +1,43 @@
+# AP-Hub key broker — Render Blueprint (CHUNK_8).
+#
+# Reproducible deploy: `render blueprint launch` against this file stands up the broker
+# web service + a managed Postgres, with the same env contract as broker/.env.example.
+# Secrets (ANTHROPIC_API_KEY, SWARMSYNC_API_KEY) are `sync: false` — they are set ONLY
+# in the Render dashboard/CLI, NEVER committed here. Moving hosts = re-run this blueprint
+# elsewhere; the broker code is plain Node with no Render-proprietary runtime API.
+#
+# PORT is injected by Render and read by src/config.ts; do not hard-code it.
+
+databases:
+  - name: aphub-broker-db
+    plan: free
+    region: oregon
+    postgresMajorVersion: "16"
+
+services:
+  - type: web
+    name: aphub-broker
+    runtime: node
+    plan: free
+    region: oregon
+    rootDir: broker
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: false
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: aphub-broker-db
+          property: connectionString
+      - key: SWARMSYNC_API_BASE
+        value: https://api.swarmsync.ai
+      - key: SWARMSYNC_WEB_BASE
+        value: https://swarmsync.ai
+      - key: LOG_LEVEL
+        value: info
+      # Operator-supplied secrets — set in Render only, never in git.
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: SWARMSYNC_API_KEY
+        sync: false
