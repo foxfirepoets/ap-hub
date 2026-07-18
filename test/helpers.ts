@@ -2,10 +2,12 @@ import { query, closePool } from '../src/db/pool.js';
 
 /** Truncate all domain tables between tests (keeps schema + _migrations). */
 export async function resetTables(): Promise<void> {
+  // `postings_ap` is the base table (migration 006); `postings` is a back-compat view
+  // over it, so TRUNCATE targets the base table. `connections` is truncated too.
   await query(`
-    TRUNCATE sessions, users, forwards, proof_refs, postings, reconciliation, corrections,
+    TRUNCATE sessions, users, forwards, proof_refs, postings_ap, reconciliation, corrections,
              exceptions, proposals, extractions, mappings, attachments, attachment_blobs,
-             messages, oauth_tokens, audit_log, llm_calls, notifications, tenants RESTART IDENTITY CASCADE;
+             messages, oauth_tokens, audit_log, llm_calls, notifications, connections, tenants RESTART IDENTITY CASCADE;
   `);
 }
 

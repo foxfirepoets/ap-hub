@@ -17,6 +17,7 @@
     "test": "vitest run",
     "test:int": "vitest run --mode integration",
     "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\"",
+    "lint:noleak": "node scripts/lint-noleak.mjs",
     "typecheck": "tsc --noEmit",
     "build": "tsc -p tsconfig.build.json",
     "web:dev": "next dev",

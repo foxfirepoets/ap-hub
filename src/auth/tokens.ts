@@ -7,7 +7,7 @@ import { config } from '../config.js';
  * encrypted at rest; on QBO refresh the newest rotated refresh token is persisted.
  */
 
-export type Provider = 'gmail' | 'qbo';
+export type Provider = 'gmail' | 'qbo' | 'xero' | 'sage_intacct' | 'qbd';
 
 export interface StoredToken {
   accessToken: string;

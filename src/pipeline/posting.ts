@@ -212,10 +212,13 @@ async function recordPosting(
   response: unknown,
   status = 'posted_sandbox',
 ): Promise<number> {
+  // Writes go to the base table `postings_ap` (provider-neutral columns). The old
+  // `postings(qbo_*)` names remain available via the back-compat view; ON CONFLICT is
+  // not supported on views, so the upsert targets the base table directly.
   const res = await query<{ id: number }>(
-    `INSERT INTO postings (tenant_id, attachment_id, proposal_id, qbo_type, qbo_id, sync_token, realm, mode, idempotency_key, status, request, response, posted_at)
+    `INSERT INTO postings_ap (tenant_id, attachment_id, proposal_id, entity_type, external_id, revision, realm, mode, idempotency_key, status, request, response, posted_at)
      VALUES ($1,$2,$3,$4,$5,$6,$7,'sandbox',$8,$9,$10,$11, now())
-     ON CONFLICT (tenant_id, idempotency_key) DO UPDATE SET qbo_id=EXCLUDED.qbo_id, sync_token=EXCLUDED.sync_token
+     ON CONFLICT (tenant_id, idempotency_key) DO UPDATE SET external_id=EXCLUDED.external_id, revision=EXCLUDED.revision
      RETURNING id`,
     [
       tenantId,
