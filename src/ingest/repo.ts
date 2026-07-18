@@ -1,5 +1,7 @@
 import { withTransaction } from '../db/pool.js';
 import { sha256Hex } from '../crypto.js';
+import { config } from '../config.js';
+import { raiseException } from '../exceptions.js';
 import type { GmailMessage, GmailAttachment } from '../gmail/client.js';
 
 /**
@@ -39,7 +41,7 @@ export async function persistMessage(
     const attachmentIds: number[] = [];
     for (const att of msg.attachments) {
       const id = await insertAttachment(client, tenantId, messageId, att);
-      attachmentIds.push(id);
+      if (id !== null) attachmentIds.push(id);
     }
     return { messageId, isNew: true, bodyOnly, attachmentIds };
   });
@@ -50,7 +52,21 @@ async function insertAttachment(
   tenantId: number,
   messageId: number,
   att: GmailAttachment,
-): Promise<number> {
+): Promise<number | null> {
+  // Defense-in-depth (FIX-F8): the adapter already skips oversized attachments before
+  // fetching bytes; this guard catches anything that still arrives oversized (e.g. a
+  // GmailClient implementation that didn't check) so we never buffer it into the DB.
+  const maxBytes = config().MAX_ATTACHMENT_BYTES;
+  if (att.data.length > maxBytes) {
+    await raiseException({
+      tenantId,
+      reasonCode: 'attachment_failed',
+      entityRef: `message:${messageId}`,
+      detail: `attachment "${att.filename}" (${att.data.length} bytes) exceeds MAX_ATTACHMENT_BYTES (${maxBytes}); not stored`,
+    });
+    return null;
+  }
+
   const sha = sha256Hex(att.data);
 
   // Store bytes once, keyed by hash.

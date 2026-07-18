@@ -33,6 +33,9 @@ const RawSchema = z.object({
   GMAIL_CLIENT_SECRET: z.string().min(1, 'GMAIL_CLIENT_SECRET is required'),
   GMAIL_REDIRECT_URI: z.string().url().default('http://localhost:3001/oauth/gmail/callback'),
   WATCHED_LABEL: z.string().default('AP-Inbox'),
+  // Resource-exhaustion guard (FIX-F8): attachments larger than this are skipped, not
+  // fetched/stored. Default matches Gmail's own per-message attachment ceiling (25MB).
+  MAX_ATTACHMENT_BYTES: z.coerce.number().int().positive().default(25 * 1024 * 1024),
 
   // --- QBO (read-only lists in P1; SANDBOX writes in P2) ---
   QBO_ENV: z.string().default('sandbox'),

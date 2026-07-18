@@ -2,6 +2,7 @@ import { config } from '../config.js';
 import { loadToken, saveToken } from '../auth/tokens.js';
 import { GmailAuthError, type GmailClient, type GmailMessage } from './client.js';
 import { GMAIL_READONLY_SCOPE } from '../auth/gmail-oauth.js';
+import { raiseException } from '../exceptions.js';
 
 /**
  * Real googleapis-backed Gmail adapter. Built lazily (heavy SDK) and only used at
@@ -92,6 +93,17 @@ export async function getGmailClient(tenantId: number): Promise<GmailClient> {
         let bodyText = '';
         for (const part of parts) {
           if (part.filename && part.body?.attachmentId) {
+            const reportedSize = part.body.size ?? 0;
+            if (reportedSize > cfg.MAX_ATTACHMENT_BYTES) {
+              // Skip the fetch entirely — never pull oversized bytes into memory.
+              await raiseException({
+                tenantId,
+                reasonCode: 'attachment_failed',
+                entityRef: `gmail:${id}`,
+                detail: `attachment "${part.filename}" (${reportedSize} bytes) exceeds MAX_ATTACHMENT_BYTES (${cfg.MAX_ATTACHMENT_BYTES}); skipped, not fetched`,
+              });
+              continue;
+            }
             const att = await gmail.users.messages.attachments.get({
               userId: 'me',
               messageId: id,

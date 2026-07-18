@@ -60,6 +60,15 @@ export function runConnectorContract(name: string, makeConnector: () => Accounti
       expect(accounts.length).toBeGreaterThan(0);
     });
 
+    it('never silently no-ops a declared-but-unimplemented read: undeclared entities either return real records or throw/refuse — never []', async () => {
+      const c = makeConnector();
+      const caps = c.capabilities();
+      for (const entity of ['bill', 'bill_line', 'attachment'] as const) {
+        if (caps.read.includes(entity)) continue; // declared support must be exercised elsewhere
+        await expect(c.read(entity)).rejects.toBeTruthy();
+      }
+    });
+
     it('verifyCompanyIdentity matches the expected company', async () => {
       const c = makeConnector();
       expect(await c.verifyCompanyIdentity({ name: expectedCompany })).toBe('match');

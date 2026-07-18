@@ -1,5 +1,5 @@
 import { config } from '../config.js';
-import { loadToken } from '../auth/tokens.js';
+import { getFreshQboToken } from '../auth/qbo-refresh.js';
 
 /**
  * CHUNK_7 QBO SANDBOX writer. This is the ONLY module that writes to QuickBooks, and
@@ -94,7 +94,9 @@ export function createQboWriteClient(deps: QboWriteDeps): QboWriteClient {
       return (data?.QueryResponse?.[type] ?? []) as Array<Record<string, unknown>>;
     },
     async attach(txnType, txnId, _pdf, filename) {
-      // Attachable upload (multipart). Kept minimal; real multipart body assembled here.
+      // Creates the Attachable metadata/reference only — links a filename to the txn.
+      // The file bytes (`_pdf`) are NOT uploaded: this sends JSON, not a multipart
+      // body. Real multipart file upload is a follow-up (see CHUNK_7 notes).
       const meta = {
         AttachableRef: [{ EntityRef: { type: txnType, value: txnId } }],
         FileName: filename,
@@ -120,8 +122,8 @@ function capitalize(s: string): string {
 
 export async function getQboWriteClient(tenantId: number): Promise<QboWriteClient> {
   const cfg = config();
-  const tok = await loadToken(tenantId, 'qbo');
-  if (!tok) throw new Error('QBO not connected for tenant');
+  // QBO access tokens expire (~60 min); refresh when expired/near-expiry before use.
+  const tok = await getFreshQboToken(tenantId);
   return createQboWriteClient({
     qboEnv: cfg.QBO_ENV,
     accessToken: tok.accessToken,

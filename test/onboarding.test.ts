@@ -5,6 +5,7 @@ import { createSession } from '../src/auth/session.js';
 import type { QboWriteClient } from '../src/qbo/write.js';
 import type { PostDeps } from '../src/pipeline/posting.js';
 import type { DryRunDeps } from '../src/services/onboarding.js';
+import { advanceOnboardingStep } from '../src/services/onboarding.js';
 import {
   runOnboardingGet,
   runOnboardingStep,
@@ -264,4 +265,48 @@ describe('CHUNK_6 onboarding — DRY_RUN_LOCKED guard', () => {
     expect(unlockedRes.status).toBe(201);
     expect(await countRows('postings', 'tenant_id=$1', [t])).toBe(1);
   });
+
+  // FIX-F1: regression for the release-blocker — `automation_level` had no human-usable
+  // caller, so `assertNotDryRunLocked` always threw and every Approve returned 403. This
+  // proves the new operator CLI path (`ap-hub set-automation --tenant <id> --level <level>`,
+  // src/cli.ts) — which calls `advanceOnboardingStep` directly, no HTTP layer — actually
+  // unlocks `runApprove` for BOTH non-off levels the CLI/Settings UI accept.
+  it.each(['assisted', 'auto'] as const)(
+    'operator CLI path (advanceOnboardingStep direct call): automation_level=%s unlocks approveProposal',
+    async (level) => {
+      const t = await createTenant();
+      const token = await ownerToken(t);
+      await seedVendorAndAccount(t);
+      const { a, e } = await seedUnproposedExtraction(t);
+      // Touch onboarding so the DRY_RUN_LOCKED guard applies (row exists, automation_level 'off').
+      await runOnboardingStep(req('POST', token, { step: 'connect_qbo' }));
+
+      const txn = { txnType: 'Bill', vendorRef: { value: 'V1', name: 'Acme' }, DocNumber: 'INV-1', TxnDate: '2026-07-01', TotalAmt: 100, lines: [{ Amount: 100, description: 'work', accountRef: { value: '60' } }], tax: 0 };
+      const sha = (await query<{ sha256: string }>('SELECT sha256 FROM attachments WHERE id=$1', [a])).rows[0]!.sha256;
+      const pid = (
+        await query<{ id: number }>(
+          `INSERT INTO proposals (tenant_id, attachment_id, extraction_id, proposed_txn, idempotency_key, confidence, status, flags)
+           VALUES ($1,$2,$3,$4,$5,0.95,'ready','{}') RETURNING id`,
+          [t, a, e, JSON.stringify(txn), sha],
+        )
+      ).rows[0]!.id;
+      await recordProofRef({ tenantId: t, entityKind: 'proposal', entityId: String(pid), product: 'invoiceproof', verdict: 'clean' });
+
+      // Locked before the operator sets automation_level (the bug being fixed).
+      const before = await runApprove(req('POST', token, {}), pid, postDeps(mockWriter()));
+      expect(before.status).toBe(403);
+      expect(((await before.json()) as { error: { code: string } }).error.code).toBe('DRY_RUN_LOCKED');
+      expect(await countRows('postings', 'tenant_id=$1', [t])).toBe(0);
+
+      const row = await advanceOnboardingStep(
+        { userId: 0, tenantId: t, role: 'owner_controller', actor: 'cli:set-automation' },
+        { automationLevel: level },
+      );
+      expect(row.automationLevel).toBe(level);
+
+      const after = await runApprove(req('POST', token, {}), pid, postDeps(mockWriter()));
+      expect(after.status).toBe(201);
+      expect(await countRows('postings', 'tenant_id=$1', [t])).toBe(1);
+    },
+  );
 });

@@ -42,7 +42,7 @@ export function createQboConnector(deps: QboConnectorDeps): AccountingConnector 
 
   function capabilities(): CapabilityMatrix {
     return {
-      read: ['vendor', 'account', 'bill'],
+      read: ['vendor', 'account'],
       write: ['bill'],
       attachments: true,
       purchaseOrders: true,
@@ -133,7 +133,7 @@ export function createQboConnector(deps: QboConnectorDeps): AccountingConnector 
           return { kind: 'account', canonical: a, providerRaw: r };
         });
       }
-      return [];
+      throw new Error(`QBO connector read('${entity}') is not implemented — declared read capability is 'vendor' and 'account' only.`);
     },
 
     async create(entity: CanonicalEntityKind, record: CanonicalRecord, idempotencyKey: string): Promise<CreateResult> {

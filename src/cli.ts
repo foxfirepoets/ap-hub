@@ -40,6 +40,26 @@ tenantOpt(program.command('resume').description('resume a tenant')).action(async
 
 tenantOpt(
   program
+    .command('set-automation')
+    .description('set onboarding_state.automation_level (off|assisted|auto) — the operator-only way to unlock posting once DRY_RUN_LOCKED')
+    .requiredOption('--level <level>', 'off | assisted | auto'),
+).action(async (o) => {
+  const { advanceOnboardingStep } = await import('./services/onboarding.js');
+  try {
+    const row = await advanceOnboardingStep(
+      { userId: 0, tenantId: Number(o.tenant), role: 'owner_controller', actor: 'cli:set-automation' },
+      { automationLevel: o.level },
+    );
+    console.log(`tenant ${o.tenant} automation_level=${row.automationLevel}`);
+  } catch (err) {
+    console.error(String((err as Error).message));
+    process.exitCode = 1;
+  }
+  await closePool();
+});
+
+tenantOpt(
+  program
     .command('proposals')
     .description('list/export proposals')
     .option('--status <status>', 'filter by status')

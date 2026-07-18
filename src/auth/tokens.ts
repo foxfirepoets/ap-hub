@@ -4,7 +4,9 @@ import { config } from '../config.js';
 
 /**
  * Encrypted OAuth token store (CHUNK_2). Access + refresh tokens are AES-256-GCM
- * encrypted at rest; on QBO refresh the newest rotated refresh token is persisted.
+ * encrypted at rest. This module only reads/writes rows; token refresh itself lives
+ * in `qbo-refresh.ts` (QBO) and googleapis (Gmail). When `refreshQboToken` runs it
+ * calls `saveToken` here, so the newest rotated refresh token replaces the old one.
  */
 
 export type Provider = 'gmail' | 'qbo' | 'xero' | 'sage_intacct' | 'qbd';

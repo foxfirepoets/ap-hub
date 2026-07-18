@@ -1,5 +1,5 @@
 import { config } from '../config.js';
-import { loadToken } from '../auth/tokens.js';
+import { getFreshQboToken } from '../auth/qbo-refresh.js';
 
 /**
  * READ-ONLY QuickBooks Online client (CHUNK_2). This module contains NO
@@ -60,8 +60,8 @@ export function createQboReadClient(deps: QboReadDeps): QboReadClient {
 
 export async function getQboReadClient(tenantId: number): Promise<QboReadClient> {
   const cfg = config();
-  const tok = await loadToken(tenantId, 'qbo');
-  if (!tok) throw new Error('QBO not connected for tenant');
+  // QBO access tokens expire (~60 min); refresh when expired/near-expiry before use.
+  const tok = await getFreshQboToken(tenantId);
   return createQboReadClient({
     accessToken: tok.accessToken,
     realmId: tok.realm ?? cfg.QBO_SANDBOX_REALM_ID,

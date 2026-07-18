@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiGet, apiPost, ApiError, proposalRefId } from '../../lib/api';
 import { when } from '../../lib/format';
+import { friendlyOnboardingError } from '../../lib/onboardingErrors.js';
 import { EvidencePanel } from '../../components/EvidencePanel';
 import { ActionBar } from '../../components/ActionBar';
 import { RemapForm, type RemapValues } from '../../components/RemapForm';
@@ -86,6 +87,11 @@ export default function ExceptionsPage() {
       } else if (res.status === 409) {
         setNotice({ kind: 'warn', text: 'Already posted — no second write.' });
         removeSelected();
+      } else if (res.status === 403 && res.error?.code === 'DRY_RUN_LOCKED') {
+        // CHUNK_6_ONBOARDING: automation is still "off" — surface the actionable message
+        // instead of the raw backend string; the item stays in the queue (nothing changed).
+        const friendly = friendlyOnboardingError(res.error.code, res.error.message);
+        setNotice({ kind: 'bad', text: friendly.text });
       } else {
         setNotice({ kind: 'bad', text: res.error?.message ?? `Approve failed (${res.status}).` });
       }
