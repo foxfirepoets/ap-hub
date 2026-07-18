@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import { query, closePool } from './db.js';
 import { generateToken, hashToken } from './tokens.js';
+import { computePilotReport, formatPilotReport, type HeartbeatRow } from './report.js';
 
 /**
  * Broker operator CLI (SPEC §12). No web UI — tokens are issued by hand for the
@@ -104,6 +105,41 @@ program
         );
       }
     }
+    await closePool();
+  });
+
+program
+  .command('pilot-report')
+  .description('the three pilot numbers: online-hours %, watchdog recovery %, pg corruption count')
+  .option('--days <n>', 'window size in days', '7')
+  .option('--business-hours', 'restrict online-hours to Mon–Fri 08:00–18:00 local', false)
+  .option('--install <label>', 'limit to a single install (default: all installs)')
+  .action(async (o: { days: string; businessHours?: boolean; install?: string }) => {
+    const days = Number(o.days);
+    if (!Number.isFinite(days) || days <= 0) {
+      console.error(`Invalid --days: ${o.days}`);
+      process.exitCode = 1;
+      await closePool();
+      return;
+    }
+    const { rows } = await query<{
+      observed_at: Date;
+      event: HeartbeatRow['event'];
+      pg_ok: boolean | null;
+      tz_offset_minutes: number | null;
+    }>(
+      `SELECT h.observed_at, h.event, h.pg_ok, h.tz_offset_minutes
+         FROM heartbeats h
+         JOIN installs i ON i.id = h.install_id
+        WHERE h.observed_at >= now() - ($1 || ' days')::interval
+          AND ($2::text IS NULL OR i.label = $2)`,
+      [String(days), o.install ?? null],
+    );
+    const report = computePilotReport(
+      rows.map((r) => ({ ...r, observed_at: new Date(r.observed_at) })),
+      { days, businessHours: Boolean(o.businessHours), now: new Date() },
+    );
+    console.log(formatPilotReport(report));
     await closePool();
   });
 

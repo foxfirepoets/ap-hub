@@ -38,11 +38,11 @@ describe('broker server', () => {
     expect(r.body).toEqual({ status: 'degraded', db: false });
   });
 
-  it('authed route not yet implemented (heartbeat = CHUNK_6) → 501 NOT_IMPLEMENTED', async () => {
-    // /v1/extract is now implemented (CHUNK_3); /v1/heartbeat remains a placeholder
-    // until CHUNK_6, so it is the honest target for the "authed but unimplemented" case.
+  it('authed route not implemented → 501 NOT_IMPLEMENTED', async () => {
+    // /v1/heartbeat is now implemented (CHUNK_6); an unknown authed route is the
+    // honest target for the "authed but unimplemented" fallback case.
     const { token } = await seedInstall();
-    const r = await call('POST', '/v1/heartbeat', `Bearer ${token}`);
+    const r = await call('POST', '/v1/not-a-real-route', `Bearer ${token}`);
     expect(r.status).toBe(501);
     expect(r.body).toMatchObject({ error: { code: 'NOT_IMPLEMENTED' } });
   });

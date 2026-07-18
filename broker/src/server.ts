@@ -45,6 +45,21 @@ function testAuthRouteEnabled(): boolean {
 const PROXY_RATE_LIMIT = 60; // requests per install
 const PROXY_RATE_WINDOW_MS = 60_000; // per minute
 
+const HEARTBEAT_RATE_LIMIT = 5; // heartbeats per install
+const HEARTBEAT_RATE_WINDOW_MS = 60_000; // per minute
+const HEARTBEAT_EVENTS = ['alive', 'watchdog_restart', 'pg_health', 'shutdown'];
+
+/**
+ * `detail` is liveness metadata only — NEVER business data. It is stripped to null
+ * unless it is a short, lower-case status code (`^[a-z][a-z0-9_:.-]{0,199}$`). That
+ * pattern cannot contain a vendor name (uppercase/space), an email (`@`), or an amount
+ * (leading digit / `$` / `,`), so business data can never land in `heartbeats.detail`.
+ */
+export function sanitizeHeartbeatDetail(detail: unknown): string | null {
+  if (typeof detail !== 'string') return null;
+  return /^[a-z][a-z0-9_:.-]{0,199}$/.test(detail) ? detail : null;
+}
+
 /** Relay an upstream result. On success the body is passed VERBATIM; never 2xx on failure. */
 function relayUpstream(result: UpstreamResult, respond: Respond, respondRaw: RespondRaw): void {
   if (!result.ok) {
@@ -220,7 +235,42 @@ export async function handleRequest(
     return;
   }
 
-  // Telemetry (/v1/heartbeat) arrives in CHUNK_6.
+  // --- CHUNK_6 telemetry: liveness heartbeat (no business data ever) ---
+  if (method === 'POST' && p === '/v1/heartbeat') {
+    const rl = checkRateLimit(install.id, 'heartbeat', HEARTBEAT_RATE_LIMIT, HEARTBEAT_RATE_WINDOW_MS);
+    if (!rl.allowed) {
+      respond(429, errorBody('RATE_LIMITED', 'Too many heartbeats.'), { 'retry-after': String(rl.retryAfterSeconds) });
+      return;
+    }
+    const parsed = safeJson(body);
+    if (parsed === undefined || parsed === null || typeof parsed !== 'object') {
+      respond(400, errorBody('VALIDATION', 'Request body must be a JSON object.'));
+      return;
+    }
+    const b = parsed as Record<string, unknown>;
+    if (typeof b.event !== 'string' || !HEARTBEAT_EVENTS.includes(b.event)) {
+      respond(400, errorBody('VALIDATION', `event must be one of: ${HEARTBEAT_EVENTS.join(', ')}.`));
+      return;
+    }
+    const pgOk = typeof b.pg_ok === 'boolean' ? b.pg_ok : null;
+    const detail = sanitizeHeartbeatDetail(b.detail);
+    const tz = Number.isInteger(b.tz_offset_minutes) ? (b.tz_offset_minutes as number) : null;
+    try {
+      await query(
+        'INSERT INTO heartbeats (install_id, event, pg_ok, detail, tz_offset_minutes) VALUES ($1,$2,$3,$4,$5)',
+        [install.id, b.event, pgOk, detail, tz],
+      );
+      await query('UPDATE installs SET last_seen_at = now() WHERE id = $1', [install.id]);
+    } catch (err) {
+      logger.error({ err: String(err), install: install.label }, 'heartbeat insert failed');
+      respond(503, errorBody('DEGRADED', 'Broker dependency unavailable; heartbeat not recorded.'));
+      return;
+    }
+    respond(201, { status: 'recorded' });
+    return;
+  }
+
+  // Any other authed route is not implemented in this build.
   respond(501, errorBody('NOT_IMPLEMENTED', 'This broker route is not implemented in this build.'));
 }
 
