@@ -33,6 +33,9 @@ export const REASON_CODES = [
   'alert_failed',
   // CHUNK_6_ONBOARDING
   'dry_run_locked',
+  // FIX-F5 live-posting hardening: fail-closed dedup + wrong-company guard
+  'dedup_unavailable',
+  'company_mismatch',
 ] as const;
 
 export type ReasonCode = (typeof REASON_CODES)[number];

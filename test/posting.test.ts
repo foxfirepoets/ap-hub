@@ -126,4 +126,41 @@ describe('CHUNK_7 posting', () => {
     expect((out as any).reason).toBe('missing_proof_coverage');
     expect(w.createEntity).not.toHaveBeenCalled();
   });
+
+  // --- FIX-F5 regression tests ---
+
+  it('due_date_in_payload: a proposal DueDate is carried into the built QBO payload', async () => {
+    const t = await createTenant();
+    const { proposalId } = await seedReadyProposal(t);
+    const row = (await query<{ proposed_txn: any }>('SELECT proposed_txn FROM proposals WHERE id=$1', [proposalId])).rows[0]!;
+    const txn = { ...row.proposed_txn, DueDate: '2026-08-15' };
+    await query('UPDATE proposals SET proposed_txn=$2 WHERE id=$1', [proposalId, JSON.stringify(txn)]);
+    const w = mockWriter();
+    const out = await postOnce(t, proposalId, deps(w));
+    expect(out.status).toBe('posted');
+    const payload = (w.createEntity as any).mock.calls[0][1];
+    expect(payload.DueDate).toBe('2026-08-15');
+  });
+
+  it('dedup_query_failure_holds: a throwing pre-create dedup query holds and never creates', async () => {
+    const t = await createTenant();
+    const { proposalId } = await seedReadyProposal(t);
+    const w = mockWriter({ queryExisting: vi.fn().mockRejectedValue(new Error('qbo query down')) });
+    const out = await postOnce(t, proposalId, deps(w));
+    expect(out.status).toBe('held');
+    expect((out as any).reason).toBe('dedup_unavailable');
+    expect(w.createEntity).not.toHaveBeenCalled();
+    expect(await countRows('exceptions', "reason_code='dedup_unavailable'")).toBe(1);
+  });
+
+  it('company_mismatch_holds: a mismatching verifyCompany holds and never creates', async () => {
+    const t = await createTenant();
+    const { proposalId } = await seedReadyProposal(t);
+    const w = mockWriter();
+    const out = await postOnce(t, proposalId, { ...deps(w), verifyCompany: async () => 'mismatch' as const });
+    expect(out.status).toBe('held');
+    expect((out as any).reason).toBe('company_mismatch');
+    expect(w.createEntity).not.toHaveBeenCalled();
+    expect(await countRows('exceptions', "reason_code='company_mismatch'")).toBe(1);
+  });
 });

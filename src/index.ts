@@ -29,7 +29,8 @@ export async function boot(): Promise<() => Promise<void>> {
 
   const server = createHttpServer();
   registerAuthRoutes();
-  await new Promise<void>((resolve) => server.listen(cfg.PORT, resolve));
+  // Loopback-only: this is a local pilot service, never LAN-reachable.
+  await new Promise<void>((resolve) => server.listen(cfg.PORT, '127.0.0.1', resolve));
   logger.info({ port: cfg.PORT, qboEnv: cfg.QBO_ENV }, 'ap-hub service listening');
 
   const shutdown = async (): Promise<void> => {

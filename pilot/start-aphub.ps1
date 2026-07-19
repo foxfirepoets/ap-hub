@@ -31,6 +31,7 @@ $BinDir   = Join-Path $AppDir 'bin'
 $AppCode  = Join-Path $AppDir 'app'
 $PgData   = Join-Path $AppDir 'data\pg'
 $EnvFile  = Join-Path $AppDir '.env'
+$SecDir   = Join-Path $AppDir 'secrets'
 
 $PgPort      = 55432
 $BackendPort = 3001
@@ -41,8 +42,9 @@ $PollSec = 5
 New-Item -ItemType Directory -Force -Path $RunDir, $LogDir | Out-Null
 
 # --- Load .env (KEY=VALUE lines) into the process environment. No secrets are logged. ---
+# .env holds only non-secret config (DATABASE_URL, BROKER_BASE_URL, Gmail client id/secret,
+# PORT, QBO_ENV, LOG_LEVEL). ENCRYPTION_KEY and BROKER_INSTALL_TOKEN are never written there.
 $script:BrokerBaseUrl = $null
-$script:BrokerToken = $null
 if (Test-Path $EnvFile) {
   Get-Content $EnvFile | ForEach-Object {
     if ($_ -match '^\s*#') { return }
@@ -50,10 +52,26 @@ if (Test-Path $EnvFile) {
       $k = $Matches[1]; $v = $Matches[2].Trim('"')
       [Environment]::SetEnvironmentVariable($k, $v)
       if ($k -eq 'BROKER_BASE_URL') { $script:BrokerBaseUrl = $v }
-      if ($k -eq 'BROKER_INSTALL_TOKEN') { $script:BrokerToken = $v }
     }
   }
 }
+
+# --- Unwrap DPAPI-protected secrets (CurrentUser) and inject into the process env so
+# child processes (backend, UI) inherit them. The plaintext never touches disk - it lives
+# only in this process's memory and the memory of the children it spawns. ---
+Add-Type -AssemblyName System.Security
+function Unprotect-Secret {
+  param([string]$Name)
+  $f = Join-Path $SecDir "$Name.dpapi"
+  if (-not (Test-Path $f)) { return $null }
+  $e = [Convert]::FromBase64String((Get-Content $f -Raw).Trim())
+  $d = [Security.Cryptography.ProtectedData]::Unprotect($e, $null, 'CurrentUser')
+  return [Text.Encoding]::UTF8.GetString($d)
+}
+$script:BrokerToken = Unprotect-Secret 'broker_install_token'
+$encryptionKey = Unprotect-Secret 'encryption_key'
+if ($script:BrokerToken) { [Environment]::SetEnvironmentVariable('BROKER_INSTALL_TOKEN', $script:BrokerToken) }
+if ($encryptionKey) { [Environment]::SetEnvironmentVariable('ENCRYPTION_KEY', $encryptionKey) }
 
 function Send-Heartbeat {
   param(
@@ -101,7 +119,7 @@ function Start-Backend {
 function Start-Ui {
   $node = Join-Path $BinDir 'node\node.exe'
   $next = Join-Path $AppCode 'node_modules\next\dist\bin\next'
-  Start-Process -FilePath $node -ArgumentList @($next, 'start', '-p', "$UiPort") `
+  Start-Process -FilePath $node -ArgumentList @($next, 'start', '-p', "$UiPort", '-H', '127.0.0.1') `
     -WorkingDirectory $AppCode -WindowStyle Hidden -PassThru `
     -RedirectStandardError (Join-Path $LogDir 'ui.err.log') `
     -RedirectStandardOutput (Join-Path $LogDir 'ui.out.log')

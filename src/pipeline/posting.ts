@@ -17,6 +17,9 @@ export interface PostDeps {
   loadPdf: (attachmentId: number) => Promise<Buffer | null>;
   amountCeiling: number;
   autoThreshold: number;
+  // FIX-F5: optional wrong-company guard. When provided, a 'mismatch' holds and
+  // never creates. Omitted in unit tests → check is skipped (behavior unchanged).
+  verifyCompany?: () => Promise<'match' | 'mismatch'>;
 }
 
 export type PostResult =
@@ -72,6 +75,14 @@ export async function postOnce(tenantId: number, proposalId: number, deps: PostD
     return { status: 'held', reason: 'open_proof_scan_unavailable' };
   }
 
+  // --- Wrong-company guard (FIX-F5): never write into the wrong QBO company ---
+  if (deps.verifyCompany) {
+    if ((await deps.verifyCompany()) === 'mismatch') {
+      await raiseException({ tenantId, reasonCode: 'company_mismatch', entityRef: `proposal:${proposalId}`, detail: 'company identity mismatch' });
+      return { status: 'held', reason: 'company_mismatch' };
+    }
+  }
+
   const txn = p.proposed_txn;
   const txnType: string = txn.txnType ?? 'Bill';
 
@@ -90,16 +101,21 @@ export async function postOnce(tenantId: number, proposalId: number, deps: PostD
   // --- Layer 2 dedup: QBO existence query ---
   const dedupWhere = buildDedupWhere(txn);
   if (dedupWhere) {
+    let existing;
     try {
-      const existing = await deps.writer.queryExisting(txnType, dedupWhere);
-      if (existing.length > 0) {
-        const qId = String((existing[0] as any).Id ?? '');
-        await recordPosting(tenantId, p, txnType, qId, '0', { adopted: true }, existing[0]);
-        await raiseException({ tenantId, reasonCode: 'duplicate_in_qbo', entityRef: `proposal:${proposalId}`, detail: 'qbo query hit' });
-        return { status: 'duplicate' };
-      }
+      existing = await deps.writer.queryExisting(txnType, dedupWhere);
     } catch (err) {
-      logger.warn({ err: String(err) }, 'dedup query failed (continuing to create with replay-safety)');
+      // FIX-F5 fail-closed: if the PRE-create dedup query throws, the duplicate
+      // state is unknown — never blind-create. Hold and raise a typed exception.
+      logger.warn({ err: String(err) }, 'pre-create dedup query failed → holding (fail-closed)');
+      await raiseException({ tenantId, reasonCode: 'dedup_unavailable', entityRef: `proposal:${proposalId}`, detail: String(err) });
+      return { status: 'held', reason: 'dedup_unavailable' };
+    }
+    if (existing.length > 0) {
+      const qId = String((existing[0] as any).Id ?? '');
+      await recordPosting(tenantId, p, txnType, qId, '0', { adopted: true }, existing[0]);
+      await raiseException({ tenantId, reasonCode: 'duplicate_in_qbo', entityRef: `proposal:${proposalId}`, detail: 'qbo query hit' });
+      return { status: 'duplicate' };
     }
   }
 
@@ -259,6 +275,7 @@ function buildQboPayload(_txnType: string, txn: any): Record<string, unknown> {
     TxnDate: txn.TxnDate,
     DocNumber: txn.DocNumber,
   };
+  if (txn.DueDate) payload.DueDate = txn.DueDate;
   if (txn.vendorRef) payload.VendorRef = { value: txn.vendorRef.value };
   return payload;
 }
@@ -278,6 +295,29 @@ export async function postSandboxHandler(job: { data: PostJob }): Promise<void> 
   const { loadAttachmentBytes } = await import('../ingest/repo.js');
   const cfg = config();
   const writer = await getQboWriteClient(job.data.tenantId);
+
+  // FIX-F5: enforce the wrong-company guard only when an expected company name is
+  // configured. It reads company identity via the read-only client (no write path).
+  const expectedCompany = (cfg.QBO_SANDBOX_COMPANY_NAME ?? '').trim();
+  const verifyCompany = expectedCompany
+    ? async (): Promise<'match' | 'mismatch'> => {
+        try {
+          const { getQboReadClient } = await import('../qbo/client.js');
+          const read = await getQboReadClient(job.data.tenantId);
+          const info = await read.getCompanyInfo();
+          const actual = String(info?.CompanyName ?? '').trim();
+          return actual === expectedCompany ? 'match' : 'mismatch';
+        } catch (err) {
+          // Only a DEFINITIVE identity read can hold. Identity is already asserted at
+          // connect (auth/qbo-oauth) and sandbox-only at write-client construction;
+          // this is a defense-in-depth double check, so an unreadable identity does
+          // not block posting (and never silently forces the wrong company).
+          logger.warn({ err: String(err) }, 'company identity read failed → skipping wrong-company double check');
+          return 'match';
+        }
+      }
+    : undefined;
+
   await postOnce(job.data.tenantId, job.data.proposalId, {
     writer,
     anchor: (output) => swarmsync().auditProof(output),
@@ -287,5 +327,6 @@ export async function postSandboxHandler(job: { data: PostJob }): Promise<void> 
     },
     amountCeiling: cfg.AMOUNT_CEILING,
     autoThreshold: cfg.AUTO_THRESHOLD,
+    verifyCompany,
   });
 }
