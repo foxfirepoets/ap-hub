@@ -391,17 +391,19 @@ export async function postSandboxHandler(job: { data: PostJob }): Promise<void> 
   const cfg = config();
   const writer = await getQboWriteClient(job.data.tenantId);
 
-  // FIX-F5: enforce the wrong-company guard only when an expected company name is
-  // configured. It reads company identity via the read-only client (no write path).
+  // FIX-F5 / F4-WIRE: enforce the wrong-company guard only when an expected company
+  // name is configured. Identity is now checked through the provider-neutral
+  // AccountingConnector (src/connectors/qbo.ts), which wraps the same read/write
+  // clients — delegation only, no parallel QBO implementation.
   const expectedCompany = (cfg.QBO_SANDBOX_COMPANY_NAME ?? '').trim();
   const verifyCompany = expectedCompany
     ? async (): Promise<'match' | 'mismatch'> => {
         try {
           const { getQboReadClient } = await import('../qbo/client.js');
+          const { createQboConnector } = await import('../connectors/qbo.js');
           const read = await getQboReadClient(job.data.tenantId);
-          const info = await read.getCompanyInfo();
-          const actual = String(info?.CompanyName ?? '').trim();
-          return actual === expectedCompany ? 'match' : 'mismatch';
+          const connector = createQboConnector({ writeClient: writer, readClient: read, expectedCompanyName: expectedCompany });
+          return await connector.verifyCompanyIdentity({ name: expectedCompany });
         } catch (err) {
           // Only a DEFINITIVE identity read can hold. Identity is already asserted at
           // connect (auth/qbo-oauth) and sandbox-only at write-client construction;
