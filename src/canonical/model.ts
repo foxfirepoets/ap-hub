@@ -9,11 +9,28 @@
 
 export type CanonicalEntityKind = 'vendor' | 'account' | 'bill' | 'bill_line' | 'attachment';
 
+/**
+ * Resolution/provenance of a dimension. These four states are NEVER collapsed into a
+ * single "missing" — a provider that cannot represent a dimension, a dimension we could
+ * not map, one the source never provided, and one the source deliberately left blank are
+ * materially different and must be surfaced distinctly (F5 accounting-behavior).
+ */
+export type DimensionState =
+  | 'mapped' // resolved to a provider id
+  | 'not_provided' // the source document carried no value
+  | 'not_mapped' // a value was present but has no configured mapping → hold
+  | 'unsupported_by_provider' // the target provider cannot represent this kind → hold
+  | 'intentionally_blank'; // the source explicitly left it blank (keep, do not hold)
+
 /** Extensible dimension. `kind` is open (e.g. class | location | department | project | custom:<name>). */
 export interface CanonicalDimension {
   kind: string;
   id?: string;
   name?: string;
+  /** Provenance — see DimensionState. Optional so pre-F5 records still validate. */
+  state?: DimensionState;
+  /** The raw extracted value that produced this dimension (audit evidence). */
+  raw?: string;
 }
 
 export interface CanonicalLine {

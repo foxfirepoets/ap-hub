@@ -7,6 +7,11 @@ import {
   type VendorCandidate,
   type AccountCandidate,
 } from '../mapping/resolve.js';
+import {
+  resolveDimensions,
+  hasUnhandledDimension,
+  type DimensionCandidateRow,
+} from '../mapping/dimensions.js';
 import { classifyFindings } from '../swarmsync/severity.js';
 import { raiseException } from '../exceptions.js';
 import { recordProofRef, hasProofRef } from '../swarmsync/proof.js';
@@ -78,7 +83,25 @@ export async function proposeOnce(
   if (vendor.status === 'unknown') {
     flags.add('unknown_vendor');
     await raiseException({ tenantId, reasonCode: 'unknown_vendor', entityRef: `extraction:${ext.id}` });
+  } else if (vendor.status === 'fuzzy' || vendor.ambiguous) {
+    // F5 vendor review policy: only an unambiguous exact match may auto-post. A fuzzy /
+    // alias / OCR-derived / ambiguous / multiple-candidate match is forced to review via
+    // a blocking flag so score alone can never auto-post it.
+    flags.add('vendor_review');
   }
+
+  // Retained review evidence: exactly what a human needs to adjudicate the vendor.
+  const vendorReview = {
+    extractedName: fields.vendor_name,
+    proposedId: vendor.status !== 'unknown' ? vendor.targetId : null,
+    proposedName: vendor.status !== 'unknown' ? vendor.targetName : null,
+    status: vendor.status,
+    matchType: vendor.status !== 'unknown' ? vendor.matchType ?? null : null,
+    confidence: vendor.status !== 'unknown' ? vendor.confidence : 0,
+    reasons: vendor.reasons ?? [],
+    conflicts: vendor.status !== 'unknown' ? vendor.conflicts ?? [] : [],
+    bankInfoPresent: Boolean(fields.bank_info),
+  };
 
   // --- Account resolution ---
   const acctCands = (
@@ -101,6 +124,36 @@ export async function proposeOnce(
     await raiseException({ tenantId, reasonCode: 'unmapped_account', entityRef: `extraction:${ext.id}` });
   }
 
+  // --- Dimension carry-through (F5): resolve provider-representable dimensions and
+  // surface any present-but-unhandled value as unmapped_dimension (never dropped). ---
+  const dimCands = (
+    await query<{ kind: string; source_key: string; target_qbo_id: string | null; target_name: string | null }>(
+      "SELECT kind, source_key, target_qbo_id, target_name FROM mappings WHERE tenant_id=$1 AND kind IN ('class','location')",
+      [tenantId],
+    )
+  ).rows.map<DimensionCandidateRow>((r) => ({
+    kind: r.kind,
+    key: r.source_key,
+    targetId: r.target_qbo_id ?? '',
+    targetName: r.target_name ?? r.source_key,
+  }));
+  const dimensions = resolveDimensions(
+    [
+      { kind: 'class', raw: fields.class_hint ?? null },
+      { kind: 'location', raw: fields.location_hint ?? null },
+    ],
+    dimCands,
+  );
+  if (hasUnhandledDimension(dimensions)) {
+    flags.add('unmapped_dimension');
+    await raiseException({
+      tenantId,
+      reasonCode: 'unmapped_dimension',
+      entityRef: `extraction:${ext.id}`,
+      detail: JSON.stringify(dimensions.filter((d) => d.state === 'not_mapped' || d.state === 'unsupported_by_provider')),
+    });
+  }
+
   const paidNow = fields.doc_type === 'receipt';
   const txnType = routeTxnType(fields.doc_type, fields.direction, paidNow);
 
@@ -117,6 +170,8 @@ export async function proposeOnce(
       accountRef: account ? { value: account.targetId, name: account.targetName } : null,
     })),
     tax: fields.tax,
+    ...(dimensions.length ? { dimensions } : {}),
+    vendorReview,
   };
 
   // --- InvoiceProof scan (Amendment A1) — BEFORE status assignment ---
@@ -195,7 +250,8 @@ export async function proposeOnce(
     hasVerify &&
     hasInvoiceProof &&
     !hasHighOrCritical &&
-    !flags.has('proof_scan_unavailable')
+    !flags.has('proof_scan_unavailable') &&
+    !flags.has('vendor_review')
   ) {
     status = 'ready';
   } else if (confidence >= deps.reviewThreshold) {

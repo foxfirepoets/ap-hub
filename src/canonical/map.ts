@@ -54,5 +54,5 @@ export function billToStored(bill: CanonicalBill): Record<string, unknown> {
 
 function readDimensions(o: any): CanonicalDimension[] | undefined {
   if (!o || !Array.isArray(o.dimensions)) return undefined;
-  return o.dimensions.map((d: any) => ({ kind: String(d.kind), id: d.id, name: d.name }));
+  return o.dimensions.map((d: any) => ({ kind: String(d.kind), id: d.id, name: d.name, state: d.state, raw: d.raw }));
 }

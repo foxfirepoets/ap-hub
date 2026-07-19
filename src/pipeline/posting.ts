@@ -3,6 +3,9 @@ import { raiseException, openExceptionsFor } from '../exceptions.js';
 import { recordProofRef, hasProofRef } from '../swarmsync/proof.js';
 import { writeAudit, hashOf } from '../audit.js';
 import { logger } from '../logger.js';
+import { evaluateTax } from '../mapping/tax.js';
+import { mappedSupportedDimensions, SUPPORTED_DIMENSION_KINDS } from '../mapping/dimensions.js';
+import type { CanonicalDimension } from '../canonical/model.js';
 import type { QboWriteClient } from '../qbo/write.js';
 import type { VerifyResult } from '../swarmsync/client.js';
 
@@ -37,6 +40,9 @@ const BLOCKING_FLAGS = [
   'unmapped_dimension',
   'fraud_flag',
   'proof_scan_unavailable',
+  // F5 vendor review policy: a fuzzy/ambiguous/OCR-derived vendor match can never
+  // auto-post even if it slipped past the propose-time gate (defense in depth).
+  'vendor_review',
 ];
 
 export async function postOnce(tenantId: number, proposalId: number, deps: PostDeps): Promise<PostResult> {
@@ -119,6 +125,20 @@ export async function postOnce(tenantId: number, proposalId: number, deps: PostD
     }
   }
 
+  // --- Tax gate (F5): a NAMED hold BEFORE create when tax cannot be handled. Replaces
+  // the old fail-safe where taxed invoices only failed later via read-back mismatch. A
+  // tax line is added to the payload ONLY when a configured code exists AND it reconciles.
+  const taxDecision = evaluateTax(txn);
+  if (taxDecision.kind === 'hold') {
+    await raiseException({
+      tenantId,
+      reasonCode: taxDecision.reason,
+      entityRef: `proposal:${proposalId}`,
+      detail: JSON.stringify({ message: taxDecision.detail, evidence: taxDecision.evidence }),
+    });
+    return { status: 'held', reason: taxDecision.reason };
+  }
+
   // --- Create ---
   const payload = buildQboPayload(txnType, txn);
   let created;
@@ -161,10 +181,20 @@ export async function postOnce(tenantId: number, proposalId: number, deps: PostD
 
   // --- Read-back verify (no retry on mismatch) ---
   const readBack = await deps.writer.readEntity(txnType, created.id);
+  // Core amount/DocNumber check is unchanged and still fully authoritative.
   if (!verifyMatches(txn, readBack)) {
     await recordPosting(tenantId, p, txnType, created.id, created.syncToken, { verifyMismatch: true }, readBack, 'verify_mismatch');
     await raiseException({ tenantId, reasonCode: 'verify_mismatch', entityRef: `posting:${created.id}`, detail: 'read-back mismatch' });
     return { status: 'held', reason: 'verify_mismatch' };
+  }
+  // F5: dimensions we approved+wrote must survive read-back. A material mismatch (the
+  // provider dropped or altered a dimension) marks the posting unverified and raises a
+  // dedicated dimension_mismatch exception — the amount/DocNumber checks above are intact.
+  const dimMiss = firstDimensionMismatch(txn, readBack);
+  if (dimMiss) {
+    await recordPosting(tenantId, p, txnType, created.id, created.syncToken, { dimensionMismatch: dimMiss }, readBack, 'dimension_mismatch');
+    await raiseException({ tenantId, reasonCode: 'dimension_mismatch', entityRef: `posting:${created.id}`, detail: JSON.stringify(dimMiss) });
+    return { status: 'held', reason: 'dimension_mismatch' };
   }
 
   const postingId = await recordPosting(tenantId, p, txnType, created.id, created.syncToken, payload, readBack, 'posted_sandbox');
@@ -264,19 +294,43 @@ function buildDedupWhere(txn: any): string | null {
 }
 
 function buildQboPayload(_txnType: string, txn: any): Record<string, unknown> {
-  const lines = (txn.lines ?? []).map((l: any) => ({
-    Amount: l.Amount,
-    DetailType: 'AccountBasedExpenseLineDetail',
-    Description: l.description,
-    AccountBasedExpenseLineDetail: l.accountRef ? { AccountRef: { value: l.accountRef.value } } : {},
-  }));
+  // F5 dimension carry-through: only mapped, provider-representable dimensions are
+  // emitted. Anything unsupported/not-mapped was already held before create.
+  const headerDims = mappedSupportedDimensions(txn.dimensions);
+  const headerClass = headerDims.find((d) => d.kind === 'class');
+  const headerLocation = headerDims.find((d) => d.kind === 'location');
+
+  const lines = (txn.lines ?? []).map((l: any) => {
+    const detail: Record<string, unknown> = l.accountRef ? { AccountRef: { value: l.accountRef.value } } : {};
+    const lineDims = mappedSupportedDimensions(l.dimensions);
+    const cls = lineDims.find((d) => d.kind === 'class') ?? headerClass;
+    if (cls?.id) detail.ClassRef = { value: cls.id };
+    return {
+      Amount: l.Amount,
+      DetailType: 'AccountBasedExpenseLineDetail',
+      Description: l.description,
+      AccountBasedExpenseLineDetail: detail,
+    };
+  });
+  const fallbackDetail: Record<string, unknown> = {};
+  if (headerClass?.id) fallbackDetail.ClassRef = { value: headerClass.id };
   const payload: Record<string, unknown> = {
-    Line: lines.length ? lines : [{ Amount: txn.TotalAmt, DetailType: 'AccountBasedExpenseLineDetail', AccountBasedExpenseLineDetail: {} }],
+    Line: lines.length
+      ? lines
+      : [{ Amount: txn.TotalAmt, DetailType: 'AccountBasedExpenseLineDetail', AccountBasedExpenseLineDetail: fallbackDetail }],
     TxnDate: txn.TxnDate,
     DocNumber: txn.DocNumber,
   };
   if (txn.DueDate) payload.DueDate = txn.DueDate;
   if (txn.vendorRef) payload.VendorRef = { value: txn.vendorRef.value };
+  // Location is a header-level dimension on a QBO Bill.
+  if (headerLocation?.id) payload.DepartmentRef = { value: headerLocation.id };
+
+  // Tax line — added ONLY when evaluateTax approved a configured, reconciling code.
+  const tax = evaluateTax(txn);
+  if (tax.kind === 'ok' && tax.tax.code) {
+    payload.TxnTaxDetail = { TotalTax: tax.tax.amount, TxnTaxCodeRef: { value: String(tax.tax.code) } };
+  }
   return payload;
 }
 
@@ -286,6 +340,47 @@ function verifyMatches(txn: any, readBack: any): boolean {
   if (Math.abs(amtA - amtB) > 0.01) return false;
   if (txn?.DocNumber && readBack?.DocNumber && String(txn.DocNumber) !== String(readBack.DocNumber)) return false;
   return true;
+}
+
+/** The value the provider echoed back for a written dimension, or undefined if absent. */
+function readBackDimensionValue(kind: string, readBack: any): string | undefined {
+  if (kind === 'location') {
+    const v = readBack?.DepartmentRef?.value;
+    return v == null ? undefined : String(v);
+  }
+  if (kind === 'class') {
+    const lines: any[] = Array.isArray(readBack?.Line) ? readBack.Line : [];
+    for (const l of lines) {
+      const v = l?.AccountBasedExpenseLineDetail?.ClassRef?.value;
+      if (v != null) return String(v);
+    }
+    const headerV = readBack?.ClassRef?.value;
+    return headerV == null ? undefined : String(headerV);
+  }
+  return undefined;
+}
+
+/**
+ * Returns the first dimension we approved+wrote that the read-back did not confirm
+ * (missing or a different id) — or null when every written dimension survived. Only the
+ * mapped, provider-representable dimensions are checked (the only ones we ever emit).
+ */
+function firstDimensionMismatch(
+  txn: any,
+  readBack: any,
+): { kind: string; expected: string; found: string | null } | null {
+  const dims: CanonicalDimension[] = [
+    ...mappedSupportedDimensions(txn?.dimensions),
+    ...(Array.isArray(txn?.lines) ? txn.lines.flatMap((l: any) => mappedSupportedDimensions(l?.dimensions)) : []),
+  ].filter((d) => SUPPORTED_DIMENSION_KINDS.includes(d.kind as (typeof SUPPORTED_DIMENSION_KINDS)[number]));
+  for (const d of dims) {
+    if (!d.id) continue;
+    const found = readBackDimensionValue(d.kind, readBack);
+    if (found !== String(d.id)) {
+      return { kind: d.kind, expected: String(d.id), found: found ?? null };
+    }
+  }
+  return null;
 }
 
 export async function postSandboxHandler(job: { data: PostJob }): Promise<void> {

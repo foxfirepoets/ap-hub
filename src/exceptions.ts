@@ -36,6 +36,16 @@ export const REASON_CODES = [
   // FIX-F5 live-posting hardening: fail-closed dedup + wrong-company guard
   'dedup_unavailable',
   'company_mismatch',
+  // F5 accounting-behavior: dimension carry-through + named tax holds.
+  // A dimension the provider cannot represent, or a mapped dimension that fails
+  // read-back, is surfaced here (never silently dropped).
+  'dimension_unsupported',
+  'dimension_mismatch',
+  // Tax is held BEFORE create with a NAMED reason (not the generic verify_mismatch)
+  // whenever it cannot be safely represented: no configured code, or it does not
+  // reconcile to the invoice total within currency tolerance.
+  'tax_unmapped',
+  'tax_unreconciled',
 ] as const;
 
 export type ReasonCode = (typeof REASON_CODES)[number];

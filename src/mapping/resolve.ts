@@ -62,9 +62,27 @@ export function similarity(a: string, b: string): number {
   return Math.max(lev, overlap);
 }
 
+/**
+ * Vendor resolution. The `status`/`targetId`/`targetName`/`confidence` fields are the
+ * long-standing contract; the F5 fields (matchType, reasons, conflicts, candidateCount,
+ * ambiguous) are additive metadata the vendor-review gate uses to decide auto vs review.
+ * Determinism is by explicit gate, not by score alone: only an unambiguous exact match
+ * auto-posts; fuzzy / ambiguous-exact / multiple-candidate are surfaced for review.
+ */
+export type VendorMatchType = 'normalized_name' | 'sender_domain' | 'fuzzy';
 export type VendorResolution =
-  | { status: 'exact' | 'fuzzy'; targetId: string; targetName: string; confidence: number }
-  | { status: 'unknown' };
+  | {
+      status: 'exact' | 'fuzzy';
+      targetId: string;
+      targetName: string;
+      confidence: number;
+      matchType?: VendorMatchType;
+      reasons?: string[];
+      conflicts?: { targetId: string; targetName: string }[];
+      candidateCount?: number;
+      ambiguous?: boolean;
+    }
+  | { status: 'unknown'; reasons?: string[]; candidateCount?: number };
 
 export function resolveVendor(
   vendorName: string | null,
@@ -72,31 +90,55 @@ export function resolveVendor(
   candidates: VendorCandidate[],
   fuzzyThreshold = 0.82,
 ): VendorResolution {
-  if (!vendorName && !senderDomain) return { status: 'unknown' };
+  if (!vendorName && !senderDomain) return { status: 'unknown', reasons: ['no_vendor_signal'], candidateCount: 0 };
 
   // Exact prior mapping on normalized name or sender domain.
   const keyName = vendorName ? normalize(vendorName) : '';
+  const exact: { c: VendorCandidate; via: VendorMatchType }[] = [];
   for (const c of candidates) {
-    if (
-      (keyName && normalize(c.sourceKey) === keyName) ||
-      (senderDomain && c.sourceKey.toLowerCase() === senderDomain.toLowerCase())
-    ) {
-      return { status: 'exact', targetId: c.targetId, targetName: c.targetName, confidence: 1 };
-    }
+    if (keyName && normalize(c.sourceKey) === keyName) exact.push({ c, via: 'normalized_name' });
+    else if (senderDomain && c.sourceKey.toLowerCase() === senderDomain.toLowerCase()) exact.push({ c, via: 'sender_domain' });
+  }
+  if (exact.length > 0) {
+    const distinct = [...new Map(exact.map((e) => [e.c.targetId, e.c])).values()];
+    const first = exact[0]!;
+    const ambiguous = distinct.length > 1;
+    return {
+      status: 'exact',
+      targetId: first.c.targetId,
+      targetName: first.c.targetName,
+      confidence: 1,
+      matchType: first.via,
+      reasons: ambiguous ? ['exact_name', 'multiple_conflicting_targets'] : ['exact_name'],
+      conflicts: ambiguous ? distinct.map((c) => ({ targetId: c.targetId, targetName: c.targetName })) : undefined,
+      candidateCount: distinct.length,
+      ambiguous,
+    };
   }
 
   // Fuzzy against candidate names.
   if (vendorName) {
-    let best: { c: VendorCandidate; score: number } | null = null;
-    for (const c of candidates) {
-      const score = similarity(vendorName, c.targetName || c.sourceKey);
-      if (!best || score > best.score) best = { c, score };
-    }
+    const scored = candidates
+      .map((c) => ({ c, score: similarity(vendorName, c.targetName || c.sourceKey) }))
+      .sort((a, b) => b.score - a.score);
+    const best = scored[0] ?? null;
     if (best && best.score >= fuzzyThreshold) {
-      return { status: 'fuzzy', targetId: best.c.targetId, targetName: best.c.targetName, confidence: best.score };
+      const contenders = scored.filter((s) => s.score >= fuzzyThreshold && s.c.targetId !== best.c.targetId);
+      const reasons = ['fuzzy_name_match'];
+      if (contenders.length > 0) reasons.push('multiple_candidates');
+      return {
+        status: 'fuzzy',
+        targetId: best.c.targetId,
+        targetName: best.c.targetName,
+        confidence: best.score,
+        matchType: 'fuzzy',
+        reasons,
+        conflicts: contenders.length > 0 ? contenders.map((s) => ({ targetId: s.c.targetId, targetName: s.c.targetName })) : undefined,
+        candidateCount: scored.filter((s) => s.score >= fuzzyThreshold).length,
+      };
     }
   }
-  return { status: 'unknown' };
+  return { status: 'unknown', reasons: ['no_match'], candidateCount: 0 };
 }
 
 export type TxnType = 'Bill' | 'Purchase' | 'Invoice' | 'SalesReceipt';
