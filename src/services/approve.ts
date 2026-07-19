@@ -26,14 +26,14 @@ export type ApproveResult =
 
 /** Build the real post dependencies from the composition roots (same wiring as the job). */
 export async function defaultPostDeps(tenantId: number): Promise<PostDeps> {
-  const { getQboWriteClient } = await import('../qbo/write.js');
+  const { getQboConnector } = await import('../connectors/factory.js');
   const { swarmsync } = await import('../services.js');
   const { loadAttachmentBytes } = await import('../ingest/repo.js');
   const { config } = await import('../config.js');
   const cfg = config();
-  const writer = await getQboWriteClient(tenantId);
+  const connector = await getQboConnector(tenantId);
   return {
-    writer,
+    connector,
     anchor: (output) => swarmsync().auditProof(output),
     loadPdf: async (attachmentId) => {
       const sha = (
@@ -77,7 +77,7 @@ export async function runPostAndMap(
     postingId: row?.id ?? res.postingId,
     qboType,
     qboId,
-    qboLink: sandboxLink(deps.writer.realm, qboType, qboId),
+    qboLink: sandboxLink(deps.connector.companyId, qboType, qboId),
     mode: 'sandbox',
   };
 }

@@ -4,9 +4,7 @@ import { recordProofRef, hasProofRef } from '../swarmsync/proof.js';
 import { writeAudit, hashOf } from '../audit.js';
 import { logger } from '../logger.js';
 import { evaluateTax } from '../mapping/tax.js';
-import { mappedSupportedDimensions, SUPPORTED_DIMENSION_KINDS } from '../mapping/dimensions.js';
-import type { CanonicalDimension } from '../canonical/model.js';
-import type { QboWriteClient } from '../qbo/write.js';
+import type { AccountingConnector } from '../connectors/types.js';
 import type { VerifyResult } from '../swarmsync/client.js';
 
 export interface PostJob {
@@ -15,14 +13,16 @@ export interface PostJob {
 }
 
 export interface PostDeps {
-  writer: QboWriteClient;
+  // F4: the ONLY live accounting path is the provider-neutral connector. The pipeline
+  // never imports or calls a provider write module; the adapter owns all translation.
+  connector: AccountingConnector;
   anchor: (output: unknown) => Promise<VerifyResult>;
   loadPdf: (attachmentId: number) => Promise<Buffer | null>;
   amountCeiling: number;
   autoThreshold: number;
-  // FIX-F5: optional wrong-company guard. When provided, a 'mismatch' holds and
-  // never creates. Omitted in unit tests → check is skipped (behavior unchanged).
-  verifyCompany?: () => Promise<'match' | 'mismatch'>;
+  // Wrong-company guard: when an expected company name is configured, identity is
+  // verified through the connector before any write; 'mismatch' holds, never creates.
+  expectedCompanyName?: string;
 }
 
 export type PostResult =
@@ -81,9 +81,10 @@ export async function postOnce(tenantId: number, proposalId: number, deps: PostD
     return { status: 'held', reason: 'open_proof_scan_unavailable' };
   }
 
-  // --- Wrong-company guard (FIX-F5): never write into the wrong QBO company ---
-  if (deps.verifyCompany) {
-    if ((await deps.verifyCompany()) === 'mismatch') {
+  // --- Wrong-company guard (F5/F4): verify identity through the connector before any
+  // write. Only enforced when an expected company name is configured. ---
+  if (deps.expectedCompanyName) {
+    if ((await deps.connector.verifyCompanyIdentity({ name: deps.expectedCompanyName })) === 'mismatch') {
       await raiseException({ tenantId, reasonCode: 'company_mismatch', entityRef: `proposal:${proposalId}`, detail: 'company identity mismatch' });
       return { status: 'held', reason: 'company_mismatch' };
     }
@@ -104,25 +105,21 @@ export async function postOnce(tenantId: number, proposalId: number, deps: PostD
     return { status: 'duplicate' };
   }
 
-  // --- Layer 2 dedup: QBO existence query ---
-  const dedupWhere = buildDedupWhere(txn);
-  if (dedupWhere) {
-    let existing;
-    try {
-      existing = await deps.writer.queryExisting(txnType, dedupWhere);
-    } catch (err) {
-      // FIX-F5 fail-closed: if the PRE-create dedup query throws, the duplicate
-      // state is unknown — never blind-create. Hold and raise a typed exception.
-      logger.warn({ err: String(err) }, 'pre-create dedup query failed → holding (fail-closed)');
-      await raiseException({ tenantId, reasonCode: 'dedup_unavailable', entityRef: `proposal:${proposalId}`, detail: String(err) });
-      return { status: 'held', reason: 'dedup_unavailable' };
-    }
-    if (existing.length > 0) {
-      const qId = String((existing[0] as any).Id ?? '');
-      await recordPosting(tenantId, p, txnType, qId, '0', { adopted: true }, existing[0]);
-      await raiseException({ tenantId, reasonCode: 'duplicate_in_qbo', entityRef: `proposal:${proposalId}`, detail: 'qbo query hit' });
-      return { status: 'duplicate' };
-    }
+  // --- Layer 2 dedup: provider existence probe (through the connector) ---
+  let existing;
+  try {
+    existing = await deps.connector.detectExisting(txn, p.idempotency_key);
+  } catch (err) {
+    // Fail-closed: if the pre-create dedup probe throws, the duplicate state is unknown
+    // — never blind-create. Hold and raise a typed exception.
+    logger.warn({ err: String(err) }, 'pre-create dedup probe failed → holding (fail-closed)');
+    await raiseException({ tenantId, reasonCode: 'dedup_unavailable', entityRef: `proposal:${proposalId}`, detail: String(err) });
+    return { status: 'held', reason: 'dedup_unavailable' };
+  }
+  if (existing) {
+    await recordPosting(tenantId, p, txnType, existing.externalId, existing.revision, { adopted: true }, existing.raw);
+    await raiseException({ tenantId, reasonCode: 'duplicate_in_qbo', entityRef: `proposal:${proposalId}`, detail: 'provider existence hit' });
+    return { status: 'duplicate' };
   }
 
   // --- Tax gate (F5): a NAMED hold BEFORE create when tax cannot be handled. Replaces
@@ -139,29 +136,25 @@ export async function postOnce(tenantId: number, proposalId: number, deps: PostD
     return { status: 'held', reason: taxDecision.reason };
   }
 
-  // --- Create ---
-  const payload = buildQboPayload(txnType, txn);
+  // --- Create (through the connector — the sole live accounting path) ---
   let created;
   try {
-    created = await deps.writer.createEntity(txnType, payload, p.idempotency_key);
+    created = await deps.connector.postBill(txn, p.idempotency_key);
   } catch (err: any) {
-    // 6190 duplicate → treat as dedup hit, link (do not blind-retry).
+    // Provider duplicate signal → treat as dedup hit, link (do not blind-retry).
     if (String(err?.body ?? '').includes('6190')) {
       await raiseException({ tenantId, reasonCode: 'duplicate_in_qbo', entityRef: `proposal:${proposalId}`, detail: '6190' });
       return { status: 'duplicate' };
     }
-    // Unknown outcome (timeout) → replay-adopt via dedup query before any retry.
-    if (dedupWhere) {
-      try {
-        const existing = await deps.writer.queryExisting(txnType, dedupWhere);
-        if (existing.length > 0) {
-          const qId = String((existing[0] as any).Id ?? '');
-          await recordPosting(tenantId, p, txnType, qId, '0', { adoptedAfterTimeout: true }, existing[0]);
-          return { status: 'posted', postingId: -1, qboId: qId };
-        }
-      } catch {
-        /* fall through to exception */
+    // Unknown outcome (timeout) → replay-adopt via the existence probe before any retry.
+    try {
+      const adopt = await deps.connector.detectExisting(txn, p.idempotency_key);
+      if (adopt) {
+        await recordPosting(tenantId, p, txn, adopt.externalId, adopt.revision, { adoptedAfterTimeout: true }, adopt.raw);
+        return { status: 'posted', postingId: -1, qboId: adopt.externalId };
       }
+    } catch {
+      /* fall through to exception */
     }
     await raiseException({ tenantId, reasonCode: 'qbo_api_error', entityRef: `proposal:${proposalId}`, detail: String(err?.message ?? err) });
     throw err;
@@ -172,53 +165,52 @@ export async function postOnce(tenantId: number, proposalId: number, deps: PostD
     const pdf = await deps.loadPdf(p.attachment_id);
     if (pdf) {
       try {
-        await deps.writer.attach(txnType, created.id, pdf, `invoice-${created.id}.pdf`);
+        await deps.connector.attachDocument(created.externalId, pdf, `invoice-${created.externalId}.pdf`);
       } catch (err) {
-        await raiseException({ tenantId, reasonCode: 'attachment_failed', entityRef: `posting:${created.id}`, detail: String(err) });
+        await raiseException({ tenantId, reasonCode: 'attachment_failed', entityRef: `posting:${created.externalId}`, detail: String(err) });
       }
     }
   }
 
-  // --- Read-back verify (no retry on mismatch) ---
-  const readBack = await deps.writer.readEntity(txnType, created.id);
-  // Core amount/DocNumber check is unchanged and still fully authoritative.
-  if (!verifyMatches(txn, readBack)) {
-    await recordPosting(tenantId, p, txnType, created.id, created.syncToken, { verifyMismatch: true }, readBack, 'verify_mismatch');
-    await raiseException({ tenantId, reasonCode: 'verify_mismatch', entityRef: `posting:${created.id}`, detail: 'read-back mismatch' });
+  // --- Read-back verify (authoritative; through the connector; no retry on mismatch) ---
+  const verified = await deps.connector.readBackVerify(txn, created.externalId);
+  const readBack = verified.raw;
+  // Amount/DocNumber mismatch is fully authoritative — hold, never mark posted.
+  if (verified.verify === 'mismatch' && (verified.reason === 'amount' || verified.reason === 'docnumber')) {
+    await recordPosting(tenantId, p, txnType, created.externalId, created.revision, { verifyMismatch: verified.reason }, readBack, 'verify_mismatch');
+    await raiseException({ tenantId, reasonCode: 'verify_mismatch', entityRef: `posting:${created.externalId}`, detail: 'read-back mismatch' });
     return { status: 'held', reason: 'verify_mismatch' };
   }
-  // F5: dimensions we approved+wrote must survive read-back. A material mismatch (the
-  // provider dropped or altered a dimension) marks the posting unverified and raises a
-  // dedicated dimension_mismatch exception — the amount/DocNumber checks above are intact.
-  const dimMiss = firstDimensionMismatch(txn, readBack);
-  if (dimMiss) {
-    await recordPosting(tenantId, p, txnType, created.id, created.syncToken, { dimensionMismatch: dimMiss }, readBack, 'dimension_mismatch');
-    await raiseException({ tenantId, reasonCode: 'dimension_mismatch', entityRef: `posting:${created.id}`, detail: JSON.stringify(dimMiss) });
+  // F5: an approved+written dimension the provider dropped/altered → unverified + a
+  // dedicated dimension_mismatch exception.
+  if (verified.verify === 'mismatch' && verified.reason === 'dimension') {
+    await recordPosting(tenantId, p, txnType, created.externalId, created.revision, { dimensionMismatch: verified.detail }, readBack, 'dimension_mismatch');
+    await raiseException({ tenantId, reasonCode: 'dimension_mismatch', entityRef: `posting:${created.externalId}`, detail: JSON.stringify(verified.detail) });
     return { status: 'held', reason: 'dimension_mismatch' };
   }
 
-  const postingId = await recordPosting(tenantId, p, txnType, created.id, created.syncToken, payload, readBack, 'posted_sandbox');
+  const postingId = await recordPosting(tenantId, p, txnType, created.externalId, created.revision, txn, readBack, 'posted_sandbox');
   await query('UPDATE proposals SET status=$2 WHERE id=$1', [proposalId, 'posted_sandbox']);
   await query(
     `INSERT INTO reconciliation (tenant_id, kind, left_ref, right_ref, match_status, variance)
      VALUES ($1,'proposal_vs_created',$2,$3,'matched',$4)`,
-    [tenantId, `proposal:${proposalId}`, `qbo:${created.id}`, JSON.stringify({ diffHash: hashOf(readBack) })],
+    [tenantId, `proposal:${proposalId}`, `qbo:${created.externalId}`, JSON.stringify({ diffHash: hashOf(readBack) })],
   );
   await writeAudit({
     tenantId,
     action: 'post.sandbox',
     entity: `posting:${postingId}`,
-    realm: deps.writer.realm,
+    realm: deps.connector.companyId,
     afterHash: hashOf(readBack),
-    detail: { qboId: created.id, txnType },
+    detail: { qboId: created.externalId, txnType },
   });
 
   // --- AuditProof anchor (A1-P2.2): anchor failure NEVER re-creates the txn ---
   if (!(await hasProofRef(tenantId, 'posting', String(postingId), 'auditproof'))) {
     try {
       const v = await deps.anchor({
-        realm: deps.writer.realm,
-        qbo_id: created.id,
+        realm: deps.connector.companyId,
+        qbo_id: created.externalId,
         entity_type: txnType,
         idempotency_key: p.idempotency_key,
         diff_hash: hashOf(readBack),
@@ -245,7 +237,7 @@ export async function postOnce(tenantId: number, proposalId: number, deps: PostD
     }
   }
 
-  return { status: 'posted', postingId, qboId: created.id };
+  return { status: 'posted', postingId, qboId: created.externalId };
 }
 
 async function recordPosting(
@@ -283,140 +275,20 @@ async function recordPosting(
   return res.rows[0]!.id;
 }
 
-function buildDedupWhere(txn: any): string | null {
-  const vendor = txn?.vendorRef?.value;
-  const doc = txn?.DocNumber;
-  if (!vendor && !doc) return null;
-  const parts: string[] = [];
-  if (doc) parts.push(`DocNumber = '${String(doc).replace(/'/g, '')}'`);
-  if (txn?.TxnDate) parts.push(`TxnDate = '${String(txn.TxnDate).replace(/'/g, '')}'`);
-  return parts.join(' AND ') || null;
-}
-
-function buildQboPayload(_txnType: string, txn: any): Record<string, unknown> {
-  // F5 dimension carry-through: only mapped, provider-representable dimensions are
-  // emitted. Anything unsupported/not-mapped was already held before create.
-  const headerDims = mappedSupportedDimensions(txn.dimensions);
-  const headerClass = headerDims.find((d) => d.kind === 'class');
-  const headerLocation = headerDims.find((d) => d.kind === 'location');
-
-  const lines = (txn.lines ?? []).map((l: any) => {
-    const detail: Record<string, unknown> = l.accountRef ? { AccountRef: { value: l.accountRef.value } } : {};
-    const lineDims = mappedSupportedDimensions(l.dimensions);
-    const cls = lineDims.find((d) => d.kind === 'class') ?? headerClass;
-    if (cls?.id) detail.ClassRef = { value: cls.id };
-    return {
-      Amount: l.Amount,
-      DetailType: 'AccountBasedExpenseLineDetail',
-      Description: l.description,
-      AccountBasedExpenseLineDetail: detail,
-    };
-  });
-  const fallbackDetail: Record<string, unknown> = {};
-  if (headerClass?.id) fallbackDetail.ClassRef = { value: headerClass.id };
-  const payload: Record<string, unknown> = {
-    Line: lines.length
-      ? lines
-      : [{ Amount: txn.TotalAmt, DetailType: 'AccountBasedExpenseLineDetail', AccountBasedExpenseLineDetail: fallbackDetail }],
-    TxnDate: txn.TxnDate,
-    DocNumber: txn.DocNumber,
-  };
-  if (txn.DueDate) payload.DueDate = txn.DueDate;
-  if (txn.vendorRef) payload.VendorRef = { value: txn.vendorRef.value };
-  // Location is a header-level dimension on a QBO Bill.
-  if (headerLocation?.id) payload.DepartmentRef = { value: headerLocation.id };
-
-  // Tax line — added ONLY when evaluateTax approved a configured, reconciling code.
-  const tax = evaluateTax(txn);
-  if (tax.kind === 'ok' && tax.tax.code) {
-    payload.TxnTaxDetail = { TotalTax: tax.tax.amount, TxnTaxCodeRef: { value: String(tax.tax.code) } };
-  }
-  return payload;
-}
-
-function verifyMatches(txn: any, readBack: any): boolean {
-  const amtA = Number(txn?.TotalAmt ?? 0);
-  const amtB = Number(readBack?.TotalAmt ?? 0);
-  if (Math.abs(amtA - amtB) > 0.01) return false;
-  if (txn?.DocNumber && readBack?.DocNumber && String(txn.DocNumber) !== String(readBack.DocNumber)) return false;
-  return true;
-}
-
-/** The value the provider echoed back for a written dimension, or undefined if absent. */
-function readBackDimensionValue(kind: string, readBack: any): string | undefined {
-  if (kind === 'location') {
-    const v = readBack?.DepartmentRef?.value;
-    return v == null ? undefined : String(v);
-  }
-  if (kind === 'class') {
-    const lines: any[] = Array.isArray(readBack?.Line) ? readBack.Line : [];
-    for (const l of lines) {
-      const v = l?.AccountBasedExpenseLineDetail?.ClassRef?.value;
-      if (v != null) return String(v);
-    }
-    const headerV = readBack?.ClassRef?.value;
-    return headerV == null ? undefined : String(headerV);
-  }
-  return undefined;
-}
-
-/**
- * Returns the first dimension we approved+wrote that the read-back did not confirm
- * (missing or a different id) — or null when every written dimension survived. Only the
- * mapped, provider-representable dimensions are checked (the only ones we ever emit).
- */
-function firstDimensionMismatch(
-  txn: any,
-  readBack: any,
-): { kind: string; expected: string; found: string | null } | null {
-  const dims: CanonicalDimension[] = [
-    ...mappedSupportedDimensions(txn?.dimensions),
-    ...(Array.isArray(txn?.lines) ? txn.lines.flatMap((l: any) => mappedSupportedDimensions(l?.dimensions)) : []),
-  ].filter((d) => SUPPORTED_DIMENSION_KINDS.includes(d.kind as (typeof SUPPORTED_DIMENSION_KINDS)[number]));
-  for (const d of dims) {
-    if (!d.id) continue;
-    const found = readBackDimensionValue(d.kind, readBack);
-    if (found !== String(d.id)) {
-      return { kind: d.kind, expected: String(d.id), found: found ?? null };
-    }
-  }
-  return null;
-}
-
 export async function postSandboxHandler(job: { data: PostJob }): Promise<void> {
   const { config } = await import('../config.js');
-  const { getQboWriteClient } = await import('../qbo/write.js');
+  const { getQboConnector } = await import('../connectors/factory.js');
   const { swarmsync } = await import('../services.js');
   const { loadAttachmentBytes } = await import('../ingest/repo.js');
   const cfg = config();
-  const writer = await getQboWriteClient(job.data.tenantId);
 
-  // FIX-F5 / F4-WIRE: enforce the wrong-company guard only when an expected company
-  // name is configured. Identity is now checked through the provider-neutral
-  // AccountingConnector (src/connectors/qbo.ts), which wraps the same read/write
-  // clients — delegation only, no parallel QBO implementation.
-  const expectedCompany = (cfg.QBO_SANDBOX_COMPANY_NAME ?? '').trim();
-  const verifyCompany = expectedCompany
-    ? async (): Promise<'match' | 'mismatch'> => {
-        try {
-          const { getQboReadClient } = await import('../qbo/client.js');
-          const { createQboConnector } = await import('../connectors/qbo.js');
-          const read = await getQboReadClient(job.data.tenantId);
-          const connector = createQboConnector({ writeClient: writer, readClient: read, expectedCompanyName: expectedCompany });
-          return await connector.verifyCompanyIdentity({ name: expectedCompany });
-        } catch (err) {
-          // Only a DEFINITIVE identity read can hold. Identity is already asserted at
-          // connect (auth/qbo-oauth) and sandbox-only at write-client construction;
-          // this is a defense-in-depth double check, so an unreadable identity does
-          // not block posting (and never silently forces the wrong company).
-          logger.warn({ err: String(err) }, 'company identity read failed → skipping wrong-company double check');
-          return 'match';
-        }
-      }
-    : undefined;
+  // The sole live accounting path: the provider-neutral connector (wraps the QBO clients
+  // via the factory — delegation only; the pipeline imports no provider write module).
+  const connector = await getQboConnector(job.data.tenantId);
+  const expectedCompanyName = (cfg.QBO_SANDBOX_COMPANY_NAME ?? '').trim() || undefined;
 
   await postOnce(job.data.tenantId, job.data.proposalId, {
-    writer,
+    connector,
     anchor: (output) => swarmsync().auditProof(output),
     loadPdf: async (attachmentId) => {
       const sha = (await query<{ sha256: string }>('SELECT sha256 FROM attachments WHERE id=$1', [attachmentId])).rows[0]?.sha256;
@@ -424,6 +296,6 @@ export async function postSandboxHandler(job: { data: PostJob }): Promise<void> 
     },
     amountCeiling: cfg.AMOUNT_CEILING,
     autoThreshold: cfg.AUTO_THRESHOLD,
-    verifyCompany,
+    expectedCompanyName,
   });
 }

@@ -8,6 +8,14 @@ import {
   resetTables, createTenant, insertMessage, insertAttachment, insertExtraction, countRows, closeAll,
 } from './helpers.js';
 import type { QboWriteClient } from '../src/qbo/write.js';
+import type { QboReadClient } from '../src/qbo/client.js';
+import { createQboConnector } from '../src/connectors/qbo.js';
+
+// F4: wrap the mock write client in the REAL adapter so payload/read-back assertions run
+// at the adapter boundary where the QBO payload is actually built.
+function mockRead(): QboReadClient {
+  return { getCompanyInfo: vi.fn().mockResolvedValue({ CompanyName: 'Sandbox' }), queryEntity: vi.fn().mockResolvedValue([]) } as unknown as QboReadClient;
+}
 
 /**
  * F5 sub-item 1 — dimension carry-through. Supported dimensions are carried into the QBO
@@ -26,7 +34,7 @@ function mockWriter(overrides: Partial<QboWriteClient> = {}): QboWriteClient {
   } as QboWriteClient;
 }
 const okAnchor = vi.fn().mockResolvedValue({ proof_id: 'ap1', chain_hash: 'ch1', verification_status: 'passed', confidence: 1, raw: {} });
-const deps = (writer: QboWriteClient) => ({ writer, anchor: okAnchor, loadPdf: async () => Buffer.from('%PDF'), amountCeiling: 10000, autoThreshold: 0.9 });
+const deps = (writer: QboWriteClient) => ({ connector: createQboConnector({ writeClient: writer, readClient: mockRead() }), anchor: okAnchor, loadPdf: async () => Buffer.from('%PDF'), amountCeiling: 10000, autoThreshold: 0.9 });
 
 async function seedReadyProposal(t: number, txnOverride: Record<string, unknown> = {}, flags = '{}') {
   const m = await insertMessage(t);

@@ -23,10 +23,96 @@ import type {
   CompanyIdentity,
   CreateResult,
   IdentityResult,
+  PostingTxn,
+  PostedRef,
+  ReadBackResult,
 } from './types.js';
+import { evaluateTax } from '../mapping/tax.js';
+import { mappedSupportedDimensions, SUPPORTED_DIMENSION_KINDS } from '../mapping/dimensions.js';
+import type { CanonicalDimension } from '../canonical/model.js';
 
 /** Dimension kinds QBO can represent. Anything else is surfaced as Unsupported. */
 const QBO_DIMENSIONS = ['class', 'location'];
+
+// --- QBO-specific translation of the pipeline's opaque PostingTxn. All of this used to
+// live in src/pipeline/posting.ts; F4 moved it into the adapter so the core pipeline holds
+// no QBO shapes and imports no QBO write module. ---
+
+function qboDedupWhere(txn: any): string | null {
+  const vendor = txn?.vendorRef?.value;
+  const doc = txn?.DocNumber;
+  if (!vendor && !doc) return null;
+  const parts: string[] = [];
+  if (doc) parts.push(`DocNumber = '${String(doc).replace(/'/g, '')}'`);
+  if (txn?.TxnDate) parts.push(`TxnDate = '${String(txn.TxnDate).replace(/'/g, '')}'`);
+  return parts.join(' AND ') || null;
+}
+
+function qboPostingPayload(txn: any): Record<string, unknown> {
+  const headerDims = mappedSupportedDimensions(txn.dimensions);
+  const headerClass = headerDims.find((d) => d.kind === 'class');
+  const headerLocation = headerDims.find((d) => d.kind === 'location');
+  const lines = (txn.lines ?? []).map((l: any) => {
+    const detail: Record<string, unknown> = l.accountRef ? { AccountRef: { value: l.accountRef.value } } : {};
+    const lineDims = mappedSupportedDimensions(l.dimensions);
+    const cls = lineDims.find((d) => d.kind === 'class') ?? headerClass;
+    if (cls?.id) detail.ClassRef = { value: cls.id };
+    return { Amount: l.Amount, DetailType: 'AccountBasedExpenseLineDetail', Description: l.description, AccountBasedExpenseLineDetail: detail };
+  });
+  const fallbackDetail: Record<string, unknown> = {};
+  if (headerClass?.id) fallbackDetail.ClassRef = { value: headerClass.id };
+  const payload: Record<string, unknown> = {
+    Line: lines.length ? lines : [{ Amount: txn.TotalAmt, DetailType: 'AccountBasedExpenseLineDetail', AccountBasedExpenseLineDetail: fallbackDetail }],
+    TxnDate: txn.TxnDate,
+    DocNumber: txn.DocNumber,
+  };
+  if (txn.DueDate) payload.DueDate = txn.DueDate;
+  if (txn.vendorRef) payload.VendorRef = { value: txn.vendorRef.value };
+  if (headerLocation?.id) payload.DepartmentRef = { value: headerLocation.id };
+  const tax = evaluateTax(txn);
+  if (tax.kind === 'ok' && tax.tax.code) {
+    payload.TxnTaxDetail = { TotalTax: tax.tax.amount, TxnTaxCodeRef: { value: String(tax.tax.code) } };
+  }
+  return payload;
+}
+
+function qboAmountDocMatches(txn: any, readBack: any): boolean {
+  const amtA = Number(txn?.TotalAmt ?? 0);
+  const amtB = Number(readBack?.TotalAmt ?? 0);
+  if (Math.abs(amtA - amtB) > 0.01) return false;
+  if (txn?.DocNumber && readBack?.DocNumber && String(txn.DocNumber) !== String(readBack.DocNumber)) return false;
+  return true;
+}
+
+function qboReadBackDimensionValue(kind: string, readBack: any): string | undefined {
+  if (kind === 'location') {
+    const v = readBack?.DepartmentRef?.value;
+    return v == null ? undefined : String(v);
+  }
+  if (kind === 'class') {
+    const lines: any[] = Array.isArray(readBack?.Line) ? readBack.Line : [];
+    for (const l of lines) {
+      const v = l?.AccountBasedExpenseLineDetail?.ClassRef?.value;
+      if (v != null) return String(v);
+    }
+    const headerV = readBack?.ClassRef?.value;
+    return headerV == null ? undefined : String(headerV);
+  }
+  return undefined;
+}
+
+function qboFirstDimensionMismatch(txn: any, readBack: any): { kind: string; expected: string; found: string | null } | null {
+  const dims: CanonicalDimension[] = [
+    ...mappedSupportedDimensions(txn?.dimensions),
+    ...(Array.isArray(txn?.lines) ? txn.lines.flatMap((l: any) => mappedSupportedDimensions(l?.dimensions)) : []),
+  ].filter((d) => SUPPORTED_DIMENSION_KINDS.includes(d.kind as (typeof SUPPORTED_DIMENSION_KINDS)[number]));
+  for (const d of dims) {
+    if (!d.id) continue;
+    const found = qboReadBackDimensionValue(d.kind, readBack);
+    if (found !== String(d.id)) return { kind: d.kind, expected: String(d.id), found: found ?? null };
+  }
+  return null;
+}
 
 export interface QboConnectorDeps {
   writeClient: QboWriteClient;
@@ -106,6 +192,7 @@ export function createQboConnector(deps: QboConnectorDeps): AccountingConnector 
   return {
     provider: 'qbo',
     connectionClass: 'cloud',
+    companyId: writeClient.realm,
     capabilities,
 
     async verifyCompanyIdentity(expected: CompanyIdentity): Promise<IdentityResult> {
@@ -161,6 +248,42 @@ export function createQboConnector(deps: QboConnectorDeps): AccountingConnector 
     async attach(_entity: CanonicalEntityKind, externalId: string, doc: Buffer, filename: string): Promise<AttachOk | Unsupported> {
       await writeClient.attach('Bill', externalId, doc, filename);
       return { attached: true };
+    },
+
+    // --- F4 live posting operations (adapter owns all QBO translation) ---
+
+    async detectExisting(txn: PostingTxn, _idempotencyKey: string): Promise<PostedRef | null> {
+      const txnType = String((txn as any).txnType ?? 'Bill');
+      const where = qboDedupWhere(txn);
+      if (!where) return null;
+      // Propagates on error → the pipeline holds fail-closed (dedup_unavailable).
+      const rows = await writeClient.queryExisting(txnType, where);
+      if (rows.length === 0) return null;
+      const raw = rows[0] as Record<string, unknown>;
+      return { externalId: String((raw as any).Id ?? ''), revision: String((raw as any).SyncToken ?? '0'), raw };
+    },
+
+    async postBill(txn: PostingTxn, idempotencyKey: string): Promise<PostedRef> {
+      const txnType = String((txn as any).txnType ?? 'Bill');
+      const created = await writeClient.createEntity(txnType, qboPostingPayload(txn), idempotencyKey);
+      return { externalId: created.id, revision: created.syncToken, raw: created.entity };
+    },
+
+    async attachDocument(externalId: string, doc: Buffer, filename: string): Promise<void> {
+      await writeClient.attach('Bill', externalId, doc, filename);
+    },
+
+    async readBackVerify(txn: PostingTxn, externalId: string): Promise<ReadBackResult> {
+      const txnType = String((txn as any).txnType ?? 'Bill');
+      const raw = (await writeClient.readEntity(txnType, externalId)) as Record<string, unknown>;
+      const revision = String((raw as any).SyncToken ?? '0');
+      if (!qboAmountDocMatches(txn, raw)) {
+        const amtOk = Math.abs(Number((txn as any)?.TotalAmt ?? 0) - Number((raw as any)?.TotalAmt ?? 0)) <= 0.01;
+        return { verify: 'mismatch', reason: amtOk ? 'docnumber' : 'amount', revision, raw };
+      }
+      const dimMiss = qboFirstDimensionMismatch(txn, raw);
+      if (dimMiss) return { verify: 'mismatch', reason: 'dimension', detail: dimMiss, revision, raw };
+      return { verify: 'match', revision, raw };
     },
 
     async close(): Promise<void> {

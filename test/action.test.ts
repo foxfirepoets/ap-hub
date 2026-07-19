@@ -3,7 +3,8 @@ import { query } from '../src/db/pool.js';
 import { recordProofRef } from '../src/swarmsync/proof.js';
 import { createSession } from '../src/auth/session.js';
 import { resolveVendor } from '../src/mapping/resolve.js';
-import type { QboWriteClient } from '../src/qbo/write.js';
+import { mockConnector } from './connector-mock.js';
+import type { AccountingConnector } from '../src/connectors/types.js';
 import type { PostDeps } from '../src/pipeline/posting.js';
 import type { LockedForwarder } from '../src/gatekeeper/forwarder.js';
 import type { ReplyDeps } from '../src/services/reply.js';
@@ -19,18 +20,9 @@ import {
  * touched. The six-guarantee suite (posting/lockdown/gatekeeper/etc.) runs alongside.
  */
 
-function mockWriter(overrides: Partial<QboWriteClient> = {}): QboWriteClient {
-  return {
-    realm: 'sandbox-realm',
-    createEntity: vi.fn().mockResolvedValue({ id: 'q1', syncToken: '0', entity: { Id: 'q1' } }),
-    readEntity: vi.fn().mockResolvedValue({ TotalAmt: 100, DocNumber: 'INV-1' }),
-    queryExisting: vi.fn().mockResolvedValue([]),
-    attach: vi.fn().mockResolvedValue(undefined),
-    ...overrides,
-  } as QboWriteClient;
-}
+const mockWriter = mockConnector;
 const okAnchor = vi.fn().mockResolvedValue({ proof_id: 'ap1', chain_hash: 'ch1', verification_status: 'passed', confidence: 1, raw: {} });
-const postDeps = (writer: QboWriteClient): PostDeps => ({ writer, anchor: okAnchor, loadPdf: async () => Buffer.from('%PDF'), amountCeiling: 10000, autoThreshold: 0.9 });
+const postDeps = (writer: AccountingConnector): PostDeps => ({ connector: writer, anchor: okAnchor, loadPdf: async () => Buffer.from('%PDF'), amountCeiling: 10000, autoThreshold: 0.9 });
 
 async function seedReadyProposal(t: number, opts: { withProofs?: boolean } = {}): Promise<number> {
   const withProofs = opts.withProofs ?? true;
@@ -97,7 +89,7 @@ describe('CHUNK_4 action — approve', () => {
     expect(body.data.mode).toBe('sandbox');
     expect(body.data.qbo_type).toBe('Bill');
     expect(body.data.qbo_link).toContain('sandbox');
-    expect(w.createEntity).toHaveBeenCalledTimes(1); // single QBO-write path
+    expect(w.postBill).toHaveBeenCalledTimes(1); // single QBO-write path
     expect(await countRows('postings', "tenant_id=$1 AND status='posted_sandbox' AND mode='sandbox'", [t])).toBe(1);
     expect(await humanAudit(t, 'proposal.approve')).toBe(1);
   });
@@ -110,7 +102,7 @@ describe('CHUNK_4 action — approve', () => {
     const res = await runApprove(post(token), pid, postDeps(w));
     expect(res.status).toBe(403);
     expect(((await res.json()) as { error: { code: string } }).error.code).toBe('FORBIDDEN');
-    expect(w.createEntity).not.toHaveBeenCalled();
+    expect(w.postBill).not.toHaveBeenCalled();
     expect(await countRows('postings', 'tenant_id=$1', [t])).toBe(0);
   });
 
@@ -141,7 +133,7 @@ describe('CHUNK_4 action — approve', () => {
     const t = await createTenant();
     const token = await ownerToken(t);
     const pid = await seedReadyProposal(t);
-    const w = mockWriter({ createEntity: vi.fn().mockRejectedValue(new Error('boom')) });
+    const w = mockWriter({ postBill: vi.fn().mockRejectedValue(new Error('boom')) });
     const res = await runApprove(post(token), pid, postDeps(w));
     expect(res.status).toBe(202);
     expect(((await res.json()) as { error: { code: string } }).error.code).toBe('QBO_RETRY');
@@ -162,7 +154,7 @@ describe('CHUNK_4 action — retry', () => {
     await runApprove(post(token), pid, postDeps(w));
     const res = await runRetry(post(token), pid, postDeps(w));
     expect(res.status).toBe(202); // status gate: already posted → held
-    expect(w.createEntity).toHaveBeenCalledTimes(1);
+    expect(w.postBill).toHaveBeenCalledTimes(1);
     expect(await countRows('postings', 'tenant_id=$1', [t])).toBe(1);
     expect(await humanAudit(t, 'proposal.retry')).toBe(1);
   });

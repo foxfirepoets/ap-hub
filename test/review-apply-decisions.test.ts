@@ -3,7 +3,8 @@ import { query } from '../src/db/pool.js';
 import { recordProofRef } from '../src/swarmsync/proof.js';
 import { applyDecisions } from '../src/services/review/apply-decisions.js';
 import type { ActorContext } from '../src/services/index.js';
-import type { QboWriteClient } from '../src/qbo/write.js';
+import { mockConnector } from './connector-mock.js';
+import type { AccountingConnector } from '../src/connectors/types.js';
 import type { PostDeps } from '../src/pipeline/posting.js';
 import {
   resetTables, createTenant, insertMessage, insertAttachment, insertExtraction, countRows, closeAll,
@@ -17,18 +18,9 @@ import {
  * skip (never applied under the wrong tenant).
  */
 
-function mockWriter(overrides: Partial<QboWriteClient> = {}): QboWriteClient {
-  return {
-    realm: 'sandbox-realm',
-    createEntity: vi.fn().mockResolvedValue({ id: 'q1', syncToken: '0', entity: { Id: 'q1' } }),
-    readEntity: vi.fn().mockResolvedValue({ TotalAmt: 100, DocNumber: 'INV-1' }),
-    queryExisting: vi.fn().mockResolvedValue([]),
-    attach: vi.fn().mockResolvedValue(undefined),
-    ...overrides,
-  } as QboWriteClient;
-}
+const mockWriter = mockConnector;
 const okAnchor = vi.fn().mockResolvedValue({ proof_id: 'ap1', chain_hash: 'ch1', verification_status: 'passed', confidence: 1, raw: {} });
-const postDeps = (writer: QboWriteClient): PostDeps => ({ writer, anchor: okAnchor, loadPdf: async () => Buffer.from('%PDF'), amountCeiling: 10000, autoThreshold: 0.9 });
+const postDeps = (writer: AccountingConnector): PostDeps => ({ connector: writer, anchor: okAnchor, loadPdf: async () => Buffer.from('%PDF'), amountCeiling: 10000, autoThreshold: 0.9 });
 
 async function seedProposal(t: number, opts: { status?: string; withProofs?: boolean } = {}): Promise<number> {
   const withProofs = opts.withProofs ?? true;
@@ -78,7 +70,7 @@ describe('CHUNK_8_REVIEWDASH — apply-decisions', () => {
     const w2 = mockWriter();
     const res2 = await applyDecisions(ctxFor(t), file, postDeps(w2));
     expect(await countRows('postings', 'tenant_id=$1', [t])).toBe(1); // zero additional
-    expect(w2.createEntity).not.toHaveBeenCalled();
+    expect(w2.postBill).not.toHaveBeenCalled();
     expect(res2.errors).toEqual([]); // already-posted is not an error
   });
 

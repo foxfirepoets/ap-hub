@@ -17,6 +17,9 @@ import {
   type ConnectionClass,
   type CreateResult,
   type IdentityResult,
+  type PostingTxn,
+  type PostedRef,
+  type ReadBackResult,
   type ProviderId,
 } from './types.js';
 
@@ -24,6 +27,7 @@ function makeStub(provider: ProviderId, connectionClass: ConnectionClass, caps: 
   return {
     provider,
     connectionClass,
+    companyId: '',
     capabilities: () => caps,
     async verifyCompanyIdentity(_expected: CompanyIdentity): Promise<IdentityResult> {
       throw new NotImplementedInPhase(provider, 'verifyCompanyIdentity');
@@ -39,6 +43,18 @@ function makeStub(provider: ProviderId, connectionClass: ConnectionClass, caps: 
     },
     async attach(_entity: CanonicalEntityKind, _externalId: string, _doc: Buffer, _filename: string): Promise<AttachOk | Unsupported> {
       throw new NotImplementedInPhase(provider, 'attach');
+    },
+    async detectExisting(_txn: PostingTxn, _idempotencyKey: string): Promise<PostedRef | null> {
+      throw new NotImplementedInPhase(provider, 'detectExisting');
+    },
+    async postBill(_txn: PostingTxn, _idempotencyKey: string): Promise<PostedRef> {
+      throw new NotImplementedInPhase(provider, 'postBill');
+    },
+    async attachDocument(_externalId: string, _doc: Buffer, _filename: string): Promise<void> {
+      throw new NotImplementedInPhase(provider, 'attachDocument');
+    },
+    async readBackVerify(_txn: PostingTxn, _externalId: string): Promise<ReadBackResult> {
+      throw new NotImplementedInPhase(provider, 'readBackVerify');
     },
     close: async () => {},
   };

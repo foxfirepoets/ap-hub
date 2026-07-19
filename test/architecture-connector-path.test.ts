@@ -17,28 +17,32 @@ const src = (rel: string) => readFileSync(path.join(here, '..', rel), 'utf8');
  * grep-verifiable, same style as the send_lockdown/no_qbo_write guarantees.
  */
 describe('architecture: production posting path routes through the connector', () => {
-  it('postSandboxHandler references the connector module (src/connectors/qbo.js)', () => {
+  it('the live pipeline reaches QBO ONLY through the connector — it imports no provider write module', () => {
     const postingSrc = src('src/pipeline/posting.ts');
+    // F4 core guarantee: the pipeline must NOT import the raw QBO write module anywhere
+    // (no raw-writer bypass remains). The one authorized construction is via the factory.
+    expect(postingSrc).not.toContain("from '../qbo/write");
+    expect(postingSrc).not.toContain("import('../qbo/write");
     const handlerStart = postingSrc.indexOf('export async function postSandboxHandler');
     expect(handlerStart).toBeGreaterThan(-1);
     const handlerBody = postingSrc.slice(handlerStart);
-    expect(handlerBody).toContain('../connectors/qbo.js');
-    expect(handlerBody).toContain('createQboConnector');
-    // The company-identity check is wired through the connector's own method, not a
-    // second hand-rolled comparison against getCompanyInfo().
-    expect(handlerBody).toContain('connector.verifyCompanyIdentity');
+    // The sole live path is the provider-neutral connector, built by the factory.
+    expect(handlerBody).toContain('../connectors/factory.js');
+    expect(handlerBody).toContain('getQboConnector');
+    // postOnce's deps carry a connector, never a raw writer.
+    expect(postingSrc).toContain('connector: AccountingConnector');
+    expect(postingSrc).not.toContain('deps.writer');
   });
 
-  it('postOnce holds on company mismatch BEFORE calling writer.createEntity (F5 guarantee — see test/posting.test.ts:company_mismatch_holds for the behavioral case this wiring depends on)', () => {
-    // This file only asserts the import-graph/wiring; the behavioral coverage
-    // (mismatch → held, createEntity never called) already exists in
-    // test/posting.test.ts and is intentionally not duplicated here.
+  it('postOnce verifies company identity through the connector BEFORE posting the bill', () => {
+    // Import-graph/ordering assertion; behavioral coverage (mismatch → held, postBill never
+    // called) lives in test/posting.test.ts:company_mismatch_holds.
     const postingSrc = src('src/pipeline/posting.ts');
-    const verifyGuardIdx = postingSrc.indexOf("if (deps.verifyCompany)");
-    const createCallIdx = postingSrc.indexOf('deps.writer.createEntity(');
+    const verifyGuardIdx = postingSrc.indexOf('deps.connector.verifyCompanyIdentity(');
+    const postCallIdx = postingSrc.indexOf('deps.connector.postBill(');
     expect(verifyGuardIdx).toBeGreaterThan(-1);
-    expect(createCallIdx).toBeGreaterThan(-1);
-    expect(verifyGuardIdx).toBeLessThan(createCallIdx);
+    expect(postCallIdx).toBeGreaterThan(-1);
+    expect(verifyGuardIdx).toBeLessThan(postCallIdx);
   });
 
   it('src/connectors/qbo.ts create() delegates to the wrapped write client — no duplicate QBO write implementation', () => {

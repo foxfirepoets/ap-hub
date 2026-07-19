@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest';
 import { query } from '../src/db/pool.js';
 import { recordProofRef } from '../src/swarmsync/proof.js';
 import { createSession } from '../src/auth/session.js';
-import type { QboWriteClient } from '../src/qbo/write.js';
+import { mockConnector } from './connector-mock.js';
+import type { AccountingConnector } from '../src/connectors/types.js';
 import type { PostDeps } from '../src/pipeline/posting.js';
 import type { DryRunDeps } from '../src/services/onboarding.js';
 import { advanceOnboardingStep } from '../src/services/onboarding.js';
@@ -23,18 +24,9 @@ import {
  * "approve initial rules" via the existing CHUNK_2 `learnCorrection` service path.
  */
 
-function mockWriter(overrides: Partial<QboWriteClient> = {}): QboWriteClient {
-  return {
-    realm: 'sandbox-realm',
-    createEntity: vi.fn().mockResolvedValue({ id: 'q1', syncToken: '0', entity: { Id: 'q1' } }),
-    readEntity: vi.fn().mockResolvedValue({ TotalAmt: 100, DocNumber: 'INV-1' }),
-    queryExisting: vi.fn().mockResolvedValue([]),
-    attach: vi.fn().mockResolvedValue(undefined),
-    ...overrides,
-  } as QboWriteClient;
-}
+const mockWriter = mockConnector;
 const okAnchor = vi.fn().mockResolvedValue({ proof_id: 'ap1', chain_hash: 'ch1', verification_status: 'passed', confidence: 1, raw: {} });
-const postDeps = (writer: QboWriteClient): PostDeps => ({ writer, anchor: okAnchor, loadPdf: async () => Buffer.from('%PDF'), amountCeiling: 10000, autoThreshold: 0.9 });
+const postDeps = (writer: AccountingConnector): PostDeps => ({ connector: writer, anchor: okAnchor, loadPdf: async () => Buffer.from('%PDF'), amountCeiling: 10000, autoThreshold: 0.9 });
 const cleanScan: DryRunDeps = { scan: async () => ({ findings: [], raw: {} }) };
 
 async function seedVendorAndAccount(t: number) {
@@ -200,7 +192,7 @@ describe('CHUNK_6 onboarding — DRY_RUN_LOCKED guard', () => {
     const res = await runApprove(req('POST', token, {}), pid, postDeps(w));
     expect(res.status).toBe(403);
     expect(((await res.json()) as { error: { code: string } }).error.code).toBe('DRY_RUN_LOCKED');
-    expect(w.createEntity).not.toHaveBeenCalled();
+    expect(w.postBill).not.toHaveBeenCalled();
     expect(await countRows('postings', 'tenant_id=$1', [t])).toBe(0);
   });
 

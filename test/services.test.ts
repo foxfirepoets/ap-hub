@@ -9,25 +9,17 @@ import { rejectProposal, retryProposal } from '../src/services/proposals.js';
 import { remapMapping, learnCorrection } from '../src/services/mappings.js';
 import { sendReply } from '../src/services/reply.js';
 import type { ActorContext } from '../src/services/index.js';
-import type { QboWriteClient } from '../src/qbo/write.js';
+import { mockConnector } from './connector-mock.js';
+import type { AccountingConnector } from '../src/connectors/types.js';
 import type { PostDeps } from '../src/pipeline/posting.js';
 import type { LockedForwarder } from '../src/gatekeeper/forwarder.js';
 import {
   resetTables, createTenant, createUser, insertMessage, insertAttachment, insertExtraction, countRows, closeAll,
 } from './helpers.js';
 
-function mockWriter(overrides: Partial<QboWriteClient> = {}): QboWriteClient {
-  return {
-    realm: 'sandbox-realm',
-    createEntity: vi.fn().mockResolvedValue({ id: 'q1', syncToken: '0', entity: { Id: 'q1' } }),
-    readEntity: vi.fn().mockResolvedValue({ TotalAmt: 100, DocNumber: 'INV-1' }),
-    queryExisting: vi.fn().mockResolvedValue([]),
-    attach: vi.fn().mockResolvedValue(undefined),
-    ...overrides,
-  } as QboWriteClient;
-}
+const mockWriter = mockConnector;
 const okAnchor = vi.fn().mockResolvedValue({ proof_id: 'ap1', chain_hash: 'ch1', verification_status: 'passed', confidence: 1, raw: {} });
-const postDeps = (writer: QboWriteClient): PostDeps => ({ writer, anchor: okAnchor, loadPdf: async () => Buffer.from('%PDF'), amountCeiling: 10000, autoThreshold: 0.9 });
+const postDeps = (writer: AccountingConnector): PostDeps => ({ connector: writer, anchor: okAnchor, loadPdf: async () => Buffer.from('%PDF'), amountCeiling: 10000, autoThreshold: 0.9 });
 
 /** Seed a fully-proofed, ready-to-post proposal. Omit proofs to model a SwarmSync outage. */
 async function seedReadyProposal(t: number, opts: { withProofs?: boolean } = {}): Promise<number> {
@@ -72,7 +64,7 @@ describe('CHUNK_2 services — approve', () => {
     const w = mockWriter();
     const res = await approveProposal(ctx, pid, postDeps(w));
     expect(res.status).toBe('posted');
-    expect(w.createEntity).toHaveBeenCalledTimes(1); // single QBO-write path
+    expect(w.postBill).toHaveBeenCalledTimes(1); // single QBO-write path
     expect(await countRows('postings', "status='posted_sandbox' AND mode='sandbox'")).toBe(1);
     expect(await humanAudit(t, 'proposal.approve')).toBe(1);
     if (res.status === 'posted') {
@@ -88,7 +80,7 @@ describe('CHUNK_2 services — approve', () => {
     const pid = await seedReadyProposal(t);
     const w = mockWriter();
     await expect(approveProposal(ctx, pid, postDeps(w))).rejects.toBeInstanceOf(AuthError);
-    expect(w.createEntity).not.toHaveBeenCalled();
+    expect(w.postBill).not.toHaveBeenCalled();
     expect(await countRows('postings')).toBe(0);
   });
 
@@ -99,7 +91,7 @@ describe('CHUNK_2 services — approve', () => {
     const w = mockWriter();
     const res = await approveProposal(ctx, pid, postDeps(w));
     expect(res.status).toBe('held');
-    expect(w.createEntity).not.toHaveBeenCalled();
+    expect(w.postBill).not.toHaveBeenCalled();
     expect(await countRows('postings')).toBe(0);
   });
 
@@ -112,7 +104,7 @@ describe('CHUNK_2 services — approve', () => {
     // Re-posting an already-posted proposal is refused by the status gate — no second txn.
     const again = await retryProposal(ctx, pid, postDeps(w));
     expect(again.status).toBe('held');
-    expect(w.createEntity).toHaveBeenCalledTimes(1);
+    expect(w.postBill).toHaveBeenCalledTimes(1);
     expect(await countRows('postings')).toBe(1);
     expect(await humanAudit(t, 'proposal.retry')).toBe(1);
   });

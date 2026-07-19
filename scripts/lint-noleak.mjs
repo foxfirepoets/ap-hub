@@ -91,6 +91,8 @@ for (const file of walk(SRC)) {
   if (isCanonical) providerRules = ANY_PROVIDER;
   else if (!isConnector && !isQboImpl) providerRules = OTHER_PROVIDER;
 
+  const isPipeline = inDir(relSrc, 'pipeline');
+
   lines.forEach((line, i) => {
     if (providerRules) {
       for (const re of providerRules) {
@@ -101,6 +103,12 @@ for (const file of walk(SRC)) {
       for (const re of OS_TOKENS) {
         if (re.test(line)) violations.push(`${rel}:${i + 1}  OS leak (${re}) -> ${line.trim()}`);
       }
+    }
+    // F4 enforcement: the core pipeline must reach a provider ONLY through the connector.
+    // No file under src/pipeline/** may import a raw provider write module (the sole
+    // authorized construction is via src/connectors/factory.js).
+    if (isPipeline && /(from|import\()\s*['"]\.\.\/qbo\/write/.test(line)) {
+      violations.push(`${rel}:${i + 1}  raw-writer bypass — src/pipeline must post via the connector, not qbo/write -> ${line.trim()}`);
     }
   });
 }

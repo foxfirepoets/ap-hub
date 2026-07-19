@@ -58,9 +58,30 @@ export interface AttachOk {
   id?: string;
 }
 
+/**
+ * The live posting path's transaction, passed opaquely to the adapter which owns ALL
+ * provider translation (payload build, dedup query, read-back verification). The core
+ * pipeline never constructs a provider payload and never imports a provider write module.
+ */
+export type PostingTxn = Record<string, unknown>;
+
+/** A reference to a record that exists in the provider (created or a duplicate hit). */
+export interface PostedRef {
+  externalId: string;
+  revision: string;
+  raw: Record<string, unknown>;
+}
+
+/** Authoritative read-back verdict — the adapter compares approved vs actual, neutrally. */
+export type ReadBackResult =
+  | { verify: 'match'; revision: string; raw: Record<string, unknown> }
+  | { verify: 'mismatch'; reason: 'amount' | 'docnumber' | 'dimension'; detail?: unknown; revision: string; raw: Record<string, unknown> };
+
 export interface AccountingConnector {
   readonly provider: ProviderId;
   readonly connectionClass: ConnectionClass;
+  /** Provider company/realm identifier (for audit + reconciliation), never a raw writer. */
+  readonly companyId: string;
 
   capabilities(): CapabilityMatrix;
 
@@ -77,4 +98,20 @@ export interface AccountingConnector {
   attach(entity: CanonicalEntityKind, externalId: string, doc: Buffer, filename: string): Promise<AttachOk | Unsupported>;
 
   close(): Promise<void>;
+
+  // --- Live posting operations (F4): the ONLY authorized live accounting path. The
+  // adapter translates the opaque PostingTxn to the provider; the pipeline stays neutral.
+
+  /** Duplicate-existence probe (Layer-2 dedup). THROWS on an unknown/unavailable result
+   *  so the pipeline fails closed; returns null when definitively absent. */
+  detectExisting(txn: PostingTxn, idempotencyKey: string): Promise<PostedRef | null>;
+
+  /** Create the accounting document (Bill). The adapter builds the provider payload. */
+  postBill(txn: PostingTxn, idempotencyKey: string): Promise<PostedRef>;
+
+  /** Attach a source document to a created record (best-effort; provider-specific). */
+  attachDocument(externalId: string, doc: Buffer, filename: string): Promise<void>;
+
+  /** Authoritative read-back + neutral verify of the approved transaction vs what posted. */
+  readBackVerify(txn: PostingTxn, externalId: string): Promise<ReadBackResult>;
 }

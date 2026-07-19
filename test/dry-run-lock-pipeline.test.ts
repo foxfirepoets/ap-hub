@@ -12,6 +12,10 @@ import { resetTables, createTenant, insertMessage, insertAttachment, insertExtra
  * unlocked/pre-onboarding tenants still post exactly as before (backward compat).
  */
 
+// F4: postSandboxHandler now builds the provider-neutral connector via the factory, which
+// wraps BOTH the QBO write and read clients — so both are mocked here (moving the DI to the
+// connector boundary; the lock/post assertions below are unchanged). The read client's
+// company name matches QBO_SANDBOX_COMPANY_NAME so the wrong-company identity guard passes.
 vi.mock('../src/qbo/write.js', () => ({
   getQboWriteClient: vi.fn(async () => ({
     realm: 'sandbox-realm',
@@ -19,6 +23,12 @@ vi.mock('../src/qbo/write.js', () => ({
     readEntity: vi.fn().mockResolvedValue({ TotalAmt: 100, DocNumber: 'INV-1' }),
     queryExisting: vi.fn().mockResolvedValue([]),
     attach: vi.fn().mockResolvedValue(undefined),
+  })),
+}));
+vi.mock('../src/qbo/client.js', () => ({
+  getQboReadClient: vi.fn(async () => ({
+    getCompanyInfo: vi.fn().mockResolvedValue({ CompanyName: 'Sandbox Company_US_1' }),
+    queryEntity: vi.fn().mockResolvedValue([]),
   })),
 }));
 
