@@ -73,8 +73,12 @@ clients — delegation only, no second implementation) and pass `connector` inst
 - `no_prod_write`, `send_lockdown`, `proof_gate_posting`, `gatekeeper_hold`, `proof_fail_safe`,
   `white_label_install` all pass unmodified.
 
-## Status
+## Status — EXECUTED (commit `e65f651`)
 
-Design recorded and approved. Execution is an **atomic** change (interface + adapter moves +
-`postOnce` + 6 test migrations + 4 services + lint rule) that must land green in one increment;
-it is the next unit of work, on top of `b86f764`, with that commit as the rollback point.
+Done and green in one atomic increment: interface extension + adapter moves + `postOnce`
+rewrite + connector factory + 8 test-file migrations (the 6 planned + `dry-run-lock` read-mock
++ `architecture-connector-path` rewrite) + `services/approve.ts` + the `lint:noleak` pipeline
+rule. **ap-hub 282/282, broker 39/39, typecheck/lint/lint:noleak/web:build green,
+`src/qbo/write.ts` byte-unchanged, zero guarantee weakened.** The tax/dimension payload tests
+were migrated *stricter* (they now assert the payload at the real adapter's write boundary).
+`npm run lint:noleak` now fails the build if any `src/pipeline/**` file imports `qbo/write`.
