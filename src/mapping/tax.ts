@@ -125,3 +125,49 @@ export function evaluateTax(txn: any, tol: number = DEFAULT_TOL): TaxDecision {
     reconciliation: { mode: tax.mode, taxAmount, lineSum: subtotal, total, code: String(tax.code), ok: true },
   };
 }
+
+/**
+ * The persisted `tax_mappings` row for a resolved provider tax code, as read by the
+ * pipeline before posting (migration 007). Only the fields the gate needs.
+ */
+export interface TaxMappingRecord {
+  active: boolean;
+  needsRevalidation: boolean;
+}
+
+export type TaxMappingGateReason = 'tax_mapping_not_found' | 'tax_mapping_inactive' | 'tax_mapping_needs_revalidation';
+
+export type TaxMappingGateDecision =
+  | { kind: 'ok' }
+  | { kind: 'hold'; reason: TaxMappingGateReason; detail: string };
+
+/**
+ * Gate an already-reconciled tax code (evaluateTax() returned 'ok') against the real,
+ * persisted tax_mappings row for that code — the DB lookup itself is the pipeline's job;
+ * this stays pure. Missing, inactive (disabled/superseded), or stale (needs_revalidation)
+ * all hold before create — never guessed, never posted on absent or stale config.
+ */
+export function evaluateTaxMappingRecord(code: string, mapping: TaxMappingRecord | null): TaxMappingGateDecision {
+  if (!mapping) {
+    return {
+      kind: 'hold',
+      reason: 'tax_mapping_not_found',
+      detail: `no tax_mappings row is configured for provider tax code '${code}'`,
+    };
+  }
+  if (!mapping.active) {
+    return {
+      kind: 'hold',
+      reason: 'tax_mapping_inactive',
+      detail: `tax_mappings row for code '${code}' is inactive (disabled or superseded)`,
+    };
+  }
+  if (mapping.needsRevalidation) {
+    return {
+      kind: 'hold',
+      reason: 'tax_mapping_needs_revalidation',
+      detail: `tax_mappings row for code '${code}' is flagged needs_revalidation`,
+    };
+  }
+  return { kind: 'ok' };
+}

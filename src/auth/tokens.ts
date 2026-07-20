@@ -73,3 +73,26 @@ export async function loadToken(
     realm: row.realm,
   };
 }
+
+/**
+ * F5 seam (migration 006 `connections` table). Real OAuth completion for a cloud
+ * provider (qbo today) must leave a `connections` row so `findActiveConnectionForTenant`
+ * (src/mapping/dimensionMappingStore.ts) can resolve it for tax/dimension gating —
+ * without this, those gates hold forever for real tenants (connections stays empty
+ * outside tests). Upsert on the table's natural key (tenant_id, provider,
+ * external_company) so a reconnect of the same company is idempotent, not a duplicate.
+ */
+export async function upsertConnection(
+  tenantId: number,
+  provider: Provider,
+  externalCompany: string,
+): Promise<void> {
+  await query(
+    `INSERT INTO connections (tenant_id, provider, connection_class, external_company, status)
+     VALUES ($1, $2, 'cloud', $3, 'active')
+     ON CONFLICT (tenant_id, provider, external_company) DO UPDATE SET
+       status = 'active',
+       updated_at = now()`,
+    [tenantId, provider, externalCompany],
+  );
+}

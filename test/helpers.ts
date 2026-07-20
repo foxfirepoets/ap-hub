@@ -38,6 +38,24 @@ export async function createUser(
   return rows[0]!.id;
 }
 
+export async function createConnection(
+  tenantId: number,
+  opts: { provider?: string; connectionClass?: string; externalCompany?: string; status?: string } = {},
+): Promise<number> {
+  const { rows } = await query<{ id: number }>(
+    `INSERT INTO connections (tenant_id, provider, connection_class, external_company, status)
+     VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+    [
+      tenantId,
+      opts.provider ?? 'qbo',
+      opts.connectionClass ?? 'cloud',
+      opts.externalCompany ?? `co-${Math.floor(performance.now() * 1000)}`,
+      opts.status ?? 'active',
+    ],
+  );
+  return rows[0]!.id;
+}
+
 export async function insertMessage(
   tenantId: number,
   opts: { gmailId?: string; subject?: string; from?: string; bodyOnly?: boolean } = {},
@@ -102,6 +120,72 @@ export async function insertExtraction(
     `INSERT INTO extractions (tenant_id, attachment_id, message_id, fields, confidence, missing_fields, flags, model)
      VALUES ($1,$2,$3,$4,$5,$6,$7,'test') RETURNING id`,
     [tenantId, attachmentId, messageId, JSON.stringify(full), confidence, full.missing_fields, full.flags],
+  );
+  return rows[0]!.id;
+}
+
+export async function insertProposal(
+  tenantId: number,
+  opts: { attachmentId?: number | null; extractionId?: number | null; confidence?: number; status?: string } = {},
+): Promise<number> {
+  const { rows } = await query<{ id: number }>(
+    `INSERT INTO proposals (tenant_id, attachment_id, extraction_id, proposed_txn, confidence, status)
+     VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+    [
+      tenantId,
+      opts.attachmentId ?? null,
+      opts.extractionId ?? null,
+      JSON.stringify({}),
+      opts.confidence ?? 0.9,
+      opts.status ?? 'review',
+    ],
+  );
+  return rows[0]!.id;
+}
+
+/** F_DIMENSION_MAPPING_API fixture: dimension_mappings rows come from the extraction
+ * pipeline (there is no create-via-API endpoint), so tests insert them directly. */
+export async function insertDimensionMapping(
+  tenantId: number,
+  connectionId: number,
+  proposalId: number,
+  opts: {
+    provider?: string;
+    dimensionType?: string;
+    rawValue?: string;
+    normalizedValue?: string | null;
+    proposedProviderId?: string | null;
+    proposedMatchLabel?: string | null;
+    providerId?: string | null;
+    mappingMethod?: string | null;
+    reviewStatus?: string;
+    resolutionState?: string;
+    extractionConfidence?: number;
+  } = {},
+): Promise<number> {
+  const { rows } = await query<{ id: number }>(
+    `INSERT INTO dimension_mappings
+       (tenant_id, connection_id, provider, proposal_id, dimension_type, raw_value, normalized_value,
+        extraction_confidence, proposed_provider_id, proposed_match_label, provider_id, mapping_method,
+        review_status, resolution_state)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+     RETURNING id`,
+    [
+      tenantId,
+      connectionId,
+      opts.provider ?? 'qbo',
+      proposalId,
+      opts.dimensionType ?? 'class',
+      opts.rawValue ?? 'Marketing Dept',
+      opts.normalizedValue ?? null,
+      opts.extractionConfidence ?? 0.8,
+      opts.proposedProviderId ?? null,
+      opts.proposedMatchLabel ?? null,
+      opts.providerId ?? null,
+      opts.mappingMethod ?? null,
+      opts.reviewStatus ?? 'pending',
+      opts.resolutionState ?? 'not_mapped',
+    ],
   );
   return rows[0]!.id;
 }

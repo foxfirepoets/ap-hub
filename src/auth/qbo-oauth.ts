@@ -1,5 +1,5 @@
 import { config } from '../config.js';
-import { saveToken } from './tokens.js';
+import { saveToken, upsertConnection } from './tokens.js';
 import { createQboReadClient } from '../qbo/client.js';
 import { writeAudit } from '../audit.js';
 import { raiseException } from '../exceptions.js';
@@ -93,6 +93,9 @@ export async function handleQboCallback(
       scope: 'com.intuit.quickbooks.accounting',
       realm: realmId,
     });
+    // F5 seam: real connect must populate `connections` (migration 006), not just
+    // oauth_tokens — findActiveConnectionForTenant reads this for tax/dimension gating.
+    await upsertConnection(tenantId, 'qbo', realmId);
     await writeAudit({
       tenantId,
       action: 'qbo.connect',

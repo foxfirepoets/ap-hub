@@ -158,6 +158,55 @@ export interface ApprovePosted {
   mode: string;
 }
 
+// F_DIMENSION_MAPPING_UI — mirrors app/api/dimension-mappings response shapes
+// (src/services/action/dimensionMappings.ts's mappingJson()). Re-declared here (not
+// imported) per this file's client/server boundary convention above.
+export type DimensionType =
+  | 'account'
+  | 'item'
+  | 'class'
+  | 'location'
+  | 'department'
+  | 'customer'
+  | 'project'
+  | 'job'
+  | 'tracking_category'
+  | 'entity'
+  | 'tax_code'
+  | 'currency';
+
+export type DimensionReviewStatus = 'pending' | 'accepted' | 'corrected' | 'rejected' | 'held';
+
+export type DimensionResolutionState =
+  | 'mapped'
+  | 'not_provided'
+  | 'not_mapped'
+  | 'unsupported_by_provider'
+  | 'intentionally_blank';
+
+export interface DimensionMappingRow {
+  id: number;
+  connection_id: number;
+  provider: string;
+  proposal_id: number;
+  dimension_type: DimensionType;
+  raw_value: string;
+  normalized_value: string | null;
+  source_evidence: Record<string, unknown>;
+  extraction_confidence: number;
+  proposed_provider_id: string | null;
+  proposed_match_label: string | null;
+  provider_id: string | null;
+  mapping_method: string | null;
+  review_status: DimensionReviewStatus;
+  resolution_state: DimensionResolutionState;
+  active: boolean;
+  mapping_version: number;
+  revalidated_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 // CHUNK_6_ONBOARDING — mirrors src/services/onboarding.ts return shapes.
 export interface OnboardingConnections {
   gmailConnected: boolean;
@@ -195,4 +244,45 @@ export interface DryRunSummary {
   invoicesFound: number;
   vendorsMatched: number;
   proposalsCreated: number;
+}
+
+// F_TAX_MAPPING_API — mirrors app/api/tax-mappings/**'s mappingJson() EXACTLY (snake_case,
+// unlike the camelCase read-service types above) since that action bridge serializes the
+// DB row directly with no intermediate camelCase transform.
+export interface TaxMapping {
+  id: number;
+  connection_id: number;
+  provider: string;
+  provider_tax_code: string;
+  internal_tax_treatment: string;
+  tax_mode: 'exclusive' | 'inclusive';
+  applies_at: 'invoice' | 'line';
+  active: boolean;
+  needs_revalidation: boolean;
+  superseded_by_id: number | null;
+  replaced_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// GET /api/tax-mappings/:id/audit — mirrors app/api/tax-mappings/[id]/audit's auditRowJson()
+// (snake_case, same convention as TaxMapping above). `reason` is the domain-specific "why"
+// that GET /api/audit's generic AuditRow cannot carry.
+export interface TaxMappingAudit {
+  id: number;
+  tax_mapping_id: number;
+  connection_id: number;
+  provider: string;
+  changed_by: number | null;
+  action: string;
+  reason: string | null;
+  changed_at: string;
+}
+
+// GET /api/tax-mappings/discover — read-only QBO TaxCode rows (src/mapping/taxCodeDiscovery.ts).
+export interface QboTaxCode {
+  Id: string;
+  Name?: string;
+  Description?: string;
+  Active?: boolean;
 }

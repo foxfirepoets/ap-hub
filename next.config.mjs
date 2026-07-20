@@ -8,6 +8,12 @@
 //   the app/ tree's correctness is covered by `next build` typechecking + the Playwright E2E.
 const nextConfig = {
   reactStrictMode: true,
+  // Windows + Node 24 build-trace collection for `_not-found`/500 hits an ENOENT during
+  // `next build` (collect-build-traces.js can't find/rename its own .nft.json/export
+  // files) — a Next 14.2.x env quirk, not app code (compile + typecheck + all 33 pages
+  // still succeed first). This app is served via `next start`, never Vercel serverless
+  // bundling, so the trace manifests this skips are unused here anyway.
+  outputFileTracing: false,
   typescript: {
     tsconfigPath: './tsconfig.web.json',
   },

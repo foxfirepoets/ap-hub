@@ -46,6 +46,20 @@ export const REASON_CODES = [
   // reconcile to the invoice total within currency tolerance.
   'tax_unmapped',
   'tax_unreconciled',
+  // F_TAX_DIMENSION_MAPPING_GATE (posting-pipeline): a resolved tax code with NO
+  // corresponding persisted tax_mappings row, or a row that is inactive/superseded, or
+  // one flagged needs_revalidation, all hold BEFORE create — never guessed, never
+  // posted on stale/absent config.
+  'tax_mapping_not_found',
+  'tax_mapping_inactive',
+  'tax_mapping_needs_revalidation',
+  // Same fail-closed principle for the persisted, human-reviewed dimension_mappings row:
+  // no row, a resolution_state other than 'mapped', or a review_status that isn't
+  // accepted/corrected all hold (intentionally_blank dimensions are exempt — see
+  // src/mapping/dimensions.ts evaluateDimensionMappingRecord).
+  'dimension_mapping_not_found',
+  'dimension_mapping_not_mapped',
+  'dimension_mapping_not_reviewed',
 ] as const;
 
 export type ReasonCode = (typeof REASON_CODES)[number];

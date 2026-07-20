@@ -4,7 +4,7 @@ import { evaluateTax } from '../src/mapping/tax.js';
 import { query } from '../src/db/pool.js';
 import { recordProofRef } from '../src/swarmsync/proof.js';
 import {
-  resetTables, createTenant, insertMessage, insertAttachment, insertExtraction, countRows, closeAll,
+  resetTables, createTenant, createConnection, insertMessage, insertAttachment, insertExtraction, countRows, closeAll,
 } from './helpers.js';
 import type { QboWriteClient } from '../src/qbo/write.js';
 import type { QboReadClient } from '../src/qbo/client.js';
@@ -82,6 +82,18 @@ describe('F5 tax — evaluateTax (pure)', () => {
   });
 });
 
+// FIX-pipeline-fail-closed: a reconciling code must also have an active, non-stale
+// tax_mappings row (migration 007) before it may post — see src/mapping/tax.ts
+// evaluateTaxMappingRecord. Tests that expect a code to post configure one here.
+async function activeTaxMapping(t: number, code = 'TAX1') {
+  const connId = await createConnection(t, { provider: 'qbo', externalCompany: 'sandbox-realm' });
+  await query(
+    `INSERT INTO tax_mappings (tenant_id, connection_id, provider, provider_tax_code, internal_tax_treatment, tax_mode, active, needs_revalidation)
+     VALUES ($1,$2,'qbo',$3,'Standard Sales Tax','exclusive',true,false)`,
+    [t, connId, code],
+  );
+}
+
 describe('F5 tax — posting', () => {
   beforeEach(resetTables);
   afterAll(closeAll);
@@ -97,6 +109,7 @@ describe('F5 tax — posting', () => {
 
   it('invoice-level tax that reconciles posts with a tax line carrying the configured code', async () => {
     const t = await createTenant();
+    await activeTaxMapping(t);
     const { pid } = await seedProposal(t, {
       TotalAmt: 110, lines: [{ Amount: 100, description: 'work', accountRef: { value: '60' } }],
       tax: { mode: 'exclusive', amount: 10, code: 'TAX1', subtotal: 100 },
@@ -110,6 +123,7 @@ describe('F5 tax — posting', () => {
 
   it('line-level tax that reconciles posts', async () => {
     const t = await createTenant();
+    await activeTaxMapping(t);
     const { pid } = await seedProposal(t, {
       TotalAmt: 110, lines: [{ Amount: 60, description: 'a', accountRef: { value: '60' } }, { Amount: 40, description: 'b', accountRef: { value: '60' } }],
       tax: { mode: 'exclusive', amount: 10, code: 'TAX1', subtotal: 100, lines: [{ amount: 6, code: 'TAX1' }, { amount: 4, code: 'TAX1' }] },
@@ -122,6 +136,7 @@ describe('F5 tax — posting', () => {
 
   it('tax-inclusive invoice posts without silent inclusive→exclusive conversion', async () => {
     const t = await createTenant();
+    await activeTaxMapping(t);
     const { pid } = await seedProposal(t, {
       TotalAmt: 110, lines: [{ Amount: 110, description: 'work', accountRef: { value: '60' } }],
       tax: { mode: 'inclusive', amount: 10, code: 'TAX1', subtotal: 110 },

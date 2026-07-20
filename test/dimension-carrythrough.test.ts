@@ -5,7 +5,8 @@ import { query } from '../src/db/pool.js';
 import { recordProofRef } from '../src/swarmsync/proof.js';
 import { resolveDimensions, hasUnhandledDimension, mappedSupportedDimensions } from '../src/mapping/dimensions.js';
 import {
-  resetTables, createTenant, insertMessage, insertAttachment, insertExtraction, countRows, closeAll,
+  resetTables, createTenant, createConnection, insertDimensionMapping,
+  insertMessage, insertAttachment, insertExtraction, countRows, closeAll,
 } from './helpers.js';
 import type { QboWriteClient } from '../src/qbo/write.js';
 import type { QboReadClient } from '../src/qbo/client.js';
@@ -86,12 +87,18 @@ describe('F5 dimensions — posting', () => {
 
   it('each supported dimension (class, location) is carried into the QBO payload', async () => {
     const t = await createTenant();
+    const connId = await createConnection(t);
     const pid = await seedReadyProposal(t, {
       dimensions: [
         { kind: 'class', id: 'CL1', name: 'West', state: 'mapped' },
         { kind: 'location', id: 'LOC1', name: 'HQ', state: 'mapped' },
       ],
     });
+    // FIX-pipeline-fail-closed: a 'mapped' dimension also needs a persisted, accepted
+    // dimension_mappings row (migration 007) before it may post — see
+    // src/mapping/dimensions.ts evaluateDimensionMappingRecord.
+    await insertDimensionMapping(t, connId, pid, { dimensionType: 'class', rawValue: 'West', providerId: 'CL1', reviewStatus: 'accepted', resolutionState: 'mapped' });
+    await insertDimensionMapping(t, connId, pid, { dimensionType: 'location', rawValue: 'HQ', providerId: 'LOC1', reviewStatus: 'accepted', resolutionState: 'mapped' });
     const w = mockWriter({
       readEntity: vi.fn().mockResolvedValue({
         TotalAmt: 100, DocNumber: 'INV-1', DepartmentRef: { value: 'LOC1' },
@@ -117,9 +124,11 @@ describe('F5 dimensions — posting', () => {
 
   it('a post-write dimension mismatch marks the posting unverified and raises dimension_mismatch', async () => {
     const t = await createTenant();
+    const connId = await createConnection(t);
     const pid = await seedReadyProposal(t, {
       dimensions: [{ kind: 'location', id: 'LOC1', name: 'HQ', state: 'mapped' }],
     });
+    await insertDimensionMapping(t, connId, pid, { dimensionType: 'location', rawValue: 'HQ', providerId: 'LOC1', reviewStatus: 'accepted', resolutionState: 'mapped' });
     // Amount + DocNumber match; only the location the provider echoes back is wrong.
     const w = mockWriter({
       readEntity: vi.fn().mockResolvedValue({ TotalAmt: 100, DocNumber: 'INV-1', DepartmentRef: { value: 'WRONG' } }),

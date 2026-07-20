@@ -18,7 +18,7 @@ npm test                    # unit + DB-backed guarantee tests (the gate)
 npm run lint && npm run typecheck && npm test   # full validation gate
 ```
 Tests need a Postgres at `DATABASE_URL` (default in `test/setup.ts`:
-`postgres://aphub:aphub@127.0.0.1:5433/aphub`). External services (SwarmSync, Gmail,
+`postgres://aphub:aphub@127.0.0.1:5432/aphub`). External services (SwarmSync, Gmail,
 QBO, Telegram, Anthropic) are always mocked in the gate; live runs are `test:int`.
 
 ## The six guarantees — NEVER break these

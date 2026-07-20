@@ -155,3 +155,117 @@ test('cpa is read-only: no approve, reject, or edit', async ({ page }) => {
   await expect(page.getByTestId('reject-btn')).toHaveCount(0);
   await expect(page.getByTestId('edit-btn')).toHaveCount(0);
 });
+
+// --- F_TAX_MAPPING UI (settings/tax-mapping, settings/tax-mapping/[id], exceptions/tax) ------
+
+const TAX_MAPPING_ACTIVE = {
+  id: 1,
+  connection_id: 10,
+  provider: 'qbo',
+  provider_tax_code: 'TAX8',
+  internal_tax_treatment: 'standard_sales_tax',
+  tax_mode: 'exclusive',
+  applies_at: 'invoice',
+  active: true,
+  needs_revalidation: false,
+  superseded_by_id: null,
+  replaced_at: null,
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString(),
+};
+
+const TAX_MAPPING_STALE = { ...TAX_MAPPING_ACTIVE, id: 2, provider_tax_code: 'TAX9', needs_revalidation: true };
+
+test('owner: tax-mapping list shows status badges and creates a new mapping', async ({ page }) => {
+  await stubMe(page, OWNER);
+  await page.route('**/api/tax-mappings?filter=active', (r) =>
+    r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { mappings: [TAX_MAPPING_ACTIVE], filter: 'active' } }) }),
+  );
+  await page.route('**/api/tax-mappings/discover', (r) =>
+    r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { taxCodes: [{ Id: 'TAX8', Name: 'GST 8%', Active: true }] } }) }),
+  );
+  const created = { ...TAX_MAPPING_ACTIVE, id: 3, provider_tax_code: 'TAX8' };
+  await page.route('**/api/tax-mappings', (route) => {
+    if (route.request().method() === 'POST') {
+      return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ data: { mapping: created } }) });
+    }
+    return route.fallback();
+  });
+
+  await page.goto('/settings/tax-mapping');
+  await expect(page.getByTestId('tax-mapping-page')).toBeVisible();
+  await expect(page.getByTestId(`tax-mapping-status-${TAX_MAPPING_ACTIVE.id}`)).toContainText('Active');
+
+  await page.getByTestId('tax-mapping-new-btn').click();
+  await page.getByTestId('tax-code-manual-input').fill('TAX8');
+  await page.locator('#tm-connection').fill('10');
+  await page.locator('#tm-treatment').fill('standard_sales_tax');
+  await page.getByTestId('tax-mapping-form-submit-create').click();
+  await expect(page.getByTestId('tax-mapping-notice')).toContainText('Created mapping');
+});
+
+test('non-owner gets a graceful not-authorized state on tax-mapping pages (403)', async ({ page }) => {
+  await stubMe(page, BOOKKEEPER);
+  await page.goto('/settings/tax-mapping');
+  await expect(page.getByTestId('tax-mapping-not-authorized')).toBeVisible();
+
+  await page.goto('/exceptions/tax');
+  await expect(page.getByTestId('tax-mapping-not-authorized')).toBeVisible();
+});
+
+test('owner: tax-mapping detail shows the real audit trail (with reason) and can revalidate', async ({ page }) => {
+  await stubMe(page, OWNER);
+  await page.route('**/api/tax-mappings/2', (r) =>
+    r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { mapping: TAX_MAPPING_STALE } }) }),
+  );
+  await page.route('**/api/tax-mappings/2/audit', (r) =>
+    r.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        data: {
+          audit: [
+            {
+              id: 1,
+              tax_mapping_id: 2,
+              connection_id: TAX_MAPPING_STALE.connection_id,
+              provider: TAX_MAPPING_STALE.provider,
+              changed_by: 1,
+              action: 'create',
+              reason: 'initial setup',
+              changed_at: new Date().toISOString(),
+            },
+          ],
+        },
+      }),
+    }),
+  );
+  const revalidated = { ...TAX_MAPPING_STALE, active: true, needs_revalidation: false };
+  await page.route('**/api/tax-mappings/2/revalidate', (r) =>
+    r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { mapping: revalidated } }) }),
+  );
+
+  await page.goto('/settings/tax-mapping/2');
+  await expect(page.getByTestId('tax-mapping-detail-page')).toBeVisible();
+  await expect(page.getByTestId('tax-mapping-audit-trail')).toContainText('initial setup');
+  await expect(page.getByTestId('tax-mapping-audit-gap-notice')).toHaveCount(0);
+  await page.getByTestId('tax-mapping-revalidate-btn').click();
+  await expect(page.getByTestId('tax-mapping-detail-notice')).toContainText('still supported');
+});
+
+test('owner: tax exceptions queue lists stale/needs_revalidation mappings with a fix link', async ({ page }) => {
+  await stubMe(page, OWNER);
+  await page.route('**/api/tax-mappings?filter=all', (r) =>
+    r.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: { mappings: [TAX_MAPPING_ACTIVE, TAX_MAPPING_STALE], filter: 'all' } }),
+    }),
+  );
+
+  await page.goto('/exceptions/tax');
+  await expect(page.getByTestId('tax-exceptions-page')).toBeVisible();
+  await expect(page.getByTestId(`tax-exception-row-${TAX_MAPPING_STALE.id}`)).toBeVisible();
+  await expect(page.getByTestId(`tax-exception-row-${TAX_MAPPING_ACTIVE.id}`)).toHaveCount(0);
+  await page.getByTestId(`tax-exception-row-${TAX_MAPPING_STALE.id}`).getByRole('link', { name: 'View / fix' }).click();
+});

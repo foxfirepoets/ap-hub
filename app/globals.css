@@ -12,6 +12,10 @@
   --warn-bg: #fdf3d8;
   --bad: #b42318;
   --bad-bg: #fdeceb;
+  --info: #3b5bdb;
+  --info-bg: #e8ecfb;
+  --neutral: #4b5563;
+  --neutral-bg: #eceef1;
   --radius: 8px;
 }
 
@@ -98,6 +102,36 @@ tr.row.selected td { background: #eaf1ff; }
 .badge.exception, .badge.failed, .badge.rejected, .badge.open { background: var(--bad-bg); color: var(--bad); }
 .badge.good { background: var(--good-bg); color: var(--good); }
 .badge.warn { background: var(--warn-bg); color: var(--warn); }
+
+/* --- Dimension mapping: resolution_state (never collapse into a generic "done") --- */
+.badge.rs-mapped { background: var(--good-bg); color: var(--good); }
+.badge.rs-not_provided { background: var(--neutral-bg); color: var(--neutral); }
+.badge.rs-not_mapped { background: var(--bad-bg); color: var(--bad); }
+.badge.rs-unsupported_by_provider { background: var(--warn-bg); color: var(--warn); }
+.badge.rs-intentionally_blank { background: var(--info-bg); color: var(--info); }
+
+/* --- Dimension mapping: review_status --- */
+.badge.rv-pending { background: var(--warn-bg); color: var(--warn); }
+.badge.rv-accepted { background: var(--good-bg); color: var(--good); }
+.badge.rv-corrected { background: var(--good-bg); color: var(--good); }
+.badge.rv-rejected { background: var(--bad-bg); color: var(--bad); }
+.badge.rv-held { background: var(--neutral-bg); color: var(--neutral); }
+
+/* --- Dimension mapping review page --- */
+.dim-fields { display: grid; grid-template-columns: 170px 1fr; gap: 6px 12px; }
+.dim-fields .k { color: var(--muted); }
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(20, 24, 30, .35);
+  display: flex; align-items: center; justify-content: center; z-index: 50;
+}
+.modal-card {
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 20px; width: 420px; max-width: calc(100vw - 32px);
+}
+.field-row { display: grid; gap: 4px; margin-bottom: 10px; }
+.field-row label { font-size: 12px; color: var(--muted); }
+.field-row textarea { font: inherit; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius); resize: vertical; }
+.field-row input[type="text"] { font: inherit; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius); }
 
 /* --- Buttons --- */
 button, .btn {

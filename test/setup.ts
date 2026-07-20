@@ -6,7 +6,7 @@ import { migrateUp } from '../src/db/migrate.js';
  * contacted — unit tests inject mocks.
  */
 
-process.env.DATABASE_URL ||= 'postgres://aphub:aphub@127.0.0.1:5433/aphub';
+process.env.DATABASE_URL ||= 'postgres://aphub:aphub@127.0.0.1:5432/aphub';
 process.env.ENCRYPTION_KEY ||= '0'.repeat(64);
 process.env.ANTHROPIC_API_KEY ||= 'test-anthropic';
 process.env.GMAIL_CLIENT_ID ||= 'test-gmail-id';

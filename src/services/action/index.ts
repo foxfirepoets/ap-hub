@@ -18,6 +18,29 @@ export { runMarkNotificationRead } from './notifications.js';
 // CHUNK_4_STARTROUTES action bridge (GET /api/connections/{gmail,qbo}/start).
 export { runGmailConnectStart, runQboConnectStart } from './connections.js';
 
+// F_TAX_MAPPING_API action bridge (owner_controller-only tax-mapping CRUD + QBO discovery).
+export {
+  runListTaxMappings,
+  runCreateTaxMapping,
+  runGetTaxMapping,
+  runEditTaxMapping,
+  runDisableTaxMapping,
+  runReplaceTaxMapping,
+  runRevalidateTaxMapping,
+  runDiscoverTaxCodes,
+  runGetTaxMappingAudit,
+} from './taxMappings.js';
+
+// F_DIMENSION_MAPPING_API action bridge (owner_controller-only dimension-mapping review queue).
+export {
+  runListDimensionMappings,
+  runAcceptDimensionMapping,
+  runSelectAlternateDimensionMapping,
+  runCorrectDimensionMapping,
+  runSaveRuleDimensionMapping,
+  runRejectDimensionMapping,
+} from './dimensionMappings.js';
+
 /**
  * CHUNK_4_ACTION — the thin bridge between an `app/api/**` POST route and the
  * gate-covered CHUNK_2 service functions. The `app/` tree is OUTSIDE the validation

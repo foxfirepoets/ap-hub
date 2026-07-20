@@ -3,9 +3,12 @@ import { raiseException, openExceptionsFor } from '../exceptions.js';
 import { recordProofRef, hasProofRef } from '../swarmsync/proof.js';
 import { writeAudit, hashOf } from '../audit.js';
 import { logger } from '../logger.js';
-import { evaluateTax } from '../mapping/tax.js';
+import { evaluateTax, evaluateTaxMappingRecord } from '../mapping/tax.js';
+import { evaluateDimensionMappingRecord } from '../mapping/dimensions.js';
+import { listTaxMappings } from '../mapping/taxMappingStore.js';
 import type { AccountingConnector } from '../connectors/types.js';
 import type { VerifyResult } from '../swarmsync/client.js';
+import type { CanonicalDimension } from '../canonical/model.js';
 
 export interface PostJob {
   tenantId: number;
@@ -134,6 +137,56 @@ export async function postOnce(tenantId: number, proposalId: number, deps: PostD
       detail: JSON.stringify({ message: taxDecision.detail, evidence: taxDecision.evidence }),
     });
     return { status: 'held', reason: taxDecision.reason };
+  }
+
+  // --- Tax MAPPING gate (fail-closed): a reconciling in-memory decision is not enough —
+  // the resolved code must have an active, non-stale tax_mappings row (migration 007)
+  // before it may post. Missing/inactive/needs_revalidation all hold, never guess.
+  if (taxDecision.kind === 'ok') {
+    const code = String(taxDecision.tax.code);
+    const connRow = (
+      await query<{ id: number }>(
+        'SELECT id FROM connections WHERE tenant_id=$1 AND provider=$2 AND external_company=$3',
+        [tenantId, deps.connector.provider, deps.connector.companyId],
+      )
+    ).rows[0];
+    let mappingRecord: { active: boolean; needsRevalidation: boolean } | null = null;
+    if (connRow) {
+      const matches = (
+        await listTaxMappings(tenantId, { connectionId: connRow.id, provider: deps.connector.provider })
+      ).filter((r) => r.providerTaxCode === code);
+      const chosen = matches.find((r) => r.active) ?? matches[0] ?? null;
+      if (chosen) mappingRecord = { active: chosen.active, needsRevalidation: chosen.needsRevalidation };
+    }
+    const taxGate = evaluateTaxMappingRecord(code, mappingRecord);
+    if (taxGate.kind === 'hold') {
+      await raiseException({ tenantId, reasonCode: taxGate.reason, entityRef: `proposal:${proposalId}`, detail: taxGate.detail });
+      return { status: 'held', reason: taxGate.reason };
+    }
+  }
+
+  // --- Dimension MAPPING gate (fail-closed): each present, non-blank dimension must have
+  // a persisted, human-reviewed dimension_mappings row (migration 007, proposal-scoped)
+  // confirming resolution_state='mapped' + review_status accepted/corrected. A missing
+  // row, an unresolved state, or a rejected/held review all hold — an
+  // intentionally_blank dimension always passes through blank, never held.
+  const txnDimensions: CanonicalDimension[] = Array.isArray(txn.dimensions) ? txn.dimensions : [];
+  if (txnDimensions.length) {
+    const dimRows = (
+      await query<{ dimension_type: string; resolution_state: string; review_status: string }>(
+        'SELECT dimension_type, resolution_state, review_status FROM dimension_mappings WHERE tenant_id=$1 AND proposal_id=$2',
+        [tenantId, proposalId],
+      )
+    ).rows;
+    for (const dim of txnDimensions) {
+      const row = dimRows.find((r) => r.dimension_type === dim.kind);
+      const record = row ? { resolutionState: row.resolution_state, reviewStatus: row.review_status } : null;
+      const dimGate = evaluateDimensionMappingRecord(dim, record);
+      if (dimGate.kind === 'hold') {
+        await raiseException({ tenantId, reasonCode: dimGate.reason, entityRef: `proposal:${proposalId}`, detail: dimGate.detail });
+        return { status: 'held', reason: dimGate.reason };
+      }
+    }
   }
 
   // --- Create (through the connector — the sole live accounting path) ---

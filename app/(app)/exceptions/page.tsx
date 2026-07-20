@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { apiGet, apiPost, ApiError, proposalRefId } from '../../lib/api';
 import { when } from '../../lib/format';
 import { friendlyOnboardingError } from '../../lib/onboardingErrors.js';
@@ -184,6 +185,9 @@ export default function ExceptionsPage() {
         Keyboard triage: <span className="kbd">J</span>/<span className="kbd">K</span> navigate ·{' '}
         <span className="kbd">A</span> approve · <span className="kbd">R</span> reject ·{' '}
         <span className="kbd">E</span> edit · <span className="kbd">O</span> open source
+      </p>
+      <p className="page-sub">
+        <Link href="/exceptions/dimensions">Review dimension mapping exceptions →</Link>
       </p>
 
       {notice ? (

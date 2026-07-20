@@ -3,7 +3,8 @@ import { postOnce } from '../src/pipeline/posting.js';
 import { query } from '../src/db/pool.js';
 import { recordProofRef, hasProofRef } from '../src/swarmsync/proof.js';
 import {
-  resetTables, createTenant, insertMessage, insertAttachment, insertExtraction, countRows, closeAll,
+  resetTables, createTenant, createConnection, insertDimensionMapping,
+  insertMessage, insertAttachment, insertExtraction, countRows, closeAll,
 } from './helpers.js';
 import { mockConnector } from './connector-mock.js';
 import type { AccountingConnector } from '../src/connectors/types.js';
@@ -33,6 +34,24 @@ async function seedReadyProposal(t: number, opts: { status?: string; total?: num
 }
 
 const deps = (connector: AccountingConnector, anchor = okAnchor) => ({ connector, anchor, loadPdf, amountCeiling: 10000, autoThreshold: 0.9 });
+
+async function insertTaxMapping(
+  t: number,
+  connectionId: number,
+  opts: { providerTaxCode: string; active?: boolean; needsRevalidation?: boolean },
+) {
+  await query(
+    `INSERT INTO tax_mappings (tenant_id, connection_id, provider, provider_tax_code, internal_tax_treatment, tax_mode, active, needs_revalidation)
+     VALUES ($1,$2,'qbo',$3,'Standard Sales Tax','exclusive',$4,$5)`,
+    [t, connectionId, opts.providerTaxCode, opts.active ?? true, opts.needsRevalidation ?? false],
+  );
+}
+
+async function patchProposedTxn(proposalId: number, patch: Record<string, unknown>) {
+  const row = (await query<{ proposed_txn: any }>('SELECT proposed_txn FROM proposals WHERE id=$1', [proposalId])).rows[0]!;
+  const txn = { ...row.proposed_txn, ...patch };
+  await query('UPDATE proposals SET proposed_txn=$2 WHERE id=$1', [proposalId, JSON.stringify(txn)]);
+}
 
 describe('CHUNK_7 posting', () => {
   beforeEach(resetTables);
@@ -156,5 +175,136 @@ describe('CHUNK_7 posting', () => {
     expect((out as any).reason).toBe('company_mismatch');
     expect(w.postBill).not.toHaveBeenCalled();
     expect(await countRows('exceptions', "reason_code='company_mismatch'")).toBe(1);
+  });
+
+  // --- FIX-pipeline-fail-closed: real tax_mappings / dimension_mappings enforcement ---
+
+  it('tax_mapping_active_posts: a reconciling tax with an active, non-stale mapping posts through', async () => {
+    const t = await createTenant();
+    const connId = await createConnection(t, { provider: 'qbo', externalCompany: 'sandbox-realm' });
+    const { proposalId } = await seedReadyProposal(t);
+    await patchProposedTxn(proposalId, {
+      TotalAmt: 108,
+      lines: [{ Amount: 100, description: 'work', accountRef: { value: '60' } }],
+      tax: { mode: 'exclusive', amount: 8, code: 'TAX1', subtotal: 100 },
+    });
+    await insertTaxMapping(t, connId, { providerTaxCode: 'TAX1' });
+    const w = mockWriter();
+    const out = await postOnce(t, proposalId, deps(w));
+    expect(out.status).toBe('posted');
+    expect(w.postBill).toHaveBeenCalledTimes(1);
+  });
+
+  it('tax_mapping_inactive_holds: an inactive tax mapping holds instead of posting', async () => {
+    const t = await createTenant();
+    const connId = await createConnection(t, { provider: 'qbo', externalCompany: 'sandbox-realm' });
+    const { proposalId } = await seedReadyProposal(t);
+    await patchProposedTxn(proposalId, {
+      TotalAmt: 108,
+      lines: [{ Amount: 100, description: 'work', accountRef: { value: '60' } }],
+      tax: { mode: 'exclusive', amount: 8, code: 'TAX1', subtotal: 100 },
+    });
+    await insertTaxMapping(t, connId, { providerTaxCode: 'TAX1', active: false });
+    const w = mockWriter();
+    const out = await postOnce(t, proposalId, deps(w));
+    expect(out.status).toBe('held');
+    expect((out as any).reason).toBe('tax_mapping_inactive');
+    expect(w.postBill).not.toHaveBeenCalled();
+    expect(await countRows('exceptions', "reason_code='tax_mapping_inactive'")).toBe(1);
+  });
+
+  it('tax_mapping_stale_holds: a needs_revalidation tax mapping holds instead of posting', async () => {
+    const t = await createTenant();
+    const connId = await createConnection(t, { provider: 'qbo', externalCompany: 'sandbox-realm' });
+    const { proposalId } = await seedReadyProposal(t);
+    await patchProposedTxn(proposalId, {
+      TotalAmt: 108,
+      lines: [{ Amount: 100, description: 'work', accountRef: { value: '60' } }],
+      tax: { mode: 'exclusive', amount: 8, code: 'TAX1', subtotal: 100 },
+    });
+    await insertTaxMapping(t, connId, { providerTaxCode: 'TAX1', needsRevalidation: true });
+    const w = mockWriter();
+    const out = await postOnce(t, proposalId, deps(w));
+    expect(out.status).toBe('held');
+    expect((out as any).reason).toBe('tax_mapping_needs_revalidation');
+    expect(w.postBill).not.toHaveBeenCalled();
+  });
+
+  it('tax_mapping_missing_holds: a resolved tax code with no tax_mappings row holds, never guesses', async () => {
+    const t = await createTenant();
+    await createConnection(t, { provider: 'qbo', externalCompany: 'sandbox-realm' });
+    const { proposalId } = await seedReadyProposal(t);
+    await patchProposedTxn(proposalId, {
+      TotalAmt: 108,
+      lines: [{ Amount: 100, description: 'work', accountRef: { value: '60' } }],
+      tax: { mode: 'exclusive', amount: 8, code: 'TAX1', subtotal: 100 },
+    });
+    // No insertTaxMapping call: no row exists for TAX1.
+    const w = mockWriter();
+    const out = await postOnce(t, proposalId, deps(w));
+    expect(out.status).toBe('held');
+    expect((out as any).reason).toBe('tax_mapping_not_found');
+    expect(w.postBill).not.toHaveBeenCalled();
+  });
+
+  it('dimension_mapping_accepted_posts: a mapped + accepted dimension posts normally', async () => {
+    const t = await createTenant();
+    const connId = await createConnection(t, { provider: 'qbo', externalCompany: 'sandbox-realm' });
+    const { proposalId } = await seedReadyProposal(t);
+    await patchProposedTxn(proposalId, {
+      dimensions: [{ kind: 'class', raw: 'Marketing', state: 'mapped', id: '40', name: 'Marketing' }],
+    });
+    await insertDimensionMapping(t, connId, proposalId, {
+      dimensionType: 'class', rawValue: 'Marketing', providerId: '40', reviewStatus: 'accepted', resolutionState: 'mapped',
+    });
+    const w = mockWriter();
+    const out = await postOnce(t, proposalId, deps(w));
+    expect(out.status).toBe('posted');
+  });
+
+  it('dimension_mapping_rejected_holds: a human-rejected dimension mapping holds instead of posting', async () => {
+    const t = await createTenant();
+    const connId = await createConnection(t, { provider: 'qbo', externalCompany: 'sandbox-realm' });
+    const { proposalId } = await seedReadyProposal(t);
+    await patchProposedTxn(proposalId, {
+      dimensions: [{ kind: 'class', raw: 'Marketing', state: 'mapped', id: '40', name: 'Marketing' }],
+    });
+    await insertDimensionMapping(t, connId, proposalId, {
+      dimensionType: 'class', rawValue: 'Marketing', providerId: '40', reviewStatus: 'rejected', resolutionState: 'mapped',
+    });
+    const w = mockWriter();
+    const out = await postOnce(t, proposalId, deps(w));
+    expect(out.status).toBe('held');
+    expect((out as any).reason).toBe('dimension_mapping_not_reviewed');
+    expect(w.postBill).not.toHaveBeenCalled();
+    expect(await countRows('exceptions', "reason_code='dimension_mapping_not_reviewed'")).toBe(1);
+  });
+
+  it('dimension_mapping_missing_holds: a mapped dimension with no dimension_mappings row holds, never guesses', async () => {
+    const t = await createTenant();
+    await createConnection(t, { provider: 'qbo', externalCompany: 'sandbox-realm' });
+    const { proposalId } = await seedReadyProposal(t);
+    await patchProposedTxn(proposalId, {
+      dimensions: [{ kind: 'class', raw: 'Marketing', state: 'mapped', id: '40', name: 'Marketing' }],
+    });
+    // No insertDimensionMapping call: no review row exists.
+    const w = mockWriter();
+    const out = await postOnce(t, proposalId, deps(w));
+    expect(out.status).toBe('held');
+    expect((out as any).reason).toBe('dimension_mapping_not_found');
+    expect(w.postBill).not.toHaveBeenCalled();
+  });
+
+  it('dimension_intentionally_blank_passes: an intentionally-blank dimension never holds, even with no row', async () => {
+    const t = await createTenant();
+    await createConnection(t, { provider: 'qbo', externalCompany: 'sandbox-realm' });
+    const { proposalId } = await seedReadyProposal(t);
+    await patchProposedTxn(proposalId, {
+      dimensions: [{ kind: 'class', raw: '', state: 'intentionally_blank' }],
+    });
+    // No insertDimensionMapping call: intentionally_blank must pass through regardless.
+    const w = mockWriter();
+    const out = await postOnce(t, proposalId, deps(w));
+    expect(out.status).toBe('posted');
   });
 });

@@ -4,6 +4,8 @@ import { signConnectState } from '../src/auth/connect-state.js';
 import { handleGmailCallback } from '../src/auth/gmail-oauth.js';
 import { handleQboCallback } from '../src/auth/qbo-oauth.js';
 import { resetTables, createTenant, countRows, closeAll } from './helpers.js';
+import { query } from '../src/db/pool.js';
+import { findActiveConnectionForTenant } from '../src/mapping/dimensionMappingStore.js';
 
 /**
  * CHUNK_2_REDIRECT — the plain HTTP server's OAuth callbacks now verify the signed
@@ -152,6 +154,55 @@ describe('CHUNK_2_REDIRECT — handleGmailCallback / handleQboCallback', () => {
       expect(respond).not.toHaveBeenCalled();
       expect(redirect).toHaveBeenCalledWith(`${config().WEB_BASE_URL}/onboarding?connected=qbo`);
       expect(await countRows('oauth_tokens', 'tenant_id=$1 AND provider=$2', [t, 'qbo'])).toBe(1);
+    });
+
+    it('F5: valid completion → a real `connections` row exists, queryable via findActiveConnectionForTenant', async () => {
+      const t = await createTenant();
+      const state = signConnectState(t);
+      mockQboFetch(config().QBO_SANDBOX_COMPANY_NAME);
+      const url = new URL(
+        `http://localhost/oauth/qbo/callback?code=goodcode&state=${encodeURIComponent(state)}&realmId=realm-1`,
+      );
+      const respond = vi.fn();
+      const redirect = vi.fn();
+
+      await handleQboCallback(url, respond, redirect);
+
+      expect(await countRows('connections', 'tenant_id=$1 AND provider=$2', [t, 'qbo'])).toBe(1);
+      const { rows } = await query<{
+        tenant_id: number;
+        provider: string;
+        external_company: string;
+        status: string;
+      }>('SELECT tenant_id, provider, external_company, status FROM connections WHERE tenant_id=$1', [t]);
+      expect(rows[0]).toMatchObject({
+        tenant_id: t,
+        provider: 'qbo',
+        external_company: 'realm-1',
+        status: 'active',
+      });
+
+      const active = await findActiveConnectionForTenant(t);
+      expect(active).toMatchObject({ provider: 'qbo' });
+    });
+
+    it('F5: reconnecting the same company (same realm) is idempotent — no duplicate `connections` row', async () => {
+      const t = await createTenant();
+      mockQboFetch(config().QBO_SANDBOX_COMPANY_NAME);
+
+      const state1 = signConnectState(t);
+      const url1 = new URL(
+        `http://localhost/oauth/qbo/callback?code=goodcode&state=${encodeURIComponent(state1)}&realmId=realm-1`,
+      );
+      await handleQboCallback(url1, vi.fn(), vi.fn());
+
+      const state2 = signConnectState(t);
+      const url2 = new URL(
+        `http://localhost/oauth/qbo/callback?code=goodcode&state=${encodeURIComponent(state2)}&realmId=realm-1`,
+      );
+      await handleQboCallback(url2, vi.fn(), vi.fn());
+
+      expect(await countRows('connections', 'tenant_id=$1 AND provider=$2', [t, 'qbo'])).toBe(1);
     });
 
     it('wrong-company (confirm-realm mismatch) → no token saved, redirect to connect_error=qbo&reason=wrong_company', async () => {

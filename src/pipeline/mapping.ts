@@ -10,8 +10,15 @@ import {
 import {
   resolveDimensions,
   hasUnhandledDimension,
+  toDimensionMappingInsert,
   type DimensionCandidateRow,
 } from '../mapping/dimensions.js';
+import {
+  insertDimensionMapping,
+  findDimensionMappingByProposalAndType,
+  findActiveConnectionForTenant,
+  type DimensionType,
+} from '../mapping/dimensionMappingStore.js';
 import { classifyFindings } from '../swarmsync/severity.js';
 import { raiseException } from '../exceptions.js';
 import { recordProofRef, hasProofRef } from '../swarmsync/proof.js';
@@ -282,6 +289,24 @@ export async function proposeOnce(
       ],
     )
   ).rows[0]!.id;
+
+  // --- Persist dimension_mappings rows (fail-closed gate's data source): every dimension
+  // carried on this proposal needs a persisted row BEFORE posting can pass it through.
+  // Idempotent per (proposal, dimension_type) — a re-run of the same attachment (proposal
+  // upsert keeps the same id) never overwrites a row a human has already reviewed.
+  if (dimensions.length) {
+    const conn = await findActiveConnectionForTenant(tenantId);
+    if (conn) {
+      for (const dim of dimensions) {
+        const existing = await findDimensionMappingByProposalAndType(tenantId, proposalId, dim.kind as DimensionType);
+        if (existing) continue;
+        const insert = toDimensionMappingInsert(dim, { tenantId, connectionId: conn.id, provider: conn.provider, proposalId });
+        if (insert) await insertDimensionMapping(insert);
+      }
+    } else {
+      logger.warn({ tenantId, proposalId }, 'dimension_mappings not persisted — tenant has no active connection');
+    }
+  }
 
   if (!scanFailed) {
     await recordProofRef({

@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useSession } from '../../lib/session';
 import { canApprovePost, isReadOnly } from '../../lib/permissions';
 import { apiGet, apiPost, ApiError } from '../../lib/api';
@@ -132,6 +133,20 @@ export default function SettingsPage() {
           </div>
         ) : (
           <p className="muted">Only the account owner can change automation level.</p>
+        )}
+      </div>
+
+      <div className="panel">
+        <h2>Tax-code mapping</h2>
+        <p className="muted">
+          Map provider tax codes (QuickBooks Online) to this tenant&apos;s internal tax treatment.
+        </p>
+        {owner ? (
+          <Link href="/settings/tax-mapping" className="btn" data-testid="tax-mapping-link">
+            Manage tax mappings
+          </Link>
+        ) : (
+          <span className="muted">Owner-only.</span>
         )}
       </div>
 
