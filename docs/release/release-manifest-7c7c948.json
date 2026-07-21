@@ -1,0 +1,19 @@
+{
+  "name": "ap-hub-pilot",
+  "gitCommit": "7c7c948cfdfd24a0cc09a5c974b7c89bd32393af",
+  "gitBranch": "pilot-foundation-phase1a",
+  "treeHash": "4d9acb93f229bd1d09ea8926426240295ef66e14",
+  "artifactHash": "sha256:4336aa9d9a85ba943953b0daff9946d31dc5a195345e6be9f0244a10ca4fcd29",
+  "appVersion": "0.1.0",
+  "brokerVersion": "0.1.0",
+  "schemaVersion": "007_tax_dimension_mapping",
+  "gate": {
+    "apHubTests": "336/336",
+    "brokerTests": "39/39",
+    "typecheck": "pass",
+    "lint": "pass",
+    "lintNoleak": "pass",
+    "webBuild": "pass"
+  },
+  "note": "artifact hash = sha256(git archive HEAD); verify: git archive --format=tar <commit> | sha256sum"
+}
