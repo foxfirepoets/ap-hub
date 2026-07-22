@@ -1,4 +1,4 @@
-import { createServer, type Server } from 'node:http';
+import { createServer, type IncomingMessage, type ServerResponse, type Server } from 'node:http';
 import { query } from './db/pool.js';
 import { logger } from './logger.js';
 
@@ -19,6 +19,42 @@ export function registerRoute(route: Route): void {
   routes.push(route);
 }
 
+/**
+ * A raw route gets the underlying req/res so it can read the request body and
+ * write a non-JSON content-type. Used by the QuickBooks Web Connector SOAP
+ * endpoint (XML in, XML out). Return true if it handled the request.
+ */
+export type RawRoute = (
+  req: IncomingMessage,
+  res: ServerResponse,
+  url: URL,
+) => boolean | Promise<boolean>;
+
+const rawRoutes: RawRoute[] = [];
+
+export function registerRawRoute(route: RawRoute): void {
+  rawRoutes.push(route);
+}
+
+/** Read a request body to a string (bounded), for raw routes. */
+export function readBody(req: IncomingMessage, maxBytes = 8 * 1024 * 1024): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    req.on('data', (c: Buffer) => {
+      size += c.length;
+      if (size > maxBytes) {
+        reject(new Error('request body too large'));
+        req.destroy();
+        return;
+      }
+      chunks.push(c);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    req.on('error', reject);
+  });
+}
+
 export function createHttpServer(): Server {
   return createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', `http://localhost`);
@@ -26,6 +62,20 @@ export function createHttpServer(): Server {
       res.writeHead(status, { 'content-type': 'application/json' });
       res.end(JSON.stringify(body));
     };
+
+    // Raw routes first (they own the response, incl. content-type + body).
+    for (const raw of rawRoutes) {
+      try {
+        if (await raw(req, res, url)) return;
+      } catch (err) {
+        logger.error({ err: String(err) }, 'raw route handler error');
+        if (!res.headersSent) {
+          res.writeHead(500, { 'content-type': 'text/plain' });
+          res.end('internal_error');
+        }
+        return;
+      }
+    }
 
     if (url.pathname === '/health') {
       let db = false;

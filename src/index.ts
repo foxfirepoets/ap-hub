@@ -26,6 +26,10 @@ export async function boot(): Promise<() => Promise<void>> {
 
   const server = createHttpServer();
   registerAuthRoutes();
+
+  // QuickBooks Desktop (Web Connector) SOAP endpoint — opt-in, read-only default.
+  const { registerQbDesktop } = await import('./qbdesktop/index.js');
+  registerQbDesktop(cfg);
   await new Promise<void>((resolve) => server.listen(cfg.PORT, resolve));
   logger.info({ port: cfg.PORT, qboEnv: cfg.QBO_ENV }, 'ap-hub service listening');
 

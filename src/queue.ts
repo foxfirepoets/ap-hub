@@ -14,6 +14,11 @@ export async function startQueue(connectionString: string): Promise<PgBoss> {
   boss = new PgBoss({ connectionString, retryLimit: 3, retryBackoff: true });
   boss.on('error', (err) => logger.error({ err: String(err) }, 'pg-boss error'));
   await boss.start();
+  // pg-boss v10 requires each queue to exist before work()/send()/schedule().
+  // createQueue is idempotent, so this is safe on every boot.
+  for (const name of Object.values(JOBS)) {
+    await boss.createQueue(name);
+  }
   return boss;
 }
 
