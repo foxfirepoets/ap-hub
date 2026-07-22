@@ -63,6 +63,16 @@ const RawSchema = z.object({
   TELEGRAM_BOT_TOKEN: z.string().default(''),
   TELEGRAM_CHAT_ID: z.string().default(''),
 
+  // --- QuickBooks Desktop via Web Connector (opt-in) ---
+  // NOTE: this path talks to a REAL company file, so it deliberately OVERRIDES
+  // the QBO sandbox-only guarantee. It is disabled by default and read-only by
+  // default; real-books writes require QB_DESKTOP_MODE=write AND an explicit
+  // enqueue. The QBO REST writer (src/qbo/write.ts) remains sandbox-only.
+  QB_DESKTOP_ENABLED: boolish(false),
+  QB_DESKTOP_MODE: z.enum(['readonly', 'write']).default('readonly'),
+  QBWC_USERNAME: z.string().default('aphub'),
+  QBWC_PASSWORD: z.string().default(''),
+
   // --- Thresholds / gates ---
   AUTO_THRESHOLD: z.coerce.number().min(0).max(1).default(0.9),
   REVIEW_THRESHOLD: z.coerce.number().min(0).max(1).default(0.6),
@@ -121,6 +131,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     // DIRECT mode (no broker) requires a local Anthropic key.
     throw new ConfigError(
       'ANTHROPIC_API_KEY is required in direct mode. Set it, or set BROKER_BASE_URL to run in broker mode.',
+    );
+  }
+
+  // QuickBooks Desktop, when enabled, needs a Web Connector password (the QBWC
+  // login the operator sets when importing the .QWC). Write mode is a loud,
+  // deliberate choice — it is allowed here but the session/CLI still require an
+  // explicit enqueue before anything touches the real company file.
+  if (cfg.QB_DESKTOP_ENABLED && !cfg.QBWC_PASSWORD) {
+    throw new ConfigError(
+      'QB_DESKTOP_ENABLED=true but QBWC_PASSWORD is empty. Set the Web Connector password ' +
+        '(the same one you enter when importing the .QWC into the Web Connector).',
     );
   }
 

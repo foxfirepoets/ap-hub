@@ -262,6 +262,63 @@ tenantOpt(
   }
 });
 
+// --- QuickBooks Desktop (Web Connector) ---
+const qbd = program.command('qbdesktop').description('QuickBooks Desktop via the Web Connector (opt-in; read-only by default)');
+
+qbd
+  .command('qwc')
+  .description('write the .QWC config to import into the QuickBooks Web Connector')
+  .option('--out <path>', 'output path', 'ap-hub.qwc')
+  .option('--minutes <n>', 'auto-run every N minutes (0 = manual only)', '0')
+  .action(async (o) => {
+    const cfg = config();
+    if (!cfg.QB_DESKTOP_ENABLED) {
+      console.error('QB_DESKTOP_ENABLED is false. Set it to true (and QBWC_PASSWORD) in .env first.');
+      process.exit(1);
+    }
+    const { buildQwcFromConfig } = await import('./qbdesktop/index.js');
+    const { writeFileSync } = await import('node:fs');
+    const qwc = await buildQwcFromConfig(cfg, Number(o.minutes) || 0);
+    writeFileSync(o.out, qwc, 'utf8');
+    console.log(`Wrote ${o.out} (mode=${cfg.QB_DESKTOP_MODE}, user=${cfg.QBWC_USERNAME}).`);
+    console.log('Open the QuickBooks Web Connector, "Add an Application", pick this file, and enter the QBWC password from .env.');
+  });
+
+async function qbdControl(action: string, extra: Record<string, unknown> = {}): Promise<void> {
+  const cfg = config();
+  const res = await fetch(`http://localhost:${cfg.PORT}/qbwc/control`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-qbwc-key': cfg.QBWC_PASSWORD },
+    body: JSON.stringify({ action, ...extra }),
+  });
+  const text = await res.text();
+  console.log(`${res.status}: ${text}`);
+  if (!res.ok) process.exit(1);
+}
+
+qbd.command('verify').description('enqueue read-only company/vendor/account queries (safe)').action(() => qbdControl('verify'));
+qbd.command('status').description('show queued/processed Web Connector work').action(() => qbdControl('status'));
+qbd
+  .command('bill')
+  .description('enqueue a real vendor bill (WRITE MODE ONLY — mutates your real company file)')
+  .requiredOption('--vendor <name>')
+  .requiredOption('--account <fullName>')
+  .requiredOption('--amount <dollars>')
+  .option('--ref <refNumber>')
+  .option('--date <YYYY-MM-DD>')
+  .option('--memo <memo>')
+  .action((o) =>
+    qbdControl('bill', {
+      bill: {
+        vendorName: o.vendor,
+        refNumber: o.ref,
+        txnDate: o.date,
+        memo: o.memo,
+        lines: [{ accountFullName: o.account, amount: Number(o.amount) }],
+      },
+    }),
+  );
+
 program.parseAsync(process.argv).catch((err) => {
   logger.error({ err: String(err) }, 'cli error');
   process.exit(1);
