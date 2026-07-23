@@ -71,6 +71,8 @@ export interface ExtractDeps {
   verify: (output: unknown, evidence: unknown) => Promise<VerifyResult>;
   enqueueMap: (extractionId: number, attachmentId: number | null, messageId: number) => Promise<void>;
   model?: string;
+  /** Verify-API notarization runs only when SwarmSync is enabled (default true). */
+  swarmSyncEnabled?: boolean;
 }
 
 /** Core extraction (testable). Retries the model up to 3× on invalid JSON. */
@@ -166,7 +168,8 @@ export async function extractOnce(
   }
 
   // Verify-API (Amendment A1): submit the extraction, record proof_ref (check-before-submit).
-  if (!(await hasProofRef(tenantId, 'extraction', String(extractionId), 'verify_api'))) {
+  // Skipped entirely when SwarmSync is disabled (no outbound call, no proof_scan_unavailable).
+  if (deps.swarmSyncEnabled !== false && !(await hasProofRef(tenantId, 'extraction', String(extractionId), 'verify_api'))) {
     try {
       const v = await deps.verify(normalized, {
         gmail_message_id: messageId,
@@ -214,6 +217,7 @@ export async function extractHandler(job: { data: ExtractJob }): Promise<void> {
   const extractor = await getExtractor(cfg);
   await extractOnce(job.data.tenantId, job.data, {
     extractor,
+    swarmSyncEnabled: cfg.SWARMSYNC_ENABLED,
     verify: (output, evidence) => swarmsync().verifyDocument(output, evidence),
     enqueueMap: async (extractionId, attachmentId, messageId) => {
       await getQueue().send(JOBS.map, { tenantId: job.data.tenantId, extractionId, attachmentId, messageId });

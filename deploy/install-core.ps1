@@ -232,9 +232,15 @@ function Get-ApHubCredentialFields {
       -EnvNames @("QBO_SANDBOX_REALM_ID") -Group "QuickBooks (sandbox, optional)" -Help "Optional. The sandbox company realm ID."
     New-CredField -Name "QBO_SANDBOX_COMPANY_NAME" -Label "QuickBooks sandbox company name" -Required $false -Secret $false `
       -EnvNames @("QBO_SANDBOX_COMPANY_NAME") -Group "QuickBooks (sandbox, optional)" -Help "Optional. Confirms the realm on connect."
+    New-CredField -Name "SWARMSYNC_ENABLED" -Label "Use SwarmSync document proofs" -Required $false -Secret $false `
+      -EnvNames @("SWARMSYNC_ENABLED") -Group "Document proofs (SwarmSync)" -Default "true" `
+      -Help "true = InvoiceProof fraud scan + Verify-API + AuditProof (needs a key). false = run without them. Click 'Guide me'."
     New-CredField -Name "SWARMSYNC_API_KEY" -Label "SwarmSync API key" -Required $false -Secret $true `
-      -EnvNames @("SWARMSYNC_API_KEY") -Group "SwarmSync proof suite (optional)" `
-      -Help "Optional. ssk_live_... key for Verify-API / AuditProof. Never logged."
+      -EnvNames @("SWARMSYNC_API_KEY") -Group "Document proofs (SwarmSync)" `
+      -Help "ssk_live_... key for Verify-API / AuditProof. Required only when SwarmSync is on. Never logged."
+    New-CredField -Name "SWARMSYNC_OFF_MODE" -Label "If SwarmSync is off, invoices should" -Required $false -Secret $false `
+      -EnvNames @("SWARMSYNC_OFF_MODE") -Group "Document proofs (SwarmSync)" -Default "review" `
+      -Help "review = send to human review (safe). autopost = auto-post to the QBO sandbox with no fraud gate. Only applies when SwarmSync is off."
     New-CredField -Name "QBO_FORWARDING_ADDRESS" -Label "QBO capture forwarding address" -Required $false -Secret $false `
       -EnvNames @("QBO_FORWARDING_ADDRESS") -Group "Gatekeeper (optional)" `
       -Help "Optional. The only address the gatekeeper relay can ever forward to."
@@ -458,7 +464,7 @@ function Get-ApHubEnvBody {
     "LLM_PROVIDER","LLM_BASE_URL","LLM_MODEL","LLM_API_KEY","OPENAI_API_KEY","ANTHROPIC_API_KEY",
     "GMAIL_CLIENT_ID","GMAIL_CLIENT_SECRET",
     "QBO_SANDBOX_CLIENT_ID","QBO_SANDBOX_CLIENT_SECRET","QBO_SANDBOX_REALM_ID","QBO_SANDBOX_COMPANY_NAME",
-    "SWARMSYNC_API_KEY","QBO_FORWARDING_ADDRESS","TELEGRAM_BOT_TOKEN","TELEGRAM_CHAT_ID"
+    "SWARMSYNC_ENABLED","SWARMSYNC_OFF_MODE","SWARMSYNC_API_KEY","QBO_FORWARDING_ADDRESS","TELEGRAM_BOT_TOKEN","TELEGRAM_CHAT_ID"
   )
   foreach ($k in $order) {
     $v = ""; if ($Values.ContainsKey($k) -and $null -ne $Values[$k]) { $v = [string]$Values[$k] }

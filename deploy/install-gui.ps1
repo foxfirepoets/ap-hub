@@ -371,6 +371,61 @@ function Show-LlmHelper {
   [void]$f.ShowDialog($script:W.Form)
 }
 
+function Show-SwarmSyncHelper {
+  $f = New-HelperForm -Title "Document proofs (SwarmSync)" -Height 570
+  $f.Controls.Add((New-Label -Text "Document proofs (SwarmSync)" -Font $script:FontH -X 20 -Y 14))
+  $desc = "SwarmSync adds three OPTIONAL proof features to every invoice:`r`n" +
+          "  - InvoiceProof: a fraud scan (bank-detail changes, duplicates, PO mismatches) that blocks risky auto-posts.`r`n" +
+          "  - Verify-API: notarizes the extracted data as a tamper-evident proof (with a confidence score).`r`n" +
+          "  - AuditProof: anchors the daily audit trail into a verifiable hash chain.`r`n" +
+          "They need a SwarmSync key (ssk_live_...). You can also run ap-hub without them."
+  $f.Controls.Add((New-Label -Text $desc -Color $script:Ink -X 20 -Y 46 -Width 555 -Height 118))
+
+  $curEnabled = ([string](Get-CredBox 'SWARMSYNC_ENABLED').Text).ToLower() -ne 'false'
+  $curMode = [string](Get-CredBox 'SWARMSYNC_OFF_MODE').Text
+
+  $rOn = [System.Windows.Forms.RadioButton]::new(); $rOn.Text = "Use SwarmSync (recommended) -- enter your key below"; $rOn.Location = [System.Drawing.Point]::new(24, 170); $rOn.Size = [System.Drawing.Size]::new(545, 22); $rOn.Font = $script:FontB
+  $rOff = [System.Windows.Forms.RadioButton]::new(); $rOff.Text = "Don't use SwarmSync"; $rOff.Location = [System.Drawing.Point]::new(24, 196); $rOff.Size = [System.Drawing.Size]::new(545, 22); $rOff.Font = $script:FontB
+  if ($curEnabled) { $rOn.Checked = $true } else { $rOff.Checked = $true }
+  $f.Controls.Add($rOn); $f.Controls.Add($rOff)
+
+  $f.Controls.Add((New-Label -Text "SwarmSync API key (ssk_live_...)" -Font $script:FontS -Color $script:Muted -X 44 -Y 224))
+  $key = [System.Windows.Forms.TextBox]::new(); $key.Location = [System.Drawing.Point]::new(44, 244); $key.Size = [System.Drawing.Size]::new(496, 24); $key.Font = $script:FontMono; $key.UseSystemPasswordChar = $true; $key.Text = [string](Get-CredBox 'SWARMSYNC_API_KEY').Text
+  $f.Controls.Add($key)
+
+  $f.Controls.Add((New-Label -Text "If you turn SwarmSync OFF, invoices should:" -Font $script:FontB -X 24 -Y 284 -Width 545))
+  $rReview = [System.Windows.Forms.RadioButton]::new(); $rReview.Text = "Go to human review before posting (safe -- a person is the check)"; $rReview.Location = [System.Drawing.Point]::new(44, 308); $rReview.Size = [System.Drawing.Size]::new(520, 22); $rReview.Font = $script:FontS
+  $rAuto = [System.Windows.Forms.RadioButton]::new(); $rAuto.Text = "Auto-post to the QBO sandbox with NO fraud scan or verification"; $rAuto.Location = [System.Drawing.Point]::new(44, 332); $rAuto.Size = [System.Drawing.Size]::new(520, 22); $rAuto.Font = $script:FontS
+  if ($curMode -eq 'autopost') { $rAuto.Checked = $true } else { $rReview.Checked = $true }
+  $f.Controls.Add($rReview); $f.Controls.Add($rAuto)
+
+  $status = New-Label -Text "" -Color $script:Good -X 20 -Y 372 -Width 545 -Height 44; $f.Controls.Add($status)
+
+  $sync = {
+    $key.Enabled = $rOn.Checked
+    $rReview.Enabled = $rOff.Checked; $rAuto.Enabled = $rOff.Checked
+  }
+  $rOn.Add_CheckedChanged($sync); $rOff.Add_CheckedChanged($sync); & $sync
+
+  $apply = [System.Windows.Forms.Button]::new(); $apply.Text = "Apply"; $apply.Size = [System.Drawing.Size]::new(100, 30); $apply.Location = [System.Drawing.Point]::new(20, 490); $apply.FlatStyle = "System"
+  $apply.Add_Click({
+    if ($rOn.Checked) {
+      (Get-CredBox 'SWARMSYNC_ENABLED').Text = 'true'
+      (Get-CredBox 'SWARMSYNC_API_KEY').Text = $key.Text.Trim()
+      $status.ForeColor = $script:Good; $status.Text = "SwarmSync ON: InvoiceProof + Verify-API + AuditProof will run (needs the key)."
+    } else {
+      (Get-CredBox 'SWARMSYNC_ENABLED').Text = 'false'
+      $m = if ($rAuto.Checked) { 'autopost' } else { 'review' }
+      (Get-CredBox 'SWARMSYNC_OFF_MODE').Text = $m
+      $status.ForeColor = $script:Good
+      $status.Text = "SwarmSync OFF: invoices will " + $(if ($m -eq 'autopost') { "auto-post to the sandbox with no fraud gate." } else { "go to human review before posting." })
+    }
+  })
+  $f.Controls.Add($apply)
+  Add-HelperClose -Form $f -Y 490
+  [void]$f.ShowDialog($script:W.Form)
+}
+
 function Show-CredentialsPage {
   $script:W.Page = "credentials"; Clear-Content; Set-Subtitle "Step 2 of 3  -  Keys and credentials"
   $c = $script:W.Content
@@ -398,6 +453,7 @@ function Show-CredentialsPage {
       if ($f.Group -like 'AI*') { $helper = { Show-LlmHelper } }
       elseif ($f.Group -like 'Gmail*') { $helper = { Show-GmailHelper } }
       elseif ($f.Group -like 'QuickBooks*') { $helper = { Show-QuickBooksHelper } }
+      elseif ($f.Group -like '*SwarmSync*' -or $f.Group -like 'Document proofs*') { $helper = { Show-SwarmSyncHelper } }
       elseif ($f.Group -like 'Gatekeeper*') { $helper = { Show-TelegramHelper } }
       if ($helper) {
         $gb = [System.Windows.Forms.Button]::new(); $gb.Text = "Guide me"; $gb.Size = [System.Drawing.Size]::new(96, 22)

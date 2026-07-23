@@ -17,6 +17,8 @@ export interface PostDeps {
   loadPdf: (attachmentId: number) => Promise<Buffer | null>;
   amountCeiling: number;
   autoThreshold: number;
+  /** The proof-coverage gate applies only when SwarmSync is enabled (default true). */
+  swarmSyncEnabled?: boolean;
 }
 
 export type PostResult =
@@ -63,13 +65,18 @@ export async function postOnce(tenantId: number, proposalId: number, deps: PostD
   if (!p.idempotency_key) return { status: 'held', reason: 'no_idempotency_key' };
 
   // Proof gate (Amendment A1-P2.1): both proofs present, no open proof_scan_unavailable.
-  const hasInvoiceProof = await hasProofRef(tenantId, 'proposal', String(proposalId), 'invoiceproof');
-  const hasVerify = p.extraction_id
-    ? await hasProofRef(tenantId, 'extraction', String(p.extraction_id), 'verify_api')
-    : false;
-  if (!hasInvoiceProof || !hasVerify) return { status: 'held', reason: 'missing_proof_coverage' };
-  if (p.extraction_id && (await openExceptionsFor(tenantId, `extraction:${p.extraction_id}`, 'proof_scan_unavailable')) > 0) {
-    return { status: 'held', reason: 'open_proof_scan_unavailable' };
+  // Applies ONLY when SwarmSync is enabled; when disabled the operator has opted
+  // out of proof coverage (mapping decides review vs auto-post), so the gate is
+  // skipped here and posting proceeds on the other gates above.
+  if (deps.swarmSyncEnabled !== false) {
+    const hasInvoiceProof = await hasProofRef(tenantId, 'proposal', String(proposalId), 'invoiceproof');
+    const hasVerify = p.extraction_id
+      ? await hasProofRef(tenantId, 'extraction', String(p.extraction_id), 'verify_api')
+      : false;
+    if (!hasInvoiceProof || !hasVerify) return { status: 'held', reason: 'missing_proof_coverage' };
+    if (p.extraction_id && (await openExceptionsFor(tenantId, `extraction:${p.extraction_id}`, 'proof_scan_unavailable')) > 0) {
+      return { status: 'held', reason: 'open_proof_scan_unavailable' };
+    }
   }
 
   const txn = p.proposed_txn;
@@ -168,7 +175,8 @@ export async function postOnce(tenantId: number, proposalId: number, deps: PostD
   });
 
   // --- AuditProof anchor (A1-P2.2): anchor failure NEVER re-creates the txn ---
-  if (!(await hasProofRef(tenantId, 'posting', String(postingId), 'auditproof'))) {
+  // Skipped when SwarmSync is disabled (no outbound anchor call).
+  if (deps.swarmSyncEnabled !== false && !(await hasProofRef(tenantId, 'posting', String(postingId), 'auditproof'))) {
     try {
       const v = await deps.anchor({
         realm: deps.writer.realm,
@@ -284,5 +292,6 @@ export async function postSandboxHandler(job: { data: PostJob }): Promise<void> 
     },
     amountCeiling: cfg.AMOUNT_CEILING,
     autoThreshold: cfg.AUTO_THRESHOLD,
+    swarmSyncEnabled: cfg.SWARMSYNC_ENABLED,
   });
 }
