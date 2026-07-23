@@ -24,7 +24,18 @@ const RawSchema = z.object({
   ENCRYPTION_KEY: z
     .string()
     .min(64, 'ENCRYPTION_KEY must be a 32-byte hex string (64 hex chars). Generate: openssl rand -hex 32'),
-  ANTHROPIC_API_KEY: z.string().min(1, 'ANTHROPIC_API_KEY is required'),
+
+  // --- LLM backend (provider-agnostic) ---
+  // ap-hub works with WHATEVER LLM the operator has: a local runtime (Ollama /
+  // LM Studio), any OpenAI-compatible API (LLM_BASE_URL), or a cloud key. No key
+  // is required at boot — the provider is resolved at extraction time (see
+  // src/llm/provider.ts). ANTHROPIC_API_KEY is now just one option among many.
+  ANTHROPIC_API_KEY: z.string().default(''),
+  OPENAI_API_KEY: z.string().default(''),
+  LLM_PROVIDER: z.string().default('auto'), // auto | anthropic | openai | ollama | lmstudio | custom | claude | codex | gemini
+  LLM_BASE_URL: z.string().default(''), // an OpenAI-compatible endpoint (…/v1)
+  LLM_API_KEY: z.string().default(''), // key for LLM_BASE_URL (blank for local)
+  LLM_MODEL: z.string().default(''), // model id; blank = provider default / first available
 
   // --- Gmail (read-only in all phases; send scope added only for the gatekeeper relay) ---
   GMAIL_CLIENT_ID: z.string().min(1, 'GMAIL_CLIENT_ID is required'),

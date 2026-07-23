@@ -200,9 +200,23 @@ function Get-ApHubCredentialFields {
     New-CredField -Name "ENCRYPTION_KEY" -Label "Encryption key (auto-generated)" -Required $true -Secret $true `
       -EnvNames @("ENCRYPTION_KEY") -Group "Core" `
       -Help "32-byte key that encrypts OAuth tokens at rest. Generated for you if not found."
-    New-CredField -Name "ANTHROPIC_API_KEY" -Label "Anthropic API key" -Required $true -Secret $true `
-      -EnvNames @("ANTHROPIC_API_KEY", "CLAUDE_API_KEY") -Group "AI" `
-      -Help "Used for LLM-vision document extraction. Paste an sk-ant-... key, or set ANTHROPIC_API_KEY in your environment and re-run."
+    New-CredField -Name "LLM_PROVIDER" -Label "LLM provider" -Required $false -Secret $false `
+      -Group "AI / LLM backend" -Default "auto" `
+      -Help "auto | anthropic | openai | ollama | lmstudio | custom | claude | codex | gemini. 'auto' uses a local runtime, then a key. Click 'Guide me'."
+    New-CredField -Name "LLM_BASE_URL" -Label "OpenAI-compatible endpoint (…/v1)" -Required $false -Secret $false `
+      -EnvNames @("LLM_BASE_URL") -Group "AI / LLM backend" `
+      -Help "Any OpenAI-compatible server: OpenAI, OpenRouter, Groq, or a local Ollama/LM Studio. Auto-filled if a local runtime is detected."
+    New-CredField -Name "LLM_MODEL" -Label "Model id" -Required $false -Secret $false `
+      -EnvNames @("LLM_MODEL") -Group "AI / LLM backend" `
+      -Help "e.g. gpt-4o, llama3.2-vision, qwen2.5. Blank = provider default / first local model."
+    New-CredField -Name "LLM_API_KEY" -Label "Endpoint API key" -Required $false -Secret $true `
+      -EnvNames @("LLM_API_KEY") -Group "AI / LLM backend" `
+      -Help "Key for the endpoint above (blank for a local runtime like Ollama/LM Studio)."
+    New-CredField -Name "OPENAI_API_KEY" -Label "OpenAI API key" -Required $false -Secret $true `
+      -EnvNames @("OPENAI_API_KEY") -Group "AI / LLM backend" -Help "Optional. Used when LLM_PROVIDER=openai."
+    New-CredField -Name "ANTHROPIC_API_KEY" -Label "Anthropic API key" -Required $false -Secret $true `
+      -EnvNames @("ANTHROPIC_API_KEY", "CLAUDE_API_KEY") -Group "AI / LLM backend" `
+      -Help "Optional. Native Claude vision + PDF. No longer required — any LLM backend works. Click 'Guide me'."
     New-CredField -Name "GMAIL_CLIENT_ID" -Label "Gmail OAuth client ID" -Required $true -Secret $false `
       -EnvNames @("GMAIL_CLIENT_ID", "GOOGLE_CLIENT_ID") -Group "Gmail (read-only)" `
       -Help "From your Google Cloud OAuth app (read-only Gmail scope)."
@@ -326,6 +340,30 @@ function Test-TelegramBotToken {
   return $null
 }
 
+# Detect which LLM backends are usable on this machine: a running local runtime
+# (Ollama / LM Studio — OpenAI-compatible, free), an installed CLI, and any cloud
+# key already in the environment. Desktop chat apps (Claude Desktop, ChatGPT
+# Desktop) expose no programmable endpoint and are never a backend.
+function Get-ApHubLlmDetection {
+  $ollama = $null; $lmstudio = $null; $cli = $null
+  try {
+    $r = Invoke-RestMethod -Uri 'http://localhost:11434/api/tags' -TimeoutSec 2 -ErrorAction Stop
+    $ollama = [pscustomobject]@{ BaseUrl = 'http://localhost:11434/v1'; Models = @($r.models | ForEach-Object { $_.name }) }
+  } catch { }
+  try {
+    $r = Invoke-RestMethod -Uri 'http://localhost:1234/v1/models' -TimeoutSec 2 -ErrorAction Stop
+    $lmstudio = [pscustomobject]@{ BaseUrl = 'http://localhost:1234/v1'; Models = @($r.data | ForEach-Object { $_.id }) }
+  } catch { }
+  foreach ($b in 'claude', 'codex', 'gemini') { if (Test-CommandExists $b) { $cli = $b; break } }
+  [pscustomobject]@{
+    Ollama       = $ollama
+    LmStudio     = $lmstudio
+    Cli          = $cli
+    AnthropicKey = [bool](Get-EnvAny -Names @('ANTHROPIC_API_KEY'))
+    OpenAiKey    = [bool](Get-EnvAny -Names @('OPENAI_API_KEY'))
+  }
+}
+
 <#
 .SYNOPSIS
   Auto-discovery: return the credential catalog with every value pre-filled from
@@ -375,12 +413,28 @@ function Get-ApHubDiscoveredCredentials {
 
   $qbDesktop = Get-QuickBooksDesktopInfo
 
+  # LLM backend detection: pre-fill the OpenAI-compatible endpoint from a running
+  # local runtime so a no-key, no-CLI user is ready to go out of the box.
+  $llm = Get-ApHubLlmDetection
+  $baseField = $fields | Where-Object { $_.Name -eq 'LLM_BASE_URL' } | Select-Object -First 1
+  $modelField = $fields | Where-Object { $_.Name -eq 'LLM_MODEL' } | Select-Object -First 1
+  if ($baseField -and $baseField.Source -eq 'empty') {
+    $rt = if ($llm.Ollama) { $llm.Ollama } elseif ($llm.LmStudio) { $llm.LmStudio } else { $null }
+    if ($rt) {
+      $baseField.Value = $rt.BaseUrl; $baseField.Source = 'detected local runtime'
+      if ($modelField -and $modelField.Source -eq 'empty' -and $rt.Models.Count -gt 0) {
+        $modelField.Value = $rt.Models[0]; $modelField.Source = 'detected'
+      }
+    }
+  }
+
   [pscustomobject]@{
     Fields            = $fields
     ClaudeCliDetected = $claudeCli
     PostgresDetected  = $pgDetected
     GoogleSecretFile  = $googleFile
     QbDesktop         = $qbDesktop
+    Llm               = $llm
     ScanRoots         = @(Get-ScanRoots)
   }
 }
@@ -400,7 +454,8 @@ function Get-ApHubEnvBody {
     ""
   )
   $order = @(
-    "DATABASE_URL","ENCRYPTION_KEY","ANTHROPIC_API_KEY",
+    "DATABASE_URL","ENCRYPTION_KEY",
+    "LLM_PROVIDER","LLM_BASE_URL","LLM_MODEL","LLM_API_KEY","OPENAI_API_KEY","ANTHROPIC_API_KEY",
     "GMAIL_CLIENT_ID","GMAIL_CLIENT_SECRET",
     "QBO_SANDBOX_CLIENT_ID","QBO_SANDBOX_CLIENT_SECRET","QBO_SANDBOX_REALM_ID","QBO_SANDBOX_COMPANY_NAME",
     "SWARMSYNC_API_KEY","QBO_FORWARDING_ADDRESS","TELEGRAM_BOT_TOKEN","TELEGRAM_CHAT_ID"
