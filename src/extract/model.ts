@@ -138,10 +138,20 @@ export async function getOpenAiCompatibleExtractor(deps: {
  * text-bearing documents (email body) are handled. Offered as an explicit
  * fallback, never auto-selected for vision documents.
  */
+/**
+ * The headless argv for each supported CLI. Only the fixed flag is on argv —
+ * the prompt is passed via stdin (see getCliExtractor), so this NEVER carries
+ * untrusted text. Claude uses `-p`, Codex uses `exec`, Gemini reads stdin.
+ */
+export function cliArgsFor(bin: string): string[] {
+  if (bin === 'codex') return ['exec'];
+  if (bin === 'gemini') return [];
+  return ['-p']; // claude
+}
+
 export async function getCliExtractor(bin: string): Promise<Extractor> {
-  const { execFile } = await import('node:child_process');
-  const { promisify } = await import('node:util');
-  const run = promisify(execFile);
+  const { spawn } = await import('node:child_process');
+  const argsFor = cliArgsFor;
   return {
     async extract(input: ExtractInput): Promise<unknown> {
       const text = input.bodyText;
@@ -149,7 +159,17 @@ export async function getCliExtractor(bin: string): Promise<Extractor> {
         throw new Error(`${bin} CLI is text-only and cannot read a scanned image/PDF. Use a vision provider (local vision model, OpenAI, or Anthropic) for scanned documents.`);
       }
       const prompt = `${EXTRACT_INSTRUCTION}\n\nDocument text:\n${text}`;
-      const { stdout } = await run(bin, ['--print', prompt], { timeout: 120_000, maxBuffer: 16 * 1024 * 1024, shell: process.platform === 'win32' });
+      const stdout = await new Promise<string>((resolve, reject) => {
+        const child = spawn(bin, argsFor(bin), { shell: process.platform === 'win32', timeout: 120_000 });
+        let out = '';
+        let err = '';
+        child.stdout.on('data', (d) => { out += d.toString(); if (out.length > 16 * 1024 * 1024) child.kill(); });
+        child.stderr.on('data', (d) => { err += d.toString(); });
+        child.on('error', reject);
+        child.on('close', (code) => (code === 0 ? resolve(out) : reject(new Error(`${bin} exited ${code}: ${err.slice(0, 500)}`))));
+        child.stdin.on('error', () => { /* ignore EPIPE if the CLI closes stdin early */ });
+        child.stdin.end(prompt);
+      });
       return firstJsonObject(stdout);
     },
   };

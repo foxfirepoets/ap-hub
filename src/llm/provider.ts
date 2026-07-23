@@ -71,8 +71,15 @@ export async function resolveProvider(cfg: Config, deps: ResolveDeps = {}): Prom
   const detCli = deps.detectCliImpl ?? detectCli;
   const choice = (cfg.LLM_PROVIDER || 'auto').trim().toLowerCase();
 
-  const firstModel = (info: RuntimeInfo, fallback: string): string =>
-    cfg.LLM_MODEL || info.models[0] || fallback;
+  // ap-hub extraction is vision, so when auto-picking a local model prefer one
+  // whose name signals image support; only then fall back to the first model or
+  // a sensible default (which the operator may still need to `ollama pull`).
+  const VISION_HINT = /vision|llava|qwen2\.?5?-?vl|minicpm-v|moondream|pixtral|gpt-4o|gemma3/i;
+  const firstModel = (info: RuntimeInfo, fallback: string): string => {
+    if (cfg.LLM_MODEL) return cfg.LLM_MODEL;
+    const vis = info.models.find((m) => VISION_HINT.test(m));
+    return vis || info.models[0] || fallback;
+  };
 
   // 1. Explicit provider.
   switch (choice) {

@@ -562,7 +562,9 @@ function Invoke-ApHubInstall {
     $dbUrl = [string]$Values["DATABASE_URL"]
     if ($dbUrl -match '^postgres(ql)?://aphub:aphub@localhost') {
       Send-Progress $OnProgress "database" "start" "Provisioning the local database..." 20
-      $roleSql = "DO `$do`$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='aphub') THEN CREATE ROLE aphub LOGIN PASSWORD 'aphub' SUPERUSER; END IF; END `$do`$;"
+      # Least privilege: a plain LOGIN role that OWNS its own database (below) can
+      # run every migration/pg-boss DDL it needs — no SUPERUSER required.
+      $roleSql = "DO `$do`$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='aphub') THEN CREATE ROLE aphub LOGIN PASSWORD 'aphub'; END IF; END `$do`$;"
       & psql -U $PgSuperuser -h localhost -p $PgPort -v ON_ERROR_STOP=1 -c $roleSql 2>$null | Out-Null
       $exists = & psql -U $PgSuperuser -h localhost -p $PgPort -tAc "SELECT 1 FROM pg_database WHERE datname='aphub'" 2>$null
       if (-not $exists) { & psql -U $PgSuperuser -h localhost -p $PgPort -c "CREATE DATABASE aphub OWNER aphub" 2>$null | Out-Null }

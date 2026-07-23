@@ -5,6 +5,7 @@ import { writeAudit, hashOf } from '../audit.js';
 import { logger } from '../logger.js';
 import type { QboWriteClient } from '../qbo/write.js';
 import type { VerifyResult } from '../swarmsync/client.js';
+import type { SwarmSyncMode } from '../config.js';
 
 export interface PostJob {
   tenantId: number;
@@ -19,6 +20,8 @@ export interface PostDeps {
   autoThreshold: number;
   /** The proof-coverage gate applies only when SwarmSync is enabled (default true). */
   swarmSyncEnabled?: boolean;
+  /** SwarmSync mode; 'off_review' must never post (defense-in-depth). Default 'on'. */
+  swarmSyncMode?: SwarmSyncMode;
 }
 
 export type PostResult =
@@ -58,6 +61,9 @@ export async function postOnce(tenantId: number, proposalId: number, deps: PostD
 
   // --- Gate ---
   if (p.status !== 'ready') return { status: 'held', reason: `status=${p.status}` };
+  // Defense-in-depth: in off_review mode nothing auto-posts, no matter how a
+  // proposal reached 'ready' (mapping already caps it; this is the backstop).
+  if (deps.swarmSyncMode === 'off_review') return { status: 'held', reason: 'swarmsync_off_review' };
   if (Number(p.confidence) < deps.autoThreshold) return { status: 'held', reason: 'below_auto_threshold' };
   const total = Number(p.proposed_txn?.TotalAmt ?? 0);
   if (total > deps.amountCeiling) return { status: 'held', reason: 'over_ceiling' };
@@ -277,7 +283,7 @@ function verifyMatches(txn: any, readBack: any): boolean {
 }
 
 export async function postSandboxHandler(job: { data: PostJob }): Promise<void> {
-  const { config } = await import('../config.js');
+  const { config, swarmSyncMode } = await import('../config.js');
   const { getQboWriteClient } = await import('../qbo/write.js');
   const { swarmsync } = await import('../services.js');
   const { loadAttachmentBytes } = await import('../ingest/repo.js');
@@ -293,5 +299,6 @@ export async function postSandboxHandler(job: { data: PostJob }): Promise<void> 
     amountCeiling: cfg.AMOUNT_CEILING,
     autoThreshold: cfg.AUTO_THRESHOLD,
     swarmSyncEnabled: cfg.SWARMSYNC_ENABLED,
+    swarmSyncMode: swarmSyncMode(cfg),
   });
 }

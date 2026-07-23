@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { probeOllama, probeLmStudio, type RuntimeInfo } from '../src/llm/detect.js';
 import { resolveProvider, LlmNotConfiguredError } from '../src/llm/provider.js';
-import { getOpenAiCompatibleExtractor } from '../src/extract/model.js';
+import { getOpenAiCompatibleExtractor, cliArgsFor } from '../src/extract/model.js';
 import { renderPdfToPngs } from '../src/extract/pdf.js';
 import type { Config } from '../src/config.js';
 
@@ -90,6 +90,16 @@ describe('OpenAI-compatible extractor', () => {
     const body = JSON.parse((f.mock.calls[0]![1] as any).body);
     const parts = body.messages[0].content;
     expect(parts.some((p: any) => p.type === 'image_url' && p.image_url.url.startsWith('data:image/png;base64,'))).toBe(true);
+  });
+});
+
+describe('CLI extractor uses the correct per-CLI headless flags (H1 regression)', () => {
+  it('maps each CLI to its real headless entrypoint, not --print for all', () => {
+    expect(cliArgsFor('claude')).toEqual(['-p']);
+    expect(cliArgsFor('codex')).toEqual(['exec']); // NOT --print
+    expect(cliArgsFor('gemini')).toEqual([]); // reads stdin; NOT --print
+    // The prompt is never on argv (passed via stdin) — no flag value carries text.
+    expect(cliArgsFor('codex')).not.toContain('--print');
   });
 });
 

@@ -30,7 +30,9 @@ export function registerQbDesktop(cfg: Config): void {
       res.end('POST only');
       return true;
     }
-    const body = await readBody(req);
+    // Larger cap than the default: a receiveResponseXML body carries the full
+    // qbXML response (whole vendor/account lists), which inflates when XML-escaped.
+    const body = await readBody(req, 64 * 1024 * 1024);
     const out = handleQbwcSoap(body, {
       username: cfg.QBWC_USERNAME,
       password: cfg.QBWC_PASSWORD,

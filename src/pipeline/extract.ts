@@ -208,13 +208,19 @@ export async function extractOnce(
   return { extractionId, status: 'ok' };
 }
 
+// Resolve the LLM backend (and its up-to-3s local-runtime detection) ONCE per
+// process, not on every job. The provider is config-driven and stable for the
+// process lifetime; a newly-started local runtime is picked up on next restart.
+let cachedExtractor: Extractor | null = null;
+
 export async function extractHandler(job: { data: ExtractJob }): Promise<void> {
   const { config } = await import('../config.js');
   const { getExtractor } = await import('../extract/model.js');
   const { swarmsync } = await import('../services.js');
   const { getQueue } = await import('../queue.js');
   const cfg = config();
-  const extractor = await getExtractor(cfg);
+  if (!cachedExtractor) cachedExtractor = await getExtractor(cfg);
+  const extractor = cachedExtractor;
   await extractOnce(job.data.tenantId, job.data, {
     extractor,
     swarmSyncEnabled: cfg.SWARMSYNC_ENABLED,
