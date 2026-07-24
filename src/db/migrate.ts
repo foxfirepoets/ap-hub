@@ -63,6 +63,46 @@ export async function migrateUp(connectionString: string): Promise<string[]> {
   }
 }
 
+/** Revert exactly the most recently applied migration.
+ *
+ * DOWN runs in the same transaction as removal from `_migrations`, so a
+ * migration-level safety refusal leaves both schema and history unchanged.
+ */
+export async function migrateDown(connectionString: string): Promise<string | null> {
+  const pool = new Pool({ connectionString });
+  try {
+    await ensureMigrationsTable(pool);
+    const { rows } = await pool.query<{ name: string }>(
+      'SELECT name FROM _migrations ORDER BY applied_at DESC, name DESC LIMIT 1',
+    );
+    const name = rows[0]?.name;
+    if (!name) return null;
+
+    const downFile = name.replace(/\.sql$/, '.down.sql');
+    const downPath = join(MIGRATIONS_DIR, downFile);
+    if (!readdirSync(MIGRATIONS_DIR).includes(downFile)) {
+      throw new Error(`Migration ${name} has no DOWN file (${downFile})`);
+    }
+
+    const sql = readFileSync(downPath, 'utf8');
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(sql);
+      await client.query('DELETE FROM _migrations WHERE name = $1', [name]);
+      await client.query('COMMIT');
+      return name;
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw new Error(`DOWN migration ${name} failed: ${(err as Error).message}`);
+    } finally {
+      client.release();
+    }
+  } finally {
+    await pool.end();
+  }
+}
+
 export async function resetDb(connectionString: string): Promise<void> {
   const pool = new Pool({ connectionString });
   try {
@@ -85,6 +125,9 @@ async function main(): Promise<void> {
   if (cmd === 'up') {
     const applied = await migrateUp(connectionString);
     console.log(applied.length ? `Applied: ${applied.join(', ')}` : 'No pending migrations.');
+  } else if (cmd === 'down') {
+    const reverted = await migrateDown(connectionString);
+    console.log(reverted ? `Reverted: ${reverted}` : 'No applied migrations.');
   } else if (cmd === 'reset') {
     await resetDb(connectionString);
     console.log('Database reset and re-migrated.');

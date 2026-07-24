@@ -4,7 +4,7 @@ Execute tasks in order. Each checkbox is one independently verifiable Ralph iter
 
 ## CHUNK_1_CONTRACTS — Durable domain foundation
 
-- [ ] CHUNK_1_SCHEMA — Add one reversible SQL migration for `accounting_documents`, `bank_statements`, `bank_statement_lines`, `provider_jobs`, and `reply_drafts`, including tenant-scoped foreign keys, status checks, query indexes, idempotency constraints, and a DOWN refusal when retained rows exist. Evidence: disposable PostgreSQL UP → schema/constraint assertions → DOWN → UP transcript, migration tests, and `npm run verify`.
+- [x] CHUNK_1_SCHEMA — Add one reversible SQL migration for `accounting_documents`, `bank_statements`, `bank_statement_lines`, `provider_jobs`, and `reply_drafts`, including tenant-scoped foreign keys, status checks, query indexes, idempotency constraints, and a DOWN refusal when retained rows exist. Evidence: disposable PostgreSQL UP → schema/constraint assertions → DOWN → UP transcript, migration tests, and `npm run verify`.
 
 - [ ] CHUNK_1_TYPES — Add provider-neutral TypeScript contracts and repositories for accounting documents, statement facts/lines, provider capabilities/jobs, and reply drafts without importing QBO, qbXML, or Gmail provider writers into core services. Evidence: contract/repository unit tests covering valid rows, duplicate keys, invalid status, and foreign-tenant references; hostile boundary scan; `npm run verify`.
 
