@@ -298,26 +298,6 @@ async function qbdControl(action: string, extra: Record<string, unknown> = {}): 
 
 qbd.command('verify').description('enqueue read-only company/vendor/account queries (safe)').action(() => qbdControl('verify'));
 qbd.command('status').description('show queued/processed Web Connector work').action(() => qbdControl('status'));
-qbd
-  .command('bill')
-  .description('enqueue a real vendor bill (WRITE MODE ONLY — mutates your real company file)')
-  .requiredOption('--vendor <name>')
-  .requiredOption('--account <fullName>')
-  .requiredOption('--amount <dollars>')
-  .option('--ref <refNumber>')
-  .option('--date <YYYY-MM-DD>')
-  .option('--memo <memo>')
-  .action((o) =>
-    qbdControl('bill', {
-      bill: {
-        vendorName: o.vendor,
-        refNumber: o.ref,
-        txnDate: o.date,
-        memo: o.memo,
-        lines: [{ accountFullName: o.account, amount: Number(o.amount) }],
-      },
-    }),
-  );
 
 program.parseAsync(process.argv).catch((err) => {
   logger.error({ err: String(err) }, 'cli error');

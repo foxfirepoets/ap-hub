@@ -91,6 +91,9 @@ describe('broker-mode config — keys optional with a broker, required without',
     ENCRYPTION_KEY: '0'.repeat(64),
     GMAIL_CLIENT_ID: 'g',
     GMAIL_CLIENT_SECRET: 's',
+    GOOGLE_SSO_CLIENT_ID: 'google-sso-client',
+    GOOGLE_SSO_CLIENT_SECRET: 'google-sso-secret',
+    SESSION_COOKIE_SECRET: 'broker-test-session-secret-32-bytes-minimum',
   };
 
   it('BROKER MODE: boots with NO ANTHROPIC_API_KEY when BROKER_BASE_URL is set', () => {

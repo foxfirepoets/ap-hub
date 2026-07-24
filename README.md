@@ -1,7 +1,7 @@
 # ap-hub — AI Accountant Hub
 
-A single TypeScript service that reads accounting email from Gmail, fraud-scans and
-verifies every document through the operator's own **SwarmSync** proof platform
+A local TypeScript backend plus a Next.js review UI that read accounting email
+from Gmail and verify documents through the operator's own **SwarmSync** proof platform
 (InvoiceProof · Verify-API · AuditProof), and produces reviewable QuickBooks Online
 transactions — writing **only to a QBO sandbox company**, never production, and never
 sending or modifying Gmail except one locked-down forward.
@@ -31,11 +31,13 @@ Gmail. **Phase 2** (chunk 7) writes only to the QBO sandbox. No proposal reaches
 npm install
 cp .env.example .env            # fill in values; keep QBO_ENV=sandbox
 npm run migrate:up              # apply schema
-npm test                        # run the full guarantee suite
-npm run dev                     # boot the service
+npm run cli -- bootstrap-tenant --name "Example Company" --owner-email "owner@example.com"
+npm run verify                  # repository-level verification
+npm run dev                     # terminal 1: backend + workers
+npm run web:dev                 # terminal 2: authenticated UI
 ```
 
-Requires Node 20+, PostgreSQL, an Anthropic key, a Gmail OAuth app (readonly), a
+Requires Node 20+, PostgreSQL, a usable vision LLM, Google SSO, a Gmail OAuth app (readonly), a
 QuickBooks Online **sandbox** app, and (for the gatekeeper) a SwarmSync `ssk_live_` key,
 the QBO capture address, and a Telegram bot token + chat id.
 
@@ -74,9 +76,15 @@ it never blocks the queue and never lets an unscanned document through. Holds an
 | Nothing unscanned gets through | `proof_fail_safe`, `gatekeeper_hold`, `proof_gate_posting`, `unscannable_hold` |
 | White-label = config only | `white_label_install` |
 
-Run `npm test` to execute all of them. See `CLAUDE.md` for the build guide and `specs/`
-for the authoritative chunk specifications.
+Run `npm run verify` for repository-level verification. The Playwright suite
+stubs internal APIs and is therefore a UI contract test, not live integration
+certification. Run `npm run verify:live` with disposable sandbox credentials
+for external-system evidence. See [INSTALL.md](INSTALL.md), `CLAUDE.md`, and `specs/`.
 
-> **Built ≠ launchable.** This repository is verified at the build level (lint, typecheck,
-> and the full guarantee suite are green). Before touching real books, run the two-week
-> off-the-shelf gap test and a launch audit.
+> **Built ≠ externally certified.** `npm run verify` proves the repository-level
+> gates on the machine where it is run. It does not prove live Gmail, QBO, LLM,
+> broker, deployment, backup restoration, or production readiness. Use disposable
+> sandbox credentials for `npm run verify:live` and complete an operator launch audit.
+
+QuickBooks Desktop is read-only in this build. The only accounting write path is
+the proof-gated QuickBooks Online sandbox writer.

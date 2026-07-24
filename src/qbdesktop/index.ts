@@ -3,9 +3,8 @@
  *
  * When QB_DESKTOP_ENABLED=true, this registers the /qbwc SOAP endpoint so the
  * Web Connector can drain the qbXML work queue against the open company file.
- * Everything stays read-only unless QB_DESKTOP_MODE=write AND a write item is
- * explicitly enqueued (session.ts enforces the guard). The QBO REST writer is
- * untouched and remains sandbox-only.
+ * This build exposes read-only verification only. Real-company write controls
+ * are intentionally not registered.
  */
 
 import type { Config } from '../config.js';
@@ -13,10 +12,10 @@ import { logger } from '../logger.js';
 import { registerRawRoute, readBody } from '../http.js';
 import { handleQbwcSoap } from './soap.js';
 import { enqueueForNextRun, type QbDesktopMode } from './session.js';
-import { companyQueryRq, vendorQueryRq, accountQueryRq, billAddRq, type BillAddInput } from './qbxml.js';
+import { companyQueryRq, vendorQueryRq, accountQueryRq } from './qbxml.js';
 
-export function qbDesktopMode(cfg: Config): QbDesktopMode {
-  return cfg.QB_DESKTOP_MODE === 'write' ? 'write' : 'readonly';
+export function qbDesktopMode(_cfg: Config): QbDesktopMode {
+  return 'readonly';
 }
 
 /** Register the /qbwc SOAP endpoint. No-op unless QB_DESKTOP_ENABLED. */
@@ -62,20 +61,13 @@ export function registerQbDesktop(cfg: Config): void {
           enqueueVerify();
           send(200, { ok: true, enqueued: 'company, vendors, accounts (read-only)' });
           return true;
-        case 'bill':
-          // enqueueBill throws WriteNotAllowedError when a session is read-only;
-          // there may be no live session yet, so also refuse pre-queue in RO mode.
-          if (qbDesktopMode(cfg) !== 'write') { send(409, { error: 'read-only mode; set QB_DESKTOP_MODE=write' }); return true; }
-          enqueueBill(payload.bill);
-          send(200, { ok: true, enqueued: `bill for ${payload.bill?.vendorName}` });
-          return true;
         case 'status': {
           const { snapshotWork } = await import('./session.js');
           send(200, snapshotWork());
           return true;
         }
         default:
-          send(400, { error: 'unknown action (verify|bill|status)' });
+          send(400, { error: 'unknown action (verify|status)' });
           return true;
       }
     } catch (err) {
@@ -110,14 +102,6 @@ export function enqueueVerify(): void {
   enqueueForNextRun('verify: company', companyQueryRq('verify-company'));
   enqueueForNextRun('verify: vendors', vendorQueryRq('verify-vendors', 25));
   enqueueForNextRun('verify: accounts', accountQueryRq('verify-accounts'));
-}
-
-/**
- * Enqueue a real vendor bill. WRITE — refused by the session unless the active
- * session is in write mode. Callers (CLI) must be an explicit, deliberate action.
- */
-export function enqueueBill(input: BillAddInput): void {
-  enqueueForNextRun(`bill: ${input.vendorName}`, billAddRq(input, 'bill-' + (input.refNumber ?? 'x')));
 }
 
 export { getSession, resetSessions, type WorkItem } from './session.js';

@@ -49,8 +49,8 @@ export interface ProposeDeps {
   enqueuePost?: (proposalId: number) => Promise<void>;
   /**
    * SwarmSync mode (default 'on'). 'on' = InvoiceProof scan + proof-gated ready.
-   * 'off_review' = no scan, cap at review (human approves). 'off_autopost' = no
-   * scan, allow ready/post with no fraud gate (operator's explicit choice).
+   * 'off_review' = no scan and cap at review. Missing verification is never
+   * treated as successful verification.
    */
   swarmSync?: SwarmSyncMode;
 }
@@ -253,15 +253,12 @@ export async function proposeOnce(
   );
 
   // --- Status assignment with the never-ready-without-both-proofs invariant ---
-  // When SwarmSync is ON, 'ready' requires both proofs and a clean scan. When it
-  // is OFF, there are no proofs: 'off_autopost' treats proofs as satisfied (no
-  // fraud gate), 'off_review' never reaches ready so a human reviews.
+  // 'ready' always requires both proofs and a clean scan. When SwarmSync is off
+  // there are no proofs, so the proposal cannot become ready automatically.
   const hasVerify = mode === 'on' ? await hasProofRef(tenantId, 'extraction', String(ext.id), 'verify_api') : false;
   const hasInvoiceProof = mode === 'on' ? !scanFailed : false;
   const proofsSatisfied =
-    mode === 'on'
-      ? hasVerify && hasInvoiceProof && !flags.has('proof_scan_unavailable')
-      : mode === 'off_autopost';
+    mode === 'on' && hasVerify && hasInvoiceProof && !flags.has('proof_scan_unavailable');
   const blockingFlags = ['total_mismatch', 'bank_change_warning', 'duplicate', 'unknown_vendor', 'unmapped_account', 'unmapped_dimension'];
   const hasBlocking = [...flags].some((f) => blockingFlags.includes(f));
   const hasHighOrCritical = cls.hasCritical || cls.hasHigh;

@@ -1,0 +1,19 @@
+services:
+  db:
+    image: postgres:16.9
+    environment:
+      POSTGRES_DB: aphub
+      POSTGRES_USER: aphub
+      POSTGRES_PASSWORD: aphub
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aphub -d aphub"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - aphub_postgres_data:/var/lib/postgresql/data
+
+volumes:
+  aphub_postgres_data:

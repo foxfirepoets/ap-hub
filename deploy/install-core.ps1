@@ -34,7 +34,7 @@
 param(
   [switch]$EmitPrereqJson,
   [switch]$EmitCredentialsJson,
-  [int]$AppPort = 3000
+  [int]$AppPort = 3001
 )
 
 function Test-CommandExists {
@@ -99,7 +99,7 @@ function New-PrereqCheck {
 }
 
 function Get-ApHubPrerequisites {
-  [CmdletBinding()] param([string]$InstallRoot = (Split-Path -Parent $PSScriptRoot), [int]$PgPort = 5432, [int]$AppPort = 3000)
+  [CmdletBinding()] param([string]$InstallRoot = (Split-Path -Parent $PSScriptRoot), [int]$PgPort = 5432, [int]$AppPort = 3001)
   Add-PostgresBinToPath
   $checks = @()
 
@@ -129,6 +129,9 @@ function Get-ApHubPrerequisites {
   $portOk = Test-PortFree -Port $AppPort
   $checks += New-PrereqCheck -Name "Port $AppPort free" -Ok $portOk -Detail ($(if ($portOk) { "available" } else { "in use" })) `
     -FixHint "Another program is using port $AppPort. Close it, or choose a different port, then Re-check."
+  $uiPortOk = Test-PortFree -Port 3000
+  $checks += New-PrereqCheck -Name "Port 3000 free (web UI)" -Ok $uiPortOk -Detail ($(if ($uiPortOk) { "available" } else { "in use" })) `
+    -FixHint "Another program is using web UI port 3000. Close it and re-run."
 
   $freeGb = $null; $diskOk = $false
   try {
@@ -159,14 +162,15 @@ function Test-ApHubReady {
 }
 
 function Get-ApHubPaths {
-  param([string]$InstallRoot = (Split-Path -Parent $PSScriptRoot), [int]$AppPort = 3000)
+  param([string]$InstallRoot = (Split-Path -Parent $PSScriptRoot), [int]$AppPort = 3001)
   $recoveryDir = Join-Path $env:APPDATA "ap-hub"
   [pscustomobject]@{
     InstallRoot     = $InstallRoot
     EnvPath         = Join-Path $InstallRoot ".env"
     RecoveryDir     = $recoveryDir
     RecoveryKeyPath = Join-Path $recoveryDir "recovery.key"
-    AppUrl          = "http://localhost:$AppPort"
+    AppUrl          = "http://localhost:3000"
+    HealthUrl       = "http://localhost:$AppPort/health"
   }
 }
 
@@ -223,6 +227,21 @@ function Get-ApHubCredentialFields {
     New-CredField -Name "GMAIL_CLIENT_SECRET" -Label "Gmail OAuth client secret" -Required $true -Secret $true `
       -EnvNames @("GMAIL_CLIENT_SECRET", "GOOGLE_CLIENT_SECRET") -Group "Gmail (read-only)" `
       -Help "The client secret paired with the Gmail client ID."
+    New-CredField -Name "GOOGLE_SSO_CLIENT_ID" -Label "Google sign-in client ID" -Required $true -Secret $false `
+      -EnvNames @("GOOGLE_SSO_CLIENT_ID") -Group "Human sign-in" `
+      -Help "OAuth web client with http://localhost:3000/api/auth/callback registered."
+    New-CredField -Name "GOOGLE_SSO_CLIENT_SECRET" -Label "Google sign-in client secret" -Required $true -Secret $true `
+      -EnvNames @("GOOGLE_SSO_CLIENT_SECRET") -Group "Human sign-in" `
+      -Help "Secret paired with the Google sign-in client ID."
+    New-CredField -Name "SESSION_COOKIE_SECRET" -Label "Session signing secret (auto-generated)" -Required $true -Secret $true `
+      -EnvNames @("SESSION_COOKIE_SECRET") -Group "Human sign-in" `
+      -Help "Random server-side secret used to sign sessions and OAuth state. Generated if absent."
+    New-CredField -Name "TENANT_NAME" -Label "Company / tenant name" -Required $true -Secret $false `
+      -EnvNames @("APHUB_TENANT_NAME") -Group "First owner" `
+      -Help "Creates the first company record during a clean install."
+    New-CredField -Name "OWNER_EMAIL" -Label "First owner Google email" -Required $true -Secret $false `
+      -EnvNames @("APHUB_OWNER_EMAIL") -Group "First owner" `
+      -Help "Pre-invited owner_controller account; must match the Google account used to sign in."
     New-CredField -Name "QBO_SANDBOX_CLIENT_ID" -Label "QuickBooks sandbox client ID" -Required $false -Secret $false `
       -EnvNames @("QBO_SANDBOX_CLIENT_ID") -Group "QuickBooks (sandbox, optional)" `
       -Help "Optional. QuickBooks Online SANDBOX app client ID. Production is refused by the app."
@@ -240,7 +259,7 @@ function Get-ApHubCredentialFields {
       -Help "ssk_live_... key for Verify-API / AuditProof. Required only when SwarmSync is on. Never logged."
     New-CredField -Name "SWARMSYNC_OFF_MODE" -Label "If SwarmSync is off, invoices should" -Required $false -Secret $false `
       -EnvNames @("SWARMSYNC_OFF_MODE") -Group "Document proofs (SwarmSync)" -Default "review" `
-      -Help "review = send to human review (safe). autopost = auto-post to the QBO sandbox with no fraud gate. Only applies when SwarmSync is off."
+      -Help "review = hold for human review. Proofless automatic posting is not supported."
     New-CredField -Name "QBO_FORWARDING_ADDRESS" -Label "QBO capture forwarding address" -Required $false -Secret $false `
       -EnvNames @("QBO_FORWARDING_ADDRESS") -Group "Gatekeeper (optional)" `
       -Help "Optional. The only address the gatekeeper relay can ever forward to."
@@ -393,7 +412,11 @@ function Get-ApHubDiscoveredCredentials {
       if ($hit) { $f.Value = $hit.Value; $f.Source = "environment (" + $hit.Var + ")"; continue }
     }
     # 2. Generate the encryption key when the environment has none.
-    if ($f.Name -eq "ENCRYPTION_KEY") { $f.Value = New-HexSecret; $f.Source = "generated"; continue }
+    if ($f.Name -eq "ENCRYPTION_KEY" -or $f.Name -eq "SESSION_COOKIE_SECRET") {
+      $f.Value = New-HexSecret
+      $f.Source = "generated"
+      continue
+    }
     # 3. Otherwise keep the default (already set) or leave empty.
   }
 
@@ -409,6 +432,17 @@ function Get-ApHubDiscoveredCredentials {
       if ($gid -and $gid.Source -eq "empty") { $gid.Value = $g.ClientId; $gid.Source = "file (" + (Split-Path -Leaf $g.File) + ")" }
       if ($gsec -and $gsec.Source -eq "empty") { $gsec.Value = $g.ClientSecret; $gsec.Source = "file (" + (Split-Path -Leaf $g.File) + ")" }
     }
+  }
+  # The same Google web OAuth client can serve human SSO when both callback
+  # URIs are registered. Reuse discovered Gmail credentials as a safe default;
+  # the operator may still override them in the wizard.
+  $ssoId = $fields | Where-Object { $_.Name -eq "GOOGLE_SSO_CLIENT_ID" } | Select-Object -First 1
+  $ssoSecret = $fields | Where-Object { $_.Name -eq "GOOGLE_SSO_CLIENT_SECRET" } | Select-Object -First 1
+  if ($ssoId -and $ssoId.Source -eq "empty" -and $gid -and $gid.Value) {
+    $ssoId.Value = $gid.Value; $ssoId.Source = "Gmail OAuth default"
+  }
+  if ($ssoSecret -and $ssoSecret.Source -eq "empty" -and $gsec -and $gsec.Value) {
+    $ssoSecret.Value = $gsec.Value; $ssoSecret.Source = "Gmail OAuth default"
   }
 
   $claudeCli = $false
@@ -453,7 +487,7 @@ function Send-Progress {
 # Render an .env body from a name->value hashtable, only emitting non-blank vars
 # plus the fixed defaults the app expects.
 function Get-ApHubEnvBody {
-  param([hashtable]$Values, [int]$AppPort = 3000)
+  param([hashtable]$Values, [int]$AppPort = 3001)
   $lines = @(
     "# Generated by deploy/install.ps1 for ap-hub. DO NOT commit.",
     "# This build writes only to a QuickBooks sandbox and never modifies Gmail.",
@@ -463,6 +497,7 @@ function Get-ApHubEnvBody {
     "DATABASE_URL","ENCRYPTION_KEY",
     "LLM_PROVIDER","LLM_BASE_URL","LLM_MODEL","LLM_API_KEY","OPENAI_API_KEY","ANTHROPIC_API_KEY",
     "GMAIL_CLIENT_ID","GMAIL_CLIENT_SECRET",
+    "GOOGLE_SSO_CLIENT_ID","GOOGLE_SSO_CLIENT_SECRET","SESSION_COOKIE_SECRET",
     "QBO_SANDBOX_CLIENT_ID","QBO_SANDBOX_CLIENT_SECRET","QBO_SANDBOX_REALM_ID","QBO_SANDBOX_COMPANY_NAME",
     "SWARMSYNC_ENABLED","SWARMSYNC_OFF_MODE","SWARMSYNC_API_KEY","QBO_FORWARDING_ADDRESS","TELEGRAM_BOT_TOKEN","TELEGRAM_CHAT_ID"
   )
@@ -475,6 +510,9 @@ function Get-ApHubEnvBody {
   $lines += @(
     "GMAIL_REDIRECT_URI=http://localhost:$AppPort/oauth/gmail/callback",
     "WATCHED_LABEL=AP-Inbox",
+    "MAX_ATTACHMENT_BYTES=26214400",
+    "SESSION_TTL_HOURS=12",
+    "WEB_BASE_URL=http://localhost:3000",
     "QBO_ENV=sandbox",
     "QBO_MINOR_VERSION=73",
     "QBO_SANDBOX_REDIRECT_URI=http://localhost:$AppPort/oauth/qbo/callback",
@@ -491,7 +529,7 @@ function Get-ApHubEnvBody {
   # QuickBooks Desktop (Web Connector) — only when the operator chose a mode in
   # the QuickBooks guide. Read-only unless they explicitly picked 'write'.
   $qbMode = [string]$Values["QB_DESKTOP_MODE"]
-  if ($qbMode -eq "readonly" -or $qbMode -eq "write") {
+  if ($qbMode -eq "readonly") {
     $qbwcUser = if ($Values["QBWC_USERNAME"]) { [string]$Values["QBWC_USERNAME"] } else { "aphub" }
     $qbwcPass = [string]$Values["QBWC_PASSWORD"]
     $lines += @(
@@ -532,13 +570,13 @@ function Invoke-ApHubInstall {
     [string]$InstallRoot = (Split-Path -Parent $PSScriptRoot),
     [string]$PgSuperuser = "postgres",
     [int]$PgPort = 5432,
-    [int]$AppPort = 3000,
+    [int]$AppPort = 3001,
     [scriptblock]$OnProgress
   )
   $ErrorActionPreference = "Stop"
   Add-PostgresBinToPath
   $paths = Get-ApHubPaths -InstallRoot $InstallRoot -AppPort $AppPort
-  $result = [pscustomobject]@{ Success = $false; RecoveryKeyPath = $paths.RecoveryKeyPath; RecoveryWasCreated = $false; AppUrl = $paths.AppUrl; QwcPath = $null; Error = $null }
+  $result = [pscustomobject]@{ Success = $false; RecoveryKeyPath = $paths.RecoveryKeyPath; RecoveryWasCreated = $false; AppUrl = $paths.AppUrl; HealthUrl = $paths.HealthUrl; QwcPath = $null; Error = $null }
 
   try {
     if (-not $Values) { throw "No credential values were supplied to the installer." }
@@ -577,7 +615,7 @@ function Invoke-ApHubInstall {
     # If the operator chose a QuickBooks Desktop mode, mint a Web Connector
     # password now (used both in .env and when they import the .QWC).
     $qbMode = [string]$Values["QB_DESKTOP_MODE"]
-    if (($qbMode -eq "readonly" -or $qbMode -eq "write") -and -not $Values["QBWC_PASSWORD"]) {
+    if ($qbMode -eq "readonly" -and -not $Values["QBWC_PASSWORD"]) {
       $Values["QBWC_PASSWORD"] = (New-HexSecret -Bytes 9)
     }
 
@@ -585,6 +623,13 @@ function Invoke-ApHubInstall {
       Send-Progress $OnProgress "config" "start" "Writing configuration..." 30
       $envBody = Get-ApHubEnvBody -Values $Values -AppPort $AppPort
       [System.IO.File]::WriteAllText($paths.EnvPath, $envBody, (New-Object System.Text.UTF8Encoding($false)))
+      try {
+        & icacls $paths.EnvPath /inheritance:r 2>$null | Out-Null
+        & icacls $paths.EnvPath /grant:r ("{0}:F" -f $env:USERNAME) 2>$null | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "icacls exit $LASTEXITCODE" }
+      } catch {
+        throw "Configuration was written but its ACL could not be restricted to the installing user: $($_.Exception.Message)"
+      }
       if (-not (Test-Path $paths.RecoveryKeyPath)) {
         New-Item -ItemType Directory -Force -Path $paths.RecoveryDir | Out-Null
         [System.IO.File]::WriteAllText($paths.RecoveryKeyPath, (Get-ApHubRecoveryBody -Values $Values), (New-Object System.Text.UTF8Encoding($false)))
@@ -618,9 +663,33 @@ function Invoke-ApHubInstall {
       if ($LASTEXITCODE -ne 0) { throw "Database migration failed (exit $LASTEXITCODE)." }
     } finally { Pop-Location }
 
-    # 6. Start the service (HTTP + workers). ap-hub runs via tsx; no build step.
+    # A clean installation has no user who can pass the invite-gated Google SSO
+    # flow. Bootstrap exactly one first owner when the database has no tenants.
+    $tenantCount = (& psql $dbUrl -tAc "SELECT count(*) FROM tenants" 2>$null).Trim()
+    if ($tenantCount -eq "0") {
+      $tenantName = [string]$Values["TENANT_NAME"]
+      $ownerEmail = [string]$Values["OWNER_EMAIL"]
+      if ([string]::IsNullOrWhiteSpace($tenantName) -or [string]::IsNullOrWhiteSpace($ownerEmail)) {
+        throw "TENANT_NAME and OWNER_EMAIL are required for first-owner provisioning."
+      }
+      Push-Location $InstallRoot
+      try {
+        npm run cli -- bootstrap-tenant --name $tenantName --owner-email $ownerEmail | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "First-owner provisioning failed (exit $LASTEXITCODE)." }
+      } finally { Pop-Location }
+    }
+
+    # 6. Build and start both processes: backend/workers on AppPort and the
+    # authenticated Next.js UI on port 3000.
     Send-Progress $OnProgress "start" "start" "Starting ap-hub..." 80
-    Start-Process -FilePath "npm" -ArgumentList "run","dev" -WorkingDirectory $InstallRoot -WindowStyle Hidden | Out-Null
+    Push-Location $InstallRoot
+    try {
+      npm run web:build | Out-Null
+      if ($LASTEXITCODE -ne 0) { throw "Web UI build failed (exit $LASTEXITCODE)." }
+    } finally { Pop-Location }
+    $npmCommand = (Get-Command npm.cmd -ErrorAction Stop).Source
+    Start-Process -FilePath $npmCommand -ArgumentList "run","dev" -WorkingDirectory $InstallRoot -WindowStyle Hidden | Out-Null
+    Start-Process -FilePath $npmCommand -ArgumentList "run","web:start" -WorkingDirectory $InstallRoot -WindowStyle Hidden | Out-Null
 
     # 7. Poll health
     Send-Progress $OnProgress "health" "start" "Waiting for ap-hub to become healthy..." 90
@@ -628,16 +697,22 @@ function Invoke-ApHubInstall {
     for ($i = 0; $i -lt 60; $i++) {
       Start-Sleep -Seconds 2
       try {
-        $resp = Invoke-WebRequest -Uri "$($paths.AppUrl)/health" -UseBasicParsing -TimeoutSec 3
+        $resp = Invoke-WebRequest -Uri $paths.HealthUrl -UseBasicParsing -TimeoutSec 3
         if ($resp.StatusCode -eq 200) { $healthy = $true; break }
       } catch { }
       Send-Progress $OnProgress "health" "start" "Waiting for ap-hub to become healthy... ($($i*2)s)" 90
     }
     if (-not $healthy) { throw "ap-hub did not become healthy in time. It may still be starting -- check the log, or re-run the installer." }
+    try {
+      $ui = Invoke-WebRequest -Uri "$($paths.AppUrl)/login" -UseBasicParsing -TimeoutSec 10
+      if ($ui.StatusCode -ne 200) { throw "unexpected status $($ui.StatusCode)" }
+    } catch {
+      throw "Backend is healthy but the web UI did not start: $($_.Exception.Message)"
+    }
 
     # If QuickBooks Desktop was enabled, generate the .QWC to import into the
     # Web Connector (best-effort; failure here never fails the install).
-    if ($qbMode -eq "readonly" -or $qbMode -eq "write") {
+    if ($qbMode -eq "readonly") {
       try {
         Send-Progress $OnProgress "qbwc" "start" "Generating QuickBooks Web Connector config (.QWC)..." 98
         Push-Location $InstallRoot

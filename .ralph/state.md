@@ -1,18 +1,13 @@
-# Ralph State — STALE / ORPHANED (DO NOT USE)
+# Ralph State
 
-> **This file is superseded.** It is an orphaned state file from an older/different
-> ralph project and does NOT reflect current build progress. The pilot-foundation
-> chunks it references as "NOT_STARTED" are in fact built and merged.
->
-> **Authoritative state lives in:** `ralph-pilot-foundation/.ralph/state.md`
->
-> The status lines below are retained only as history — ignore them.
+**Current Iteration:** 0
 
-Current chunk: CHUNK_1_INFRA
-Current task: 0 of (planned in IMPLEMENTATION_PLAN.md)
+Current chunk: CHUNK_1_CONTRACTS
+Current task: 0 of pending planning tasks
 Last completed: (none — not started)
-Status: NOT_STARTED  — STALE, see ralph-pilot-foundation/.ralph/state.md
+Status: NOT_STARTED
 
 ## Instructions for ralph
 
 Update this file after every task. Never delete history — append below.
+Keep the `**Current Iteration:**` line intact and in that exact format.

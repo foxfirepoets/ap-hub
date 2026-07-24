@@ -28,11 +28,11 @@ describe('connect-state', () => {
   it('rejects a token signed then verified with a different SESSION_COOKIE_SECRET', () => {
     const original = process.env.SESSION_COOKIE_SECRET;
     try {
-      process.env.SESSION_COOKIE_SECRET = 'secret-A';
+      process.env.SESSION_COOKIE_SECRET = 'connect-state-secret-A-32-bytes-minimum';
       resetConfigCache();
       const token = signConnectState(7);
 
-      process.env.SESSION_COOKIE_SECRET = 'secret-B';
+      process.env.SESSION_COOKIE_SECRET = 'connect-state-secret-B-32-bytes-minimum';
       resetConfigCache();
       expect(verifyConnectState(token)).toBeNull();
     } finally {

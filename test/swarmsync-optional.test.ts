@@ -27,16 +27,16 @@ describe('SwarmSync optional (ap-hub)', () => {
   beforeEach(resetTables);
   afterAll(closeAll);
 
-  it('off_autopost: no proofs and the InvoiceProof scan is skipped -> status ready', async () => {
+  it('disabled proof service: no proofs and the scan is skipped -> status review', async () => {
     const t = await createTenant();
     await seedVendorAndAccount(t);
     const { a, e } = await seedExtractionNoProof(t);
     const scan = vi.fn(async () => { throw new Error('scan must not be called when SwarmSync is off'); });
     const out = await proposeOnce(
       t, { tenantId: t, extractionId: e, attachmentId: a, messageId: 0 },
-      { scan, autoThreshold: 0.9, reviewThreshold: 0.6, swarmSync: 'off_autopost' },
+      { scan, autoThreshold: 0.9, reviewThreshold: 0.6, swarmSync: 'off_review' },
     );
-    expect(out?.status).toBe('ready');
+    expect(out?.status).toBe('review');
     expect(scan).not.toHaveBeenCalled();
     // No proof refs were created (SwarmSync made no outbound calls).
     expect(await hasProofRef(t, 'proposal', String(out!.proposalId), 'invoiceproof')).toBe(false);
@@ -56,18 +56,18 @@ describe('SwarmSync optional (ap-hub)', () => {
     expect(scan).not.toHaveBeenCalled();
   });
 
-  it('off modes still exception on a blocking extraction condition (unknown vendor)', async () => {
+  it('disabled proof service still exceptions on a blocking extraction condition (unknown vendor)', async () => {
     const t = await createTenant(); // no vendor mapping seeded
     const { a, e } = await seedExtractionNoProof(t);
     const out = await proposeOnce(
       t, { tenantId: t, extractionId: e, attachmentId: a, messageId: 0 },
-      { scan: vi.fn(), autoThreshold: 0.9, reviewThreshold: 0.6, swarmSync: 'off_autopost' },
+      { scan: vi.fn(), autoThreshold: 0.9, reviewThreshold: 0.6, swarmSync: 'off_review' },
     );
     expect(out?.status).toBe('exception');
     expect(await countRows('exceptions', "reason_code='unknown_vendor'")).toBe(1);
   });
 
-  it('posting: with SwarmSync disabled, a ready proposal posts WITHOUT proof coverage (gate skipped, no anchor)', async () => {
+  it('posting: a forged ready proposal without proof coverage is held even when the integration is disabled', async () => {
     const t = await createTenant();
     const m = await insertMessage(t);
     const a = await insertAttachment(t, m, { sha256: `sha-${t}-noproof` });
@@ -86,9 +86,8 @@ describe('SwarmSync optional (ap-hub)', () => {
       connector: mockConnector(), anchor, loadPdf: async () => Buffer.from('%PDF'),
       amountCeiling: 10000, autoThreshold: 0.9, swarmSyncEnabled: false,
     });
-    expect(out.status).toBe('posted');
-    expect(anchor).not.toHaveBeenCalled(); // AuditProof anchoring skipped when off
-    const posting = (await query<{ id: number }>('SELECT id FROM postings LIMIT 1')).rows[0]!.id;
-    expect(await hasProofRef(t, 'posting', String(posting), 'auditproof')).toBe(false);
+    expect(out).toEqual({ status: 'held', reason: 'missing_proof_coverage' });
+    expect(anchor).not.toHaveBeenCalled();
+    expect(await countRows('postings')).toBe(0);
   });
 });

@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawnSyncPortable } from '../host/process.js';
 
 /**
  * LLM backend detection. ap-hub works with WHATEVER LLM the operator has:
@@ -93,7 +93,7 @@ export type CliName = 'claude' | 'codex' | 'gemini';
 export function detectCli(): { name: CliName; bin: string } | null {
   for (const bin of ['claude', 'codex', 'gemini'] as CliName[]) {
     try {
-      const r = spawnSync(bin, ['--version'], { timeout: 5000, stdio: 'ignore', shell: process.platform === 'win32' });
+      const r = spawnSyncPortable(bin, ['--version'], { timeout: 5000, stdio: 'ignore' });
       if (r.status === 0) return { name: bin, bin };
     } catch {
       /* not present */

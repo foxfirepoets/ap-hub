@@ -20,7 +20,7 @@
 [CmdletBinding()]
 param(
   [string[]]$Set = @(),
-  [int]$AppPort = 3000,
+  [int]$AppPort = 3001,
   [int]$PgPort = 5432,
   [string]$PgSuperuser = "postgres"
 )
@@ -55,7 +55,8 @@ $result = Invoke-ApHubInstall -Values $values -AppPort $AppPort -PgPort $PgPort 
 
 if ($result.Success) {
   Write-Host ""
-  Write-Host ("ap-hub is running at {0}/health" -f $result.AppUrl) -ForegroundColor Green
+  Write-Host ("ap-hub is running at {0}" -f $result.AppUrl) -ForegroundColor Green
+  Write-Host ("Backend health: {0}" -f $result.HealthUrl)
   if ($result.RecoveryWasCreated) { Write-Host ("Recovery key saved to {0} - store it safely." -f $result.RecoveryKeyPath) }
   exit 0
 } else {

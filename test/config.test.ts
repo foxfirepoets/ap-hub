@@ -7,6 +7,9 @@ const baseEnv = {
   ANTHROPIC_API_KEY: 'k',
   GMAIL_CLIENT_ID: 'g',
   GMAIL_CLIENT_SECRET: 's',
+  GOOGLE_SSO_CLIENT_ID: 'sso-client',
+  GOOGLE_SSO_CLIENT_SECRET: 'sso-secret',
+  SESSION_COOKIE_SECRET: 'x'.repeat(32),
   SWARMSYNC_API_KEY: 'ssk_live_x',
 };
 
@@ -42,5 +45,23 @@ describe('config', () => {
     } as any);
     expect(cfg.GATEKEEPER_ENABLED).toBe(true);
     expect(cfg.QBO_FORWARDING_ADDRESS).toBe('co@qbodocs.com');
+  });
+
+  it('refuses an empty or short session signing secret', () => {
+    expect(() => loadConfig({ ...baseEnv, SESSION_COOKIE_SECRET: '' } as any)).toThrow(
+      /SESSION_COOKIE_SECRET/,
+    );
+    expect(() => loadConfig({ ...baseEnv, SESSION_COOKIE_SECRET: 'short' } as any)).toThrow(
+      /SESSION_COOKIE_SECRET/,
+    );
+  });
+
+  it('refuses proofless autopost and QuickBooks Desktop write mode', () => {
+    expect(() => loadConfig({ ...baseEnv, SWARMSYNC_OFF_MODE: 'autopost' } as any)).toThrow(
+      /SWARMSYNC_OFF_MODE/,
+    );
+    expect(() => loadConfig({ ...baseEnv, QB_DESKTOP_MODE: 'write' } as any)).toThrow(
+      /QB_DESKTOP_MODE/,
+    );
   });
 });

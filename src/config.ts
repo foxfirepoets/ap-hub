@@ -59,11 +59,10 @@ const RawSchema = z.object({
   // --- SwarmSync proof suite (Amendment A1) ---
   // SwarmSync proof suite (InvoiceProof fraud scan · Verify-API notarization ·
   // AuditProof anchoring) is OPTIONAL. Enabled by default (existing behavior).
-  // When disabled, no proof calls are made; SWARMSYNC_OFF_MODE decides whether
-  // invoices then route to human review ('review', safe default) or auto-post
-  // to the QBO sandbox with no fraud gate ('autopost').
+  // When disabled, no proof calls are made and invoices are capped at review.
+  // Absence of a verifier is never treated as successful verification.
   SWARMSYNC_ENABLED: boolish(true),
-  SWARMSYNC_OFF_MODE: z.enum(['review', 'autopost']).default('review'),
+  SWARMSYNC_OFF_MODE: z.literal('review').default('review'),
   SWARMSYNC_API_BASE: z.string().url().default('https://api.swarmsync.ai'),
   SWARMSYNC_WEB_BASE: z.string().url().default('https://swarmsync.ai'),
   SWARMSYNC_API_KEY: z.string().default(''),
@@ -83,10 +82,9 @@ const RawSchema = z.object({
   // --- QuickBooks Desktop via Web Connector (opt-in) ---
   // NOTE: this path talks to a REAL company file, so it deliberately OVERRIDES
   // the QBO sandbox-only guarantee. It is disabled by default and read-only by
-  // default; real-books writes require QB_DESKTOP_MODE=write AND an explicit
-  // enqueue. The QBO REST writer (src/qbo/write.ts) remains sandbox-only.
+  // default. Real-books writes are deliberately unavailable in this build.
   QB_DESKTOP_ENABLED: boolish(false),
-  QB_DESKTOP_MODE: z.enum(['readonly', 'write']).default('readonly'),
+  QB_DESKTOP_MODE: z.literal('readonly').default('readonly'),
   QBWC_USERNAME: z.string().default('aphub'),
   QBWC_PASSWORD: z.string().default(''),
 
@@ -96,9 +94,11 @@ const RawSchema = z.object({
   AMOUNT_CEILING: z.coerce.number().nonnegative().default(10000),
 
   // --- Human UX auth (CHUNK_1_AUTH): Google SSO + tenant-scoped sessions ---
-  GOOGLE_SSO_CLIENT_ID: z.string().default(''),
-  GOOGLE_SSO_CLIENT_SECRET: z.string().default(''),
-  SESSION_COOKIE_SECRET: z.string().default(''),
+  GOOGLE_SSO_CLIENT_ID: z.string().min(1, 'GOOGLE_SSO_CLIENT_ID is required'),
+  GOOGLE_SSO_CLIENT_SECRET: z.string().min(1, 'GOOGLE_SSO_CLIENT_SECRET is required'),
+  SESSION_COOKIE_SECRET: z
+    .string()
+    .min(32, 'SESSION_COOKIE_SECRET must be at least 32 characters; generate a random value'),
   SESSION_TTL_HOURS: z.coerce.number().positive().default(12),
   WEB_BASE_URL: z.string().url().default('http://localhost:3000'),
 
@@ -111,10 +111,10 @@ const RawSchema = z.object({
 export type Config = z.infer<typeof RawSchema> & { QBO_ENV: 'sandbox' };
 
 /** SwarmSync operating mode derived from config. */
-export type SwarmSyncMode = 'on' | 'off_review' | 'off_autopost';
+export type SwarmSyncMode = 'on' | 'off_review';
 export function swarmSyncMode(cfg: Config): SwarmSyncMode {
   if (cfg.SWARMSYNC_ENABLED) return 'on';
-  return cfg.SWARMSYNC_OFF_MODE === 'autopost' ? 'off_autopost' : 'off_review';
+  return 'off_review';
 }
 
 export class ConfigError extends Error {

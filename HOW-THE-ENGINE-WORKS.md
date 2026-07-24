@@ -248,9 +248,9 @@ middle runs by itself.**
 
 - Writes go to a QuickBooks **sandbox** only. Real books are off-limits.
 - Gmail is **read-only**. The only outbound email is the one locked forward.
-- **QuickBooks is the only accounting system wired up.** QuickBooks Desktop, Xero, and
-  Sage are "coming later" placeholders — the connection points exist, but they
-  intentionally refuse to do anything yet.
+- **QuickBooks Online sandbox is the only accounting write path.** QuickBooks
+  Desktop offers read-only verification. Xero and Sage are capability-declaring
+  placeholders that intentionally refuse runtime operations.
 
 **Not yet proven (the honest to-do before wider rollout):**
 

@@ -82,19 +82,15 @@ export async function postOnce(tenantId: number, proposalId: number, deps: PostD
   if ((p.flags ?? []).some((f) => BLOCKING_FLAGS.includes(f))) return { status: 'held', reason: 'blocking_flag' };
   if (!p.idempotency_key) return { status: 'held', reason: 'no_idempotency_key' };
 
-  // Proof gate (Amendment A1-P2.1): both proofs present, no open proof_scan_unavailable.
-  // Applies ONLY when SwarmSync is enabled; when disabled the operator has opted
-  // out of proof coverage (mapping decides review vs auto-post), so the gate is
-  // skipped here and posting proceeds on the other gates above.
-  if (deps.swarmSyncEnabled !== false) {
-    const hasInvoiceProof = await hasProofRef(tenantId, 'proposal', String(proposalId), 'invoiceproof');
-    const hasVerify = p.extraction_id
-      ? await hasProofRef(tenantId, 'extraction', String(p.extraction_id), 'verify_api')
-      : false;
-    if (!hasInvoiceProof || !hasVerify) return { status: 'held', reason: 'missing_proof_coverage' };
-    if (p.extraction_id && (await openExceptionsFor(tenantId, `extraction:${p.extraction_id}`, 'proof_scan_unavailable')) > 0) {
-      return { status: 'held', reason: 'open_proof_scan_unavailable' };
-    }
+  // Proof coverage is unconditional. If the integration is disabled or down,
+  // proofs are absent and the proposal holds rather than weakening the control.
+  const hasInvoiceProof = await hasProofRef(tenantId, 'proposal', String(proposalId), 'invoiceproof');
+  const hasVerify = p.extraction_id
+    ? await hasProofRef(tenantId, 'extraction', String(p.extraction_id), 'verify_api')
+    : false;
+  if (!hasInvoiceProof || !hasVerify) return { status: 'held', reason: 'missing_proof_coverage' };
+  if (p.extraction_id && (await openExceptionsFor(tenantId, `extraction:${p.extraction_id}`, 'proof_scan_unavailable')) > 0) {
+    return { status: 'held', reason: 'open_proof_scan_unavailable' };
   }
 
   // --- Wrong-company guard (F5/F4): verify identity through the connector before any

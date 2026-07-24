@@ -4,6 +4,7 @@ import {
   type RawExtraction,
   type ExtractionResult,
 } from './schema.js';
+import { spawnPortable } from '../host/process.js';
 
 /**
  * Extraction model layer (CHUNK_5). The pipeline depends on the Extractor interface,
@@ -192,7 +193,6 @@ export function cliArgsFor(bin: string): string[] {
 }
 
 export async function getCliExtractor(bin: string): Promise<Extractor> {
-  const { spawn } = await import('node:child_process');
   const argsFor = cliArgsFor;
   return {
     async extract(input: ExtractInput): Promise<unknown> {
@@ -202,7 +202,7 @@ export async function getCliExtractor(bin: string): Promise<Extractor> {
       }
       const prompt = `${EXTRACT_INSTRUCTION}\n\nDocument text:\n${text}`;
       const stdout = await new Promise<string>((resolve, reject) => {
-        const child = spawn(bin, argsFor(bin), { shell: process.platform === 'win32', timeout: 120_000 });
+        const child = spawnPortable(bin, argsFor(bin), { timeout: 120_000 });
         let out = '';
         let err = '';
         child.stdout.on('data', (d) => { out += d.toString(); if (out.length > 16 * 1024 * 1024) child.kill(); });

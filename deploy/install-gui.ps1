@@ -35,7 +35,7 @@ param(
   [string]$InstallRoot,
   [string]$PgSuperuser = "postgres",
   [int]$PgPort = 5432,
-  [int]$AppPort = 3000
+  [int]$AppPort = 3001
 )
 
 # $PSScriptRoot is empty during param-default binding when the script is run via
@@ -302,12 +302,11 @@ function Show-QuickBooksHelper {
     $line = "Detected on this computer" + $(if ($qb.SdkCom) { " (qbXML SDK present)" } else { "" }) + $(if ($qb.CompanyFiles.Count -gt 0) { "; " + $qb.CompanyFiles.Count + " company file(s) found" } else { "" }) + "."
     $f.Controls.Add((New-Label -Text $line -Color $script:Good -X 20 -Y 232 -Width 555))
     $f.Controls.Add((New-Label -Text "ap-hub connects to Desktop through the QuickBooks Web Connector. Choose how it may act on your REAL company file:" -Color $script:Ink -X 20 -Y 256 -Width 555 -Height 40))
-    $rRead = [System.Windows.Forms.RadioButton]::new(); $rRead.Text = "Read-only / dry-run (safe: query + propose, never writes to your books)"; $rRead.Location = [System.Drawing.Point]::new(24, 300); $rRead.Size = [System.Drawing.Size]::new(545, 24); $rRead.Font = $script:FontS
-    $rWrite = [System.Windows.Forms.RadioButton]::new(); $rWrite.Text = "Allow real writes (posts transactions into your actual QuickBooks company file)"; $rWrite.Location = [System.Drawing.Point]::new(24, 326); $rWrite.Size = [System.Drawing.Size]::new(545, 24); $rWrite.Font = $script:FontS
-    if ($script:W.QbDesktopMode -eq 'write') { $rWrite.Checked = $true } else { $rRead.Checked = $true }
+    $rRead = [System.Windows.Forms.RadioButton]::new(); $rRead.Text = "Read-only verification (this build cannot write to your Desktop company file)"; $rRead.Location = [System.Drawing.Point]::new(24, 300); $rRead.Size = [System.Drawing.Size]::new(545, 24); $rRead.Font = $script:FontS
+    $rRead.Checked = $true
     $rRead.Add_CheckedChanged({ if ($rRead.Checked) { $script:W.QbDesktopMode = 'readonly' } })
-    $rWrite.Add_CheckedChanged({ if ($rWrite.Checked) { $script:W.QbDesktopMode = 'write' } })
-    $f.Controls.Add($rRead); $f.Controls.Add($rWrite)
+    $script:W.QbDesktopMode = 'readonly'
+    $f.Controls.Add($rRead)
     $f.Controls.Add((New-Label -Text "The Web Connector .QWC config + adapter are set up in a later step; this records your choice." -Font $script:FontS -Color $script:Muted -X 20 -Y 356 -Width 555 -Height 34))
   } else {
     $f.Controls.Add((New-Label -Text "Not detected. Install QuickBooks Desktop + the SDK/Web Connector to use the Desktop path, or use QuickBooks Online above." -Color $script:Muted -X 20 -Y 232 -Width 555 -Height 40))
@@ -382,7 +381,6 @@ function Show-SwarmSyncHelper {
   $f.Controls.Add((New-Label -Text $desc -Color $script:Ink -X 20 -Y 46 -Width 555 -Height 118))
 
   $curEnabled = ([string](Get-CredBox 'SWARMSYNC_ENABLED').Text).ToLower() -ne 'false'
-  $curMode = [string](Get-CredBox 'SWARMSYNC_OFF_MODE').Text
 
   $rOn = [System.Windows.Forms.RadioButton]::new(); $rOn.Text = "Use SwarmSync (recommended) -- enter your key below"; $rOn.Location = [System.Drawing.Point]::new(24, 170); $rOn.Size = [System.Drawing.Size]::new(545, 22); $rOn.Font = $script:FontB
   $rOff = [System.Windows.Forms.RadioButton]::new(); $rOff.Text = "Don't use SwarmSync"; $rOff.Location = [System.Drawing.Point]::new(24, 196); $rOff.Size = [System.Drawing.Size]::new(545, 22); $rOff.Font = $script:FontB
@@ -393,17 +391,12 @@ function Show-SwarmSyncHelper {
   $key = [System.Windows.Forms.TextBox]::new(); $key.Location = [System.Drawing.Point]::new(44, 244); $key.Size = [System.Drawing.Size]::new(496, 24); $key.Font = $script:FontMono; $key.UseSystemPasswordChar = $true; $key.Text = [string](Get-CredBox 'SWARMSYNC_API_KEY').Text
   $f.Controls.Add($key)
 
-  $f.Controls.Add((New-Label -Text "If you turn SwarmSync OFF, invoices should:" -Font $script:FontB -X 24 -Y 284 -Width 545))
-  $rReview = [System.Windows.Forms.RadioButton]::new(); $rReview.Text = "Go to human review before posting (safe -- a person is the check)"; $rReview.Location = [System.Drawing.Point]::new(44, 308); $rReview.Size = [System.Drawing.Size]::new(520, 22); $rReview.Font = $script:FontS
-  $rAuto = [System.Windows.Forms.RadioButton]::new(); $rAuto.Text = "Auto-post to the QBO sandbox with NO fraud scan or verification"; $rAuto.Location = [System.Drawing.Point]::new(44, 332); $rAuto.Size = [System.Drawing.Size]::new(520, 22); $rAuto.Font = $script:FontS
-  if ($curMode -eq 'autopost') { $rAuto.Checked = $true } else { $rReview.Checked = $true }
-  $f.Controls.Add($rReview); $f.Controls.Add($rAuto)
+  $f.Controls.Add((New-Label -Text "If you turn SwarmSync OFF, invoices are held for human review. Proofless automatic posting is not available." -Font $script:FontB -X 24 -Y 284 -Width 545 -Height 44))
 
   $status = New-Label -Text "" -Color $script:Good -X 20 -Y 372 -Width 545 -Height 44; $f.Controls.Add($status)
 
   $sync = {
     $key.Enabled = $rOn.Checked
-    $rReview.Enabled = $rOff.Checked; $rAuto.Enabled = $rOff.Checked
   }
   $rOn.Add_CheckedChanged($sync); $rOff.Add_CheckedChanged($sync); & $sync
 
@@ -415,10 +408,9 @@ function Show-SwarmSyncHelper {
       $status.ForeColor = $script:Good; $status.Text = "SwarmSync ON: InvoiceProof + Verify-API + AuditProof will run (needs the key)."
     } else {
       (Get-CredBox 'SWARMSYNC_ENABLED').Text = 'false'
-      $m = if ($rAuto.Checked) { 'autopost' } else { 'review' }
-      (Get-CredBox 'SWARMSYNC_OFF_MODE').Text = $m
+      (Get-CredBox 'SWARMSYNC_OFF_MODE').Text = 'review'
       $status.ForeColor = $script:Good
-      $status.Text = "SwarmSync OFF: invoices will " + $(if ($m -eq 'autopost') { "auto-post to the sandbox with no fraud gate." } else { "go to human review before posting." })
+      $status.Text = "SwarmSync OFF: invoices will go to human review; no proofless automatic posting."
     }
   })
   $f.Controls.Add($apply)
@@ -601,9 +593,9 @@ function Show-FinishPage {
   $res = $script:W.Result
   $c.Controls.Add((New-Label -Text "ap-hub is running" -Font $script:FontH -Color $script:Good -Y 20))
   $c.Controls.Add((New-Label -Text "Open it in your browser at:" -Color $script:Ink -Y 62 -Width 520))
-  $url = New-Label -Text ($res.AppUrl + "/health") -Font $script:FontMono -Color $script:Teal -Y 88 -Width 520; $c.Controls.Add($url)
+  $url = New-Label -Text ($res.AppUrl + "/onboarding") -Font $script:FontMono -Color $script:Teal -Y 88 -Width 520; $c.Controls.Add($url)
   $open = [System.Windows.Forms.Button]::new(); $open.Text = "Open ap-hub"; $open.Size = [System.Drawing.Size]::new(140, 32); $open.Location = [System.Drawing.Point]::new(24, 118); $open.FlatStyle = "System"
-  $open.Add_Click({ Start-Process ($res.AppUrl + "/health") }); $c.Controls.Add($open)
+  $open.Add_Click({ Start-Process ($res.AppUrl + "/onboarding") }); $c.Controls.Add($open)
   $c.Controls.Add((New-Label -Text "Connect Gmail and QuickBooks with:  npm run cli -- connect gmail  (and connect qbo)." -Font $script:FontS -Color $script:Muted -Y 170 -Width 520))
   if ($res.QwcPath) {
     $c.Controls.Add((New-Label -Text ("QuickBooks Desktop: import this into the Web Connector -> " + $res.QwcPath) -Font $script:FontS -Color $script:Teal -Y 194 -Width 545))

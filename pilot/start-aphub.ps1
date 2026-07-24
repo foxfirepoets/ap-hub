@@ -69,9 +69,18 @@ function Unprotect-Secret {
   return [Text.Encoding]::UTF8.GetString($d)
 }
 $script:BrokerToken = Unprotect-Secret 'broker_install_token'
-$encryptionKey = Unprotect-Secret 'encryption_key'
-if ($script:BrokerToken) { [Environment]::SetEnvironmentVariable('BROKER_INSTALL_TOKEN', $script:BrokerToken) }
-if ($encryptionKey) { [Environment]::SetEnvironmentVariable('ENCRYPTION_KEY', $encryptionKey) }
+$protectedEnv = @{
+  BROKER_INSTALL_TOKEN = 'broker_install_token'
+  ENCRYPTION_KEY = 'encryption_key'
+  SESSION_COOKIE_SECRET = 'session_cookie_secret'
+  GMAIL_CLIENT_SECRET = 'gmail_client_secret'
+  GOOGLE_SSO_CLIENT_SECRET = 'google_sso_client_secret'
+  QBO_SANDBOX_CLIENT_SECRET = 'qbo_sandbox_client_secret'
+}
+foreach ($envName in $protectedEnv.Keys) {
+  $secret = Unprotect-Secret $protectedEnv[$envName]
+  if ($secret) { [Environment]::SetEnvironmentVariable($envName, $secret) }
+}
 
 function Send-Heartbeat {
   param(

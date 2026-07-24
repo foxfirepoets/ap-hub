@@ -84,12 +84,13 @@ for (const file of walk(SRC)) {
 
   const isConnector = inDir(relSrc, 'connectors');
   const isQboImpl = inDir(relSrc, 'qbo');
+  const isQbDesktopImpl = inDir(relSrc, 'qbdesktop');
   const isCanonical = inDir(relSrc, 'canonical');
   const isHost = inDir(relSrc, 'host');
 
   let providerRules = null;
   if (isCanonical) providerRules = ANY_PROVIDER;
-  else if (!isConnector && !isQboImpl) providerRules = OTHER_PROVIDER;
+  else if (!isConnector && !isQboImpl && !isQbDesktopImpl) providerRules = OTHER_PROVIDER;
 
   const isPipeline = inDir(relSrc, 'pipeline');
 

@@ -28,7 +28,7 @@ export class WriteNotAllowedError extends Error {
   constructor() {
     super(
       'QuickBooks Desktop is in READ-ONLY mode — a write request (Add/Mod/Del/Void) was refused. ' +
-        'Set QB_DESKTOP_MODE=write to allow real-books writes.',
+        'Real-books QuickBooks Desktop writes are unavailable in this build.',
     );
     this.name = 'WriteNotAllowedError';
   }
