@@ -269,3 +269,197 @@ test('owner: tax exceptions queue lists stale/needs_revalidation mappings with a
   await expect(page.getByTestId(`tax-exception-row-${TAX_MAPPING_ACTIVE.id}`)).toHaveCount(0);
   await page.getByTestId(`tax-exception-row-${TAX_MAPPING_STALE.id}`).getByRole('link', { name: 'View / fix' }).click();
 });
+
+// --- Multi-edition provider health + bank statement review ---------------------------------
+
+const PROVIDER_CONNECTIONS = {
+  connections: [
+    {
+      id: 10,
+      provider: 'qbo',
+      connectionClass: 'cloud',
+      displayName: 'Main operating company',
+      externalCompany: 'realm-10',
+      status: 'active',
+      lastVerifiedAt: new Date().toISOString(),
+      edition: 'plus',
+      supported: true,
+      gaps: [],
+      capabilities: ['verify_company', 'query', 'post_bill', 'read_back', 'attach'].map((operation) => ({
+        provider: 'qbo', edition: 'plus', operation, supported: true, reason: null, unsupportedFields: [],
+      })),
+    },
+    {
+      id: 11,
+      provider: 'qbd',
+      connectionClass: 'local_desktop',
+      displayName: 'Desktop books',
+      externalCompany: 'desktop-11',
+      status: 'inactive',
+      lastVerifiedAt: null,
+      edition: 'premier',
+      supported: false,
+      gaps: ['Connection is inactive; reconnect or reactivate it before using accounting operations.'],
+      capabilities: ['verify_company', 'query', 'post_bill', 'read_back', 'attach'].map((operation) => ({
+        provider: 'qbd', edition: 'premier', operation, supported: false,
+        reason: 'Connection is inactive; reconnect or reactivate it before using accounting operations.',
+        unsupportedFields: [],
+      })),
+    },
+    {
+      id: 12,
+      provider: 'qbo',
+      connectionClass: 'cloud',
+      displayName: 'Unsupported product',
+      externalCompany: 'realm-12',
+      status: 'active',
+      lastVerifiedAt: null,
+      edition: 'self_employed',
+      supported: false,
+      gaps: ['QuickBooks Online Self-Employed is not supported; connect an Accounting API company.'],
+      capabilities: ['verify_company', 'query', 'post_bill', 'read_back', 'attach'].map((operation) => ({
+        provider: 'qbo', edition: 'self_employed', operation, supported: false,
+        reason: 'QuickBooks Online Self-Employed is not supported; connect an Accounting API company.',
+        unsupportedFields: [],
+      })),
+    },
+  ],
+};
+
+const STATEMENT_LIST = [{
+  id: 71,
+  institutionName: 'Community Bank',
+  accountHint: '…7788',
+  periodStart: '2026-06-01',
+  periodEnd: '2026-06-30',
+  status: 'review',
+  filedAt: null,
+  lineCount: 2,
+  unresolvedCount: 2,
+}];
+
+const STATEMENT_DETAIL = {
+  ...STATEMENT_LIST[0],
+  documentId: 301,
+  currency: 'USD',
+  openingBalance: '1000.00',
+  closingBalance: '930.00',
+  validationDetail: { equation: '1000.00 + -70.00 = 930.00', valid: true },
+  lines: [
+    { id: 801, lineNo: 1, postedOn: '2026-06-02', description: 'Office rent', amount: '-50.00', balance: '950.00', matchStatus: 'unmatched', matchedProviderRef: null, reviewReason: null },
+    { id: 802, lineNo: 2, postedOn: '2026-06-03', description: 'Bank fee', amount: '-20.00', balance: '930.00', matchStatus: 'unmatched', matchedProviderRef: null, reviewReason: null },
+  ],
+};
+
+async function stubStatementReads(page: Page, detail = STATEMENT_DETAIL) {
+  await page.route('**/api/statements', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: STATEMENT_LIST }) }),
+  );
+  await page.route('**/api/statements/71', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: detail }) }),
+  );
+}
+
+test('settings presents QBO capability truth and actionable offline QBD health', async ({ page }) => {
+  await stubMe(page, OWNER);
+  await page.route('**/api/provider-capabilities', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: PROVIDER_CONNECTIONS }) }),
+  );
+  await page.route('**/api/provider-jobs', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { jobs: [{ id: 1, connectionId: 11, operation: 'post_bill', status: 'held', attempts: 1, errorCode: 'UNCERTAIN_OUTCOME', errorDetail: 'provider result unknown', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }] } }) }),
+  );
+  await page.route('**/api/onboarding', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { automationLevel: 'assisted' } }) }),
+  );
+
+  await page.goto('/settings');
+  await expect(page.getByTestId('provider-10')).toContainText('Healthy');
+  await expect(page.getByTestId('provider-10')).toContainText('post bill: Supported');
+  await expect(page.getByTestId('provider-11')).toContainText('Offline');
+  await expect(page.getByTestId('provider-11')).toContainText('reconnect or reactivate');
+  await expect(page.getByTestId('provider-11')).toContainText('1 held');
+  await expect(page.getByTestId('provider-12')).toContainText('Unsupported');
+  await expect(page.getByTestId('provider-12')).toContainText('Self-Employed is not supported');
+  await page.screenshot({ path: 'test-results/evidence/provider-health.png', fullPage: true });
+});
+
+test('owner reviews, matches, excludes, and files statement evidence', async ({ page }) => {
+  await stubMe(page, OWNER);
+  let current = structuredClone(STATEMENT_DETAIL);
+  await page.route('**/api/statements', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: STATEMENT_LIST }) }),
+  );
+  await page.route('**/api/statements/71', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: current }) }),
+  );
+  await page.route('**/api/statements/71/lines/801/match', (route) => {
+    current.lines[0]!.matchStatus = 'matched';
+    current.unresolvedCount = 1;
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { ok: true } }) });
+  });
+  await page.route('**/api/statements/71/lines/802/exclude', (route) => {
+    current.lines[1]!.matchStatus = 'excluded';
+    current.unresolvedCount = 0;
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { ok: true } }) });
+  });
+  await page.route('**/api/statements/71/file', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { ok: true } }) }),
+  );
+
+  await page.goto('/statements');
+  await expect(page.getByTestId('statement-row-71')).toContainText('2 unresolved');
+  await page.getByTestId('statement-row-71').getByRole('link', { name: 'Review' }).click();
+  await expect(page.getByTestId('statement-detail-page')).toContainText('Source evidence');
+  await page.getByLabel('Reason for line 1').fill('Matched to rent bill');
+  await page.getByLabel('Provider reference for line 1').fill('bill-500');
+  await page.getByTestId('statement-line-801').getByRole('button', { name: 'Match' }).click();
+  await expect(page.getByTestId('statement-notice')).toContainText('saved');
+  await page.getByLabel('Reason for line 2').fill('Reviewed bank service charge');
+  await page.getByTestId('statement-line-802').getByRole('button', { name: 'Exclude' }).click();
+  await expect(page.getByTestId('statement-file')).toBeEnabled();
+  await page.getByTestId('statement-file').click();
+  await expect(page.getByTestId('statement-notice')).toContainText('saved');
+  await page.screenshot({ path: 'test-results/evidence/statement-review.png', fullPage: true });
+});
+
+test('bookkeeper may review statements; CPA sees evidence read-only', async ({ page }) => {
+  await stubMe(page, BOOKKEEPER);
+  await stubStatementReads(page);
+  await page.goto('/statements/71');
+  await expect(page.getByTestId('statement-line-801').getByRole('button', { name: 'Match' })).toBeVisible();
+  await expect(page.getByTestId('statement-file')).toBeVisible();
+
+  await stubMe(page, CPA);
+  await page.goto('/statements/71');
+  await expect(page.getByTestId('statement-readonly')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Match' })).toHaveCount(0);
+  await expect(page.getByTestId('statement-file')).toHaveCount(0);
+});
+
+test('held statement exposes validation evidence and correction recovery but cannot be filed', async ({ page }) => {
+  await stubMe(page, OWNER);
+  const held = {
+    ...STATEMENT_DETAIL,
+    status: 'unbalanced',
+    validationDetail: { equation: '1000.00 + -70.00 != 950.00', difference: '20.00' },
+  };
+  await stubStatementReads(page, held);
+  await page.goto('/statements/71');
+  await expect(page.getByTestId('statement-held')).toContainText('difference');
+  await expect(page.getByRole('button', { name: 'Save correction' })).toBeVisible();
+  await expect(page.getByTestId('statement-file')).toBeDisabled();
+});
+
+test('statement navigation fails closed for anonymous and foreign-tenant records', async ({ page }) => {
+  await stubMe(page, null);
+  await page.goto('/statements/71');
+  await expect(page).toHaveURL(/\/login$/);
+
+  await stubMe(page, OWNER);
+  await page.route('**/api/statements/999', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: null }) }),
+  );
+  await page.goto('/statements/999');
+  await expect(page.getByTestId('statement-not-found')).toContainText('not found or unavailable in this company');
+  await expect(page.getByTestId('statement-not-found')).not.toContainText('tenant');
+});

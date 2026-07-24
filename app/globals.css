@@ -86,6 +86,17 @@ h2 { font-size: 16px; margin: 0 0 10px; }
   padding: 16px;
   margin-bottom: 16px;
 }
+.provider-card { border-top: 1px solid var(--border); padding: 14px 0 4px; }
+.provider-card:first-child { border-top: 0; }
+.provider-card-head { display: flex; justify-content: space-between; gap: 12px; }
+.capability-grid { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+.capability { border-radius: 999px; padding: 3px 8px; font-size: 12px; }
+.capability.supported { background: var(--good-bg); color: var(--good); }
+.capability.unsupported { background: var(--warn-bg); color: var(--warn); }
+.statement-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.statement-facts { display: grid; grid-template-columns: repeat(2, minmax(180px, 1fr)); gap: 8px 20px; }
+.statement-line-actions { min-width: 230px; }
+.statement-line-actions input { width: 100%; margin-bottom: 5px; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius); }
 
 /* --- Tables --- */
 table { width: 100%; border-collapse: collapse; }

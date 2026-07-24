@@ -8,6 +8,7 @@ import { apiGet, apiPost, ApiError } from '../../lib/api';
 import { friendlyOnboardingError } from '../../lib/onboardingErrors.js';
 import { AUTOMATION_LEVELS, type AutomationLevel } from '../../lib/automationLevels';
 import type { OnboardingState } from '../../lib/types';
+import { ProviderConnections } from './ProviderConnections';
 
 type Notice = { kind: 'good' | 'bad'; text: string };
 
@@ -67,37 +68,9 @@ export default function SettingsPage() {
       <p className="page-sub">Signed in as {me.email} · role {me.role}</p>
 
       <div className="panel">
-        <h2>Connections</h2>
-        <table>
-          <tbody>
-            <tr>
-              <td>Gmail</td>
-              <td className="muted">Read-only — the mailbox is never modified.</td>
-              <td>
-                {owner ? (
-                  <button disabled title="Connections are provisioned via configuration">
-                    Manage
-                  </button>
-                ) : (
-                  <span className="muted">—</span>
-                )}
-              </td>
-            </tr>
-            <tr>
-              <td>QuickBooks Online</td>
-              <td className="muted">Sandbox company — writes go only to the sandbox.</td>
-              <td>
-                {owner ? (
-                  <button disabled title="Connections are provisioned via configuration">
-                    Manage
-                  </button>
-                ) : (
-                  <span className="muted">—</span>
-                )}
-              </td>
-            </tr>
-          </tbody>
-        </table>
+        <h2>QuickBooks connections</h2>
+        <p className="muted">Edition-specific operations and current connection health.</p>
+        <ProviderConnections owner={owner} />
       </div>
 
       <div className="panel" data-testid="automation-panel">

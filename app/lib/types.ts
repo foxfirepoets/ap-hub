@@ -286,3 +286,71 @@ export interface QboTaxCode {
   Description?: string;
   Active?: boolean;
 }
+
+export interface ProviderCapability {
+  provider: string;
+  edition: string;
+  operation: string;
+  supported: boolean;
+  reason: string | null;
+  unsupportedFields: string[];
+}
+
+export interface ProviderCapabilityConnection {
+  id: number;
+  provider: string;
+  connectionClass: string;
+  displayName: string | null;
+  externalCompany: string | null;
+  status: string;
+  lastVerifiedAt: string | null;
+  edition: string;
+  supported: boolean;
+  capabilities: ProviderCapability[];
+  gaps: string[];
+}
+
+export interface ProviderJob {
+  id: number;
+  connectionId: number;
+  operation: string;
+  status: string;
+  attempts: number;
+  errorCode: string | null;
+  errorDetail: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StatementListItem {
+  id: number;
+  institutionName: string | null;
+  accountHint: string | null;
+  periodStart: string | null;
+  periodEnd: string | null;
+  status: 'extracted' | 'unbalanced' | 'review' | 'ready' | 'filed' | 'held';
+  filedAt: string | null;
+  lineCount: number;
+  unresolvedCount: number;
+}
+
+export interface StatementLine {
+  id: number;
+  lineNo: number;
+  postedOn: string | null;
+  description: string;
+  amount: string;
+  balance: string | null;
+  matchStatus: 'unmatched' | 'suggested' | 'matched' | 'excluded';
+  matchedProviderRef: Record<string, unknown> | null;
+  reviewReason: string | null;
+}
+
+export interface StatementDetail extends StatementListItem {
+  documentId: number;
+  currency: string | null;
+  openingBalance: string | null;
+  closingBalance: string | null;
+  validationDetail: Record<string, unknown>;
+  lines: StatementLine[];
+}

@@ -30,7 +30,7 @@ Execute tasks in order. Each checkbox is one independently verifiable Ralph iter
 
 ## CHUNK_5_PRODUCT — SMB-owner accounting workspace
 
-- [ ] CHUNK_5_PROVIDER_STATEMENT_UI — Add settings capability/health presentation and statement queue/detail workflows for evidence review, matching, exclusion, corrections, and filing, with clear offline, unsupported, held, and validation recovery states. Evidence: Playwright UI contracts for owner/bookkeeper/CPA/unauthenticated roles, cross-tenant API contracts, existing Today/Exceptions/Transactions regression coverage, screenshots recorded in progress, and `npm run verify`.
+- [x] CHUNK_5_PROVIDER_STATEMENT_UI — Add settings capability/health presentation and statement queue/detail workflows for evidence review, matching, exclusion, corrections, and filing, with clear offline, unsupported, held, and validation recovery states. Evidence: Playwright UI contracts for owner/bookkeeper/CPA/unauthenticated roles, cross-tenant API contracts, existing Today/Exceptions/Transactions regression coverage, screenshots recorded in progress, and `npm run verify`.
 
 - [ ] CHUNK_5_DRAFT_UI — Add exception-detail draft preparation/edit/update/discard and open-in-Gmail behavior without a send button, including missing-compose-scope recovery and read-only CPA presentation. Evidence: Playwright UI contracts for draft lifecycle and each role, hostile DOM/source assertion that no reply-draft send action exists, source-thread link assertion, and `npm run verify`.
 
