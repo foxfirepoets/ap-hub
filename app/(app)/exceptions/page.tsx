@@ -10,6 +10,7 @@ import { ActionBar } from '../../components/ActionBar';
 import { RemapForm, type RemapValues } from '../../components/RemapForm';
 import type { ExceptionRow, Evidence, ApprovePosted } from '../../lib/types';
 import type { ActionResult } from '../../lib/api';
+import { ReplyDraftPanel } from './_components/ReplyDraftPanel';
 
 type Notice = { kind: 'good' | 'warn' | 'bad'; text: string; qboLink?: string | null };
 
@@ -24,6 +25,7 @@ export default function ExceptionsPage() {
   const [notice, setNotice] = useState<Notice | null>(null);
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [evidence, setEvidence] = useState<Evidence | null>(null);
   const evidenceRef = useRef<Evidence | null>(null);
 
   useEffect(() => {
@@ -48,11 +50,13 @@ export default function ExceptionsPage() {
   // "Posted" result survives the item leaving the queue; it is cleared on explicit navigation.
   useEffect(() => {
     setEditing(false);
+    setEvidence(null);
     evidenceRef.current = null;
   }, [selected?.id]);
 
   const onEvidenceLoaded = useCallback((ev: Evidence) => {
     evidenceRef.current = ev;
+    setEvidence(ev);
   }, []);
 
   // Explicit user navigation (J/K or clicking a row): clear the previous action notice.
@@ -243,6 +247,14 @@ export default function ExceptionsPage() {
                   busy={busy}
                   onSubmit={doRemap}
                   onCancel={() => setEditing(false)}
+                />
+              ) : null}
+
+              {evidence?.email ? (
+                <ReplyDraftPanel
+                  key={evidence.email.messageId}
+                  messageId={evidence.email.messageId}
+                  sourceSubject={evidence.email.subject}
                 />
               ) : null}
 

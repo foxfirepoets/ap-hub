@@ -97,6 +97,8 @@ h2 { font-size: 16px; margin: 0 0 10px; }
 .statement-facts { display: grid; grid-template-columns: repeat(2, minmax(180px, 1fr)); gap: 8px 20px; }
 .statement-line-actions { min-width: 230px; }
 .statement-line-actions input { width: 100%; margin-bottom: 5px; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius); }
+.draft-panel .field-row input, .draft-panel .field-row textarea { width: 100%; }
+.draft-panel .field-row input[readonly], .draft-panel .field-row textarea[readonly] { background: var(--bg); color: var(--muted); }
 
 /* --- Tables --- */
 table { width: 100%; border-collapse: collapse; }

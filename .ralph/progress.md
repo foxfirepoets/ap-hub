@@ -240,3 +240,31 @@ Total chunks: 6
 - Live external proof: NOT VERIFIED by design; all UI provider responses were stubbed
   and no external accounting write occurred.
 <promise>CHUNK TASK COMPLETE: CHUNK_5_PROVIDER_STATEMENT_UI</promise>
+## CHUNK_5_PROVIDER_STATEMENT_UI — independent truth audit
+
+- Commit: `437508e8f1acb0b85253ef3ebb654208c0ed7053`
+- Verdict: GREEN
+- Independent validation: `npm run verify` exited 0.
+- Evidence: ESLint, secret-leak scan, TypeScript, 57 Vitest files / 421 tests, Next.js production build, and 13 Playwright contract flows passed.
+- Product evidence: SMB-owner QBO/QBD capability/health plus statement role, cross-tenant, offline, unsupported, held and recovery workflows passed; screenshot generation paths are recorded.
+- Live external proof: N/A; UI contracts use stubbed APIs.
+
+## CHUNK_5_DRAFT_UI - 2026-07-24
+- Added an exception-detail reply-draft panel driven by the source evidence message ID
+  and the canonical tenant-scoped reply-draft API.
+- Owners and bookkeepers can prepare, edit, update, discard, and open the source thread
+  in Gmail. The Gmail link targets `#all/{threadId}`, never compose or transmit.
+- Missing Gmail compose scope retains the proposed subject/body/reason and gives owners
+  a reconnect action; bookkeepers receive clear owner-assisted recovery guidance.
+- CPA access is read-only. Discarded and `sent_external` projections are immutable for
+  every role while retaining source-thread evidence access.
+- Hostile Playwright assertions prove the draft action DOM has no transmission control
+  and the component/routes have no Gmail provider-send source path.
+- Screenshot evidence: `test-results/evidence/reply-draft-lifecycle.png`.
+- Repository evidence: `npm run verify` exited 0 -> lint PASS; boundary scan PASS;
+  typecheck PASS; 57 Vitest files / 421 tests PASS; Next.js production build PASS;
+  Playwright 18/18 PASS.
+- Live external proof: NOT VERIFIED by design; all Gmail responses were injected fixtures
+  and no real draft or email transmission occurred.
+<promise>CHUNK TASK COMPLETE: CHUNK_5_DRAFT_UI</promise>
+<promise>CHUNK COMPLETE: CHUNK_5_PRODUCT</promise>

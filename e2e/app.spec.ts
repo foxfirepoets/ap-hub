@@ -1,4 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 
 // --- Fixtures (mirror the API's { data } / { error } envelope) -------------------------------
 
@@ -63,6 +65,22 @@ const EVIDENCE_501 = {
   posting: null,
   qboLink: null,
   missing: [],
+};
+
+const REPLY_DRAFT = {
+  id: 41,
+  messageId: 1,
+  externalDraftId: 'draft-provider-41',
+  threadId: 'thread-source-abc',
+  toAddress: 'billing@acme.example',
+  subject: 'Re: Invoice INV-1001',
+  bodyText: 'Could you please confirm the purchase order number?',
+  status: 'created',
+  reason: 'Missing purchase order',
+  createdBy: 1,
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
+  sendControl: 'human_in_gmail',
 };
 
 const APPROVE_POSTED = {
@@ -154,6 +172,136 @@ test('cpa is read-only: no approve, reject, or edit', async ({ page }) => {
   await expect(page.getByTestId('send-to-owner-btn')).toHaveCount(0);
   await expect(page.getByTestId('reject-btn')).toHaveCount(0);
   await expect(page.getByTestId('edit-btn')).toHaveCount(0);
+});
+
+test('owner prepares, edits, opens, and discards a source-thread Gmail draft', async ({ page }) => {
+  await stubMe(page, OWNER);
+  await stubReads(page);
+  let draft: typeof REPLY_DRAFT | null = null;
+  await page.route('**/api/reply-drafts**', async (route) => {
+    const request = route.request();
+    if (request.method() === 'GET') {
+      return route.fulfill(draft
+        ? { status: 200, contentType: 'application/json', body: JSON.stringify({ data: draft }) }
+        : { status: 404, contentType: 'application/json', body: JSON.stringify({ error: { code: 'NOT_FOUND', message: 'reply draft not found' } }) });
+    }
+    if (request.method() === 'POST') {
+      const body = request.postDataJSON() as { subject: string; bodyText: string; reason: string | null };
+      draft = { ...REPLY_DRAFT, ...body };
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: draft }) });
+    }
+    if (request.method() === 'PATCH') {
+      const body = request.postDataJSON() as { subject: string; bodyText: string; reason: string | null };
+      draft = { ...(draft ?? REPLY_DRAFT), ...body, status: 'updated' };
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: draft }) });
+    }
+    draft = { ...(draft ?? REPLY_DRAFT), status: 'discarded' };
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: draft }) });
+  });
+
+  await page.goto('/exceptions');
+  await page.getByTestId('exception-row-9001').click();
+  await page.getByLabel('Message').fill('Please confirm the purchase order number.');
+  await page.getByLabel('Internal reason (optional)').fill('Missing purchase order');
+  await page.getByTestId('draft-save').click();
+  await expect(page.getByTestId('reply-draft-notice')).toContainText('prepared in Gmail');
+
+  const gmail = page.getByTestId('draft-open-gmail');
+  await expect(gmail).toHaveAttribute('href', 'https://mail.google.com/mail/u/0/#all/thread-source-abc');
+  await page.getByLabel('Message').fill('Please confirm the PO number and due date.');
+  await page.getByTestId('draft-save').click();
+  await expect(page.getByTestId('reply-draft-notice')).toContainText('changes saved');
+
+  page.on('dialog', (dialog) => dialog.accept());
+  await page.getByTestId('draft-discard').click();
+  await expect(page.getByTestId('draft-discarded')).toBeVisible();
+  await expect(page.getByTestId('draft-save')).toHaveCount(0);
+  await page.screenshot({ path: 'test-results/evidence/reply-draft-lifecycle.png', fullPage: true });
+});
+
+test('missing Gmail compose scope preserves copy and gives the owner a recovery path', async ({ page }) => {
+  await stubMe(page, OWNER);
+  await stubReads(page);
+  let proposed: typeof REPLY_DRAFT | null = null;
+  await page.route('**/api/reply-drafts**', async (route) => {
+    const request = route.request();
+    if (request.method() === 'GET') {
+      return route.fulfill(proposed
+        ? { status: 200, contentType: 'application/json', body: JSON.stringify({ data: proposed }) }
+        : { status: 404, contentType: 'application/json', body: JSON.stringify({ error: { code: 'NOT_FOUND', message: 'reply draft not found' } }) });
+    }
+    const body = request.postDataJSON() as { subject: string; bodyText: string; reason: string | null };
+    proposed = { ...REPLY_DRAFT, ...body, externalDraftId: null, status: 'proposed' };
+    return route.fulfill({
+      status: 428,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: { code: 'GMAIL_COMPOSE_SCOPE_REQUIRED', message: 'compose scope required' } }),
+    });
+  });
+
+  await page.goto('/exceptions');
+  await page.getByLabel('Message').fill('Please share the missing purchase order.');
+  await page.getByTestId('draft-save').click();
+  await expect(page.getByTestId('reply-draft-notice')).toContainText('copy is saved here');
+  await expect(page.getByTestId('gmail-compose-reconnect')).toHaveAttribute('href', '/api/connections/gmail/start');
+  await expect(page.getByLabel('Message')).toHaveValue('Please share the missing purchase order.');
+});
+
+test('bookkeeper can prepare drafts while CPA remains read-only', async ({ page }) => {
+  await stubMe(page, BOOKKEEPER);
+  await stubReads(page);
+  await page.route('**/api/reply-drafts**', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: REPLY_DRAFT }) }),
+  );
+  await page.goto('/exceptions');
+  await expect(page.getByTestId('draft-save')).toBeVisible();
+  await expect(page.getByTestId('draft-discard')).toBeVisible();
+
+  await stubMe(page, CPA);
+  await page.goto('/exceptions');
+  await expect(page.getByTestId('draft-readonly')).toBeVisible();
+  await expect(page.getByLabel('Message')).toHaveAttribute('readonly', '');
+  await expect(page.getByTestId('draft-save')).toHaveCount(0);
+  await expect(page.getByTestId('draft-discard')).toHaveCount(0);
+  await expect(page.getByTestId('draft-open-gmail')).toBeVisible();
+});
+
+test('externally sent Gmail projection is immutable even for an owner', async ({ page }) => {
+  await stubMe(page, OWNER);
+  await stubReads(page);
+  await page.route('**/api/reply-drafts**', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: { ...REPLY_DRAFT, status: 'sent_external' } }),
+    }),
+  );
+  await page.goto('/exceptions');
+  await expect(page.getByTestId('draft-sent-external')).toContainText('read-only');
+  await expect(page.getByLabel('Message')).toHaveAttribute('readonly', '');
+  await expect(page.getByTestId('draft-save')).toHaveCount(0);
+  await expect(page.getByTestId('draft-discard')).toHaveCount(0);
+  await expect(page.getByTestId('draft-open-gmail')).toBeVisible();
+});
+
+test('reply draft surface contains no transmission control or provider-send source path', async ({ page }) => {
+  await stubMe(page, OWNER);
+  await stubReads(page);
+  await page.route('**/api/reply-drafts**', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: REPLY_DRAFT }) }),
+  );
+  await page.goto('/exceptions');
+  const actions = page.getByTestId('reply-draft-actions');
+  await expect(actions.getByRole('button', { name: /send/i })).toHaveCount(0);
+  await expect(actions.getByRole('link', { name: /send/i })).toHaveCount(0);
+
+  const sourceFiles = [
+    'app/(app)/exceptions/_components/ReplyDraftPanel.tsx',
+    'app/api/reply-drafts/route.ts',
+    'app/api/reply-drafts/[id]/route.ts',
+  ];
+  const source = (await Promise.all(sourceFiles.map((file) => readFile(join(process.cwd(), file), 'utf8')))).join('\n');
+  expect(source).not.toMatch(/users\.messages\.send|messages\/send|sendMessage|sendReply/i);
 });
 
 // --- F_TAX_MAPPING UI (settings/tax-mapping, settings/tax-mapping/[id], exceptions/tax) ------

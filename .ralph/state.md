@@ -1,10 +1,10 @@
 # Ralph State
 
-**Current Iteration:** 8
+**Current Iteration:** 11
 
-Current chunk: CHUNK_4_DRAFTS
-Current task: 1 of 2
-Last completed: CHUNK_4_GMAIL_ADAPTER
+Current chunk: CHUNK_5_PRODUCT
+Current task: 2 of 2
+Last completed: CHUNK_5_DRAFT_UI
 Status: TASK_COMPLETE
 
 ## Instructions for ralph
@@ -44,3 +44,14 @@ Next task: CHUNK_4_GMAIL_ADAPTER.
 - Repository proof: `npm run verify` exited 0; 55 files / 408 tests, Next.js
   production build, and 8 UI contracts passed.
 - Verdict: GREEN_COMPLETE for this task. Live external integrations are N/A.
+
+## Iteration 11 — CHUNK_5_DRAFT_UI
+
+The exception-detail Gmail draft workspace is complete.
+Next task: CHUNK_6_OPERATIONS.
+- Owner and bookkeeper can prepare, update, discard, and open the source-thread draft;
+  CPA and externally-sent projections are read-only.
+- Missing compose scope retains the proposed copy and presents owner reconnect guidance.
+- The UI exposes no reply transmission control or provider-send path.
+- Repository proof: `npm run verify` exited 0; 57 files / 421 tests, Next.js
+  production build, and 18 UI contracts passed.

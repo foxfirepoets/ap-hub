@@ -40,6 +40,32 @@ export async function apiPost<T>(path: string, payload?: unknown): Promise<Actio
   return { ok: res.ok, status: res.status, data: body?.data, error: body?.error };
 }
 
+async function apiMutation<T>(
+  method: 'PATCH' | 'DELETE',
+  path: string,
+  payload?: unknown,
+): Promise<ActionResult<T>> {
+  const res = await fetch(path, {
+    method,
+    credentials: 'same-origin',
+    headers: payload === undefined ? undefined : { 'content-type': 'application/json' },
+    body: payload === undefined ? undefined : JSON.stringify(payload),
+  });
+  const body = (await res.json().catch(() => ({}))) as {
+    data?: T;
+    error?: { code: string; message: string };
+  };
+  return { ok: res.ok, status: res.status, data: body.data, error: body.error };
+}
+
+export function apiPatch<T>(path: string, payload: unknown): Promise<ActionResult<T>> {
+  return apiMutation<T>('PATCH', path, payload);
+}
+
+export function apiDelete<T>(path: string): Promise<ActionResult<T>> {
+  return apiMutation<T>('DELETE', path);
+}
+
 /** Extract a numeric proposal id from an exception's entity_ref (e.g. "proposal:501" → 501). */
 export function proposalRefId(ref: string | null): number | null {
   if (!ref) return null;
