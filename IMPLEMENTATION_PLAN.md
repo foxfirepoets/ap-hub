@@ -10,7 +10,7 @@ Execute tasks in order. Each checkbox is one independently verifiable Ralph iter
 
 ## CHUNK_2_QBD — QuickBooks capability truth and durable posting
 
-- [ ] CHUNK_2_CAPABILITIES — Implement an executable capability matrix and tenant-scoped `GET /api/provider-capabilities` that identifies QBO and supported Windows QBD editions/operations while returning `supported:false` with an exact reason for unsupported products or fields. Evidence: provider capability unit/API tests for QBO, QBD Pro/Premier/Enterprise, incompatible editions, RBAC, and cross-tenant access; `npm run verify`.
+- [x] CHUNK_2_CAPABILITIES — Implement an executable capability matrix and tenant-scoped `GET /api/provider-capabilities` that identifies QBO and supported Windows QBD editions/operations while returning `supported:false` with an exact reason for unsupported products or fields. Evidence: provider capability unit/API tests for QBO, QBD Pro/Premier/Enterprise, incompatible editions, RBAC, and cross-tenant access; `npm run verify`.
 
 - [ ] CHUNK_2_DURABLE_JOBS — Replace the QBD process-memory queue with PostgreSQL `provider_jobs`, stable idempotency keys, one active write lease per connection, lease expiry recovery, company-identity verification, and owner-only job status/retry APIs. Evidence: real-test-Postgres tests proving restart persistence, connection/tenant lease isolation, expired-lease recovery, identity mismatch hold, retry refusal for uncertain results, and `npm run verify`.
 

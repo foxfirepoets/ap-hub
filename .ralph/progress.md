@@ -39,3 +39,21 @@ Total chunks: 6
 - Boundary evidence: `npm run lint:noleak` -> no provider/OS boundary leaks.
 - Repository evidence: `npm run verify` -> lint PASS; boundary scan PASS; typecheck PASS; 50 files / 372 tests PASS; Next.js production build PASS; Playwright 8/8 PASS.
 <promise>CHUNK TASK COMPLETE: CHUNK_1_TYPES</promise>
+## CHUNK_1_TYPES — independent truth audit
+
+- Commit: `50d32b8a045a2012755e23740c828438735c9b30`
+- Verdict: GREEN
+- Independent validation: `npm run verify` exited 0.
+- Evidence: ESLint, secret-leak scan, TypeScript, 50 Vitest files / 372 tests, Next.js production build, and 8 Playwright contract flows passed.
+- Boundary evidence: provider-neutral accounting contracts and tenant-scoped repository behavior are covered by `test/accounting-intake-contracts.test.ts`.
+- Live external proof: N/A for this local contract-only task.
+
+## CHUNK_2_CAPABILITIES - 2026-07-24
+- Added an executable, fail-closed QuickBooks capability matrix for certified QBO editions and Windows QBD Pro, Premier, and Enterprise.
+- Every connection exposes operation-level results for company verification, query, bill posting, read-back, and attachments, plus explicit unsupported fields.
+- Incompatible providers, QBO Self-Employed/unknown editions, QBD Mac/unknown editions, non-Windows Desktop connections, and inactive connections return `supported:false` with an actionable remediation reason.
+- Added tenant-scoped `GET /api/provider-capabilities`; the session tenant is the only query authority and owner, bookkeeper, and CPA reads are explicitly allowed while unauthenticated/unknown roles are rejected.
+- Targeted evidence: `npx vitest run test/provider-capabilities.test.ts` -> 1 file passed, 8 tests passed.
+- Repository evidence: `npm run verify` -> lint PASS; boundary scan PASS; typecheck PASS; 51 files / 380 tests PASS; Next.js production build PASS with the new API route; Playwright 8/8 PASS.
+- Live external proof: N/A for this read-only capability-truth task.
+<promise>CHUNK TASK COMPLETE: CHUNK_2_CAPABILITIES</promise>
