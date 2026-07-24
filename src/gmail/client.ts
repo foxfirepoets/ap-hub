@@ -11,6 +11,7 @@ export interface GmailMessageHeaderInfo {
   id: string;
   threadId: string;
   from: string;
+  replyTo?: string;
   subject: string;
   receivedAt: string;
   historyId?: string;

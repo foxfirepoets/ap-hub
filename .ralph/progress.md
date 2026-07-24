@@ -143,3 +143,32 @@ Total chunks: 6
 - Live external proof: N/A; statement filing is local evidence organization and performed no provider call or accounting write.
 <promise>CHUNK TASK COMPLETE: CHUNK_3_REVIEW_API</promise>
 <promise>CHUNK COMPLETE: CHUNK_3_STATEMENTS</promise>
+## CHUNK_3_REVIEW_API — independent truth audit
+
+- Commit: `b46340260781b65c9be6ce93a5d2eb7c99f183ed`
+- Verdict: GREEN
+- Independent validation: `npm run verify` exited 0.
+- Evidence: ESLint, secret-leak scan, TypeScript, 55 Vitest files / 408 tests, Next.js production build, and 8 Playwright contract flows passed.
+- Safety evidence: queue/detail, match, exclude, correct and file RBAC/tenant tests passed; filing changes zero proposals/provider jobs/postings/reconciliation rows and a static invariant forbids posting imports/inserts.
+- Live external proof: N/A; no provider calls or writes.
+
+## CHUNK_4_GMAIL_ADAPTER - 2026-07-24
+- Added optional least-privilege Gmail OAuth compose access alongside existing readonly
+  access, gated by `GMAIL_DRAFTS_ENABLED` with incremental reconnect authorization.
+- Added a provider-bound draft client with create, update, read-status, and discard
+  operations only. It derives the recipient from source Reply-To/From, rejects header
+  injection, and requires every provider result/mutation to stay in the source thread.
+- Added bounded three-attempt retry for transient provider failures and explicit
+  reconnect/auth errors for missing scope or rejected tokens.
+- The draft boundary has no transmission method or Gmail message-send call; runtime
+  export and static source assertions enforce this invariant.
+- Existing locked gatekeeper forwarding code was not modified; gatekeeper, lockdown,
+  and digest regression suites remain green.
+- Targeted evidence: 2 files / 10 draft and OAuth tests passed; 3 files / 24
+  gatekeeper/lockdown/digest tests passed.
+- Repository evidence: `npm run verify` exited 0 -> lint PASS; boundary scan PASS;
+  typecheck PASS; 56 Vitest files / 416 tests PASS; Next.js production build PASS;
+  Playwright 8/8 PASS.
+- Live external proof: NOT VERIFIED by design; no Gmail draft was created and no email
+  was transmitted.
+<promise>CHUNK TASK COMPLETE: CHUNK_4_GMAIL_ADAPTER</promise>

@@ -38,11 +38,13 @@ const RawSchema = z.object({
   LLM_API_KEY: z.string().default(''), // key for LLM_BASE_URL (blank for local)
   LLM_MODEL: z.string().default(''), // model id; blank = provider default / first available
 
-  // --- Gmail (read-only in all phases; send scope added only for the gatekeeper relay) ---
+  // --- Gmail (read plus optional compose-only draft access) ---
   GMAIL_CLIENT_ID: z.string().min(1, 'GMAIL_CLIENT_ID is required'),
   GMAIL_CLIENT_SECRET: z.string().min(1, 'GMAIL_CLIENT_SECRET is required'),
   GMAIL_REDIRECT_URI: z.string().url().default('http://localhost:3001/oauth/gmail/callback'),
   WATCHED_LABEL: z.string().default('AP-Inbox'),
+  // Compose permits draft CRUD. AP Hub deliberately exposes no reply send action.
+  GMAIL_DRAFTS_ENABLED: boolish(false),
   // Resource-exhaustion guard (FIX-F8): attachments larger than this are skipped, not
   // fetched/stored. Default matches Gmail's own per-message attachment ceiling (25MB).
   MAX_ATTACHMENT_BYTES: z.coerce.number().int().positive().default(25 * 1024 * 1024),

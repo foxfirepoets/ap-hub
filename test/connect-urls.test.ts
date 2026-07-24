@@ -22,6 +22,16 @@ describe('buildGmailAuthorizeUrl', () => {
     const verified = verifyConnectState(url.searchParams.get('state')!);
     expect(verified?.tenantId).toBe(42);
   });
+
+  it('requests compose alongside readonly when drafts are enabled, without broad mailbox scope', () => {
+    const cfg = { ...config(), GMAIL_DRAFTS_ENABLED: true };
+    const url = new URL(buildGmailAuthorizeUrl(cfg, 'signed-state'));
+    expect(url.searchParams.get('scope')?.split(' ')).toEqual([
+      'https://www.googleapis.com/auth/gmail.readonly',
+      'https://www.googleapis.com/auth/gmail.compose',
+    ]);
+    expect(url.searchParams.get('scope')).not.toMatch(/gmail\.modify|mail\.google\.com/);
+  });
 });
 
 describe('buildQboAuthorizeUrl', () => {

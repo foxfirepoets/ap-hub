@@ -1,16 +1,26 @@
 # Ralph State
 
-**Current Iteration:** 7
+**Current Iteration:** 8
 
-Current chunk: CHUNK_3_STATEMENTS
-Current task: 2 of 2
-Last completed: CHUNK_3_REVIEW_API
-Status: CHUNK_COMPLETE
+Current chunk: CHUNK_4_DRAFTS
+Current task: 1 of 2
+Last completed: CHUNK_4_GMAIL_ADAPTER
+Status: TASK_COMPLETE
 
 ## Instructions for ralph
 
 Update this file after every task. Never delete history — append below.
 Keep the `**Current Iteration:**` line intact and in that exact format.
+
+## Iteration 8 — CHUNK_4_GMAIL_ADAPTER
+
+Least-privilege Gmail reply-draft adapter is complete.
+Next task: CHUNK_4_DRAFT_API.
+- Draft client exposes create/update/read-status/discard only; recipient and thread
+  remain bound to the source conversation.
+- OAuth requests readonly plus compose only when drafting is enabled; reconnect uses
+  incremental authorization and no broad mailbox scope.
+- Gatekeeper forwarding remains separate and unchanged.
 
 ## Iteration 2 — CHUNK_1_TYPES
 

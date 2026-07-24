@@ -119,6 +119,7 @@ export async function getGmailClient(tenantId: number): Promise<GmailClient> {
           id,
           threadId: res.data.threadId ?? '',
           from: h('From'),
+          replyTo: h('Reply-To') || undefined,
           subject: h('Subject'),
           receivedAt: new Date(Number(res.data.internalDate ?? Date.now())).toISOString(),
           bodyText,

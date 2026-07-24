@@ -24,7 +24,7 @@ Execute tasks in order. Each checkbox is one independently verifiable Ralph iter
 
 ## CHUNK_4_DRAFTS — Gmail drafts with human-only sending
 
-- [ ] CHUNK_4_GMAIL_ADAPTER — Extend Gmail OAuth/reconnect handling for least-privilege compose access and implement provider-bound create, update, read-status, and discard draft operations in the source thread while keeping locked gatekeeper forwarding separate. Evidence: simulated Gmail adapter tests for thread/recipient derivation, missing scope, token failure/retry, provider IDs, discard, and unchanged gatekeeper behavior; `npm run verify`.
+- [x] CHUNK_4_GMAIL_ADAPTER — Extend Gmail OAuth/reconnect handling for least-privilege compose access and implement provider-bound create, update, read-status, and discard draft operations in the source thread while keeping locked gatekeeper forwarding separate. Evidence: simulated Gmail adapter tests for thread/recipient derivation, missing scope, token failure/retry, provider IDs, discard, and unchanged gatekeeper behavior; `npm run verify`.
 
 - [ ] CHUNK_4_DRAFT_API — Implement tenant-scoped reply-draft persistence and GET/POST/PATCH/DELETE routes with owner/bookkeeper mutation, CPA read-only access, append-only audit evidence, and no application send operation. Evidence: draft lifecycle, already-sent projection, RBAC, foreign-resource, and audit tests plus static/runtime architecture tests proving the reply-draft surface cannot invoke Gmail send; `npm run verify`.
 

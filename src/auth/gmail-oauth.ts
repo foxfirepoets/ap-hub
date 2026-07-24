@@ -5,12 +5,23 @@ import { logger } from '../logger.js';
 import { verifyConnectState } from './connect-state.js';
 
 /**
- * Gmail OAuth callback (CHUNK_2). Completes the flow at `gmail.readonly` scope
- * (the gatekeeper adds `gmail.send` separately). Tokens are stored encrypted.
+ * Gmail OAuth callback. Tokens are stored encrypted. Reply drafting uses the
+ * compose-only scope; the locked gatekeeper relay remains a separate concern.
  */
 
 export const GMAIL_READONLY_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
+export const GMAIL_COMPOSE_SCOPE = 'https://www.googleapis.com/auth/gmail.compose';
 export const GMAIL_SEND_SCOPE = 'https://www.googleapis.com/auth/gmail.send';
+
+export function gmailOAuthScopes(draftsEnabled: boolean): string[] {
+  return draftsEnabled
+    ? [GMAIL_READONLY_SCOPE, GMAIL_COMPOSE_SCOPE]
+    : [GMAIL_READONLY_SCOPE];
+}
+
+export function hasGmailComposeScope(scope: string | null | undefined): boolean {
+  return (scope ?? '').split(/\s+/).includes(GMAIL_COMPOSE_SCOPE);
+}
 
 export async function exchangeGmailCode(
   code: string,
