@@ -24,6 +24,7 @@ export type Permission =
   | 'learn'
   | 'retry'
   | 'reply'
+  | 'draft_reply'
   | 'onboard'
   | 'tax_mapping'
   | 'dimension_mapping';
@@ -31,9 +32,9 @@ export type Permission =
 /** Role → permission matrix. CPA is read-only; bookkeeper cannot approve→post. */
 export const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
   owner_controller: new Set<Permission>([
-    'read', 'approve', 'reject', 'remap', 'learn', 'retry', 'reply', 'onboard', 'tax_mapping', 'dimension_mapping',
+    'read', 'approve', 'reject', 'remap', 'learn', 'retry', 'reply', 'draft_reply', 'onboard', 'tax_mapping', 'dimension_mapping',
   ]),
-  bookkeeper: new Set<Permission>(['read', 'reject', 'remap', 'learn']),
+  bookkeeper: new Set<Permission>(['read', 'reject', 'remap', 'learn', 'draft_reply']),
   cpa: new Set<Permission>(['read']),
 };
 

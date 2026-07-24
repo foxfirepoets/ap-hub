@@ -172,3 +172,35 @@ Total chunks: 6
 - Live external proof: NOT VERIFIED by design; no Gmail draft was created and no email
   was transmitted.
 <promise>CHUNK TASK COMPLETE: CHUNK_4_GMAIL_ADAPTER</promise>
+## CHUNK_4_GMAIL_ADAPTER — independent truth audit
+
+- Commit: `568ebee930f839439721115b900ddfad75afe37e`
+- Verdict: GREEN
+- Independent validation: `npm run verify` exited 0.
+- Evidence: ESLint, secret-leak scan, TypeScript, 56 Vitest files / 416 tests, Next.js production build, and 8 Playwright contract flows passed.
+- Gmail safety evidence: readonly+compose scope, source-thread/recipient binding, bounded retry, provider IDs/discard, gatekeeper regressions, and runtime/static no-send invariants passed.
+- Live external proof: NOT VERIFIED; no live Gmail operations or transmissions.
+
+## CHUNK_4_DRAFT_API - 2026-07-24
+- Added tenant-scoped GET/POST/PATCH/DELETE reply-draft routes backed by the canonical
+  `reply_drafts` table and source Gmail message/thread identity.
+- Added a distinct `draft_reply` permission for owner and bookkeeper. CPA remains
+  read-only, and the legacy locked-forward release permission remains owner-only.
+- Create and update persist the human's proposed copy before provider access, so
+  missing compose scope or provider failure retains recoverable local intent.
+- Gmail draft IDs, source thread, recipient, reason, lifecycle status, and external
+  human-sent projection are retained locally; sent-external and discarded drafts
+  reject further mutation.
+- Every human mutation appends an identifiable actor audit row with before/after
+  hashes and a human-sends-in-Gmail marker; reads add no human mutation audit.
+- DELETE invokes only provider draft discard and then records local discarded status;
+  no reply email send operation exists in the service, HTTP layer, or routes.
+- Targeted evidence: reply-draft API, Gmail draft adapter, existing reply action, and
+  service regression suites -> 4 files / 36 tests passed.
+- Repository evidence: `npm run verify` exited 0 -> lint PASS; boundary scan PASS;
+  typecheck PASS; 57 Vitest files / 421 tests PASS; Next.js production build PASS;
+  Playwright 8/8 PASS.
+- Live external proof: NOT VERIFIED by design; injected Gmail simulations only, and
+  no draft or email was created, discarded, or transmitted in a real mailbox.
+<promise>CHUNK TASK COMPLETE: CHUNK_4_DRAFT_API</promise>
+<promise>CHUNK COMPLETE: CHUNK_4_DRAFTS</promise>
