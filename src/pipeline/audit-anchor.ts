@@ -66,7 +66,10 @@ export async function anchorAuditDay(
 export async function auditAnchorHandler(job: {
   data: AuditAnchorJob;
 }): Promise<{ anchored: boolean; day: string }> {
+  const { config } = await import('../config.js');
   const day = job.data.day ?? new Date().toISOString().slice(0, 10);
+  // AuditProof anchoring is a SwarmSync feature; skip cleanly when disabled.
+  if (!config().SWARMSYNC_ENABLED) return { anchored: false, day };
   return anchorAuditDay(job.data.tenantId, day, (output) => swarmsync().auditProof(output));
 }
 

@@ -15,6 +15,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { logger } from '../logger.js';
 import {
   createSession,
   getSession,
@@ -158,7 +159,12 @@ export function handleQbwcSoap(soapBody: string, deps: QbwcAuth): SoapReply {
       const responseRaw = tagText(soapBody, 'response') ?? '';
       const hresult = tagText(soapBody, 'hresult')?.trim() ?? '';
       const session = getSession(ticket);
-      if (!session) return reply(intResult('receiveResponseXML', -1));
+      if (!session) {
+        // Unknown/expired ticket (e.g. the service restarted mid-sync; sessions
+        // are in-process). -1 tells QBWC to stop; log it so it is diagnosable.
+        logger.warn({ ticket }, 'qbwc receiveResponseXML for unknown session (aborting run)');
+        return reply(intResult('receiveResponseXML', -1));
+      }
       session.record(unescapeXml(responseRaw), hresult !== '');
       // <100 => QBWC calls sendRequestXML again; 100 => done.
       return reply(intResult('receiveResponseXML', session.done ? 100 : session.progress()));

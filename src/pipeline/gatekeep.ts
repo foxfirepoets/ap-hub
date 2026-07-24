@@ -12,6 +12,9 @@ export interface GatekeepJob {
 export async function gatekeepHandler(job: { data: GatekeepJob }): Promise<GatekeepOutcome> {
   const cfg = config();
   if (!cfg.GATEKEEPER_ENABLED) return { action: 'noop' };
+  // The gatekeeper's whole job is the InvoiceProof scan; with SwarmSync disabled
+  // there is nothing to scan against, so it cleanly does nothing (no fail-open forward).
+  if (!cfg.SWARMSYNC_ENABLED) return { action: 'noop' };
 
   const { getGmailClient } = await import('../gmail/adapter.js');
   const gmail = await getGmailClient(job.data.tenantId);

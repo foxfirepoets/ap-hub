@@ -71,6 +71,8 @@ export interface ExtractDeps {
   verify: (output: unknown, evidence: unknown) => Promise<VerifyResult>;
   enqueueMap: (extractionId: number, attachmentId: number | null, messageId: number) => Promise<void>;
   model?: string;
+  /** Verify-API notarization runs only when SwarmSync is enabled (default true). */
+  swarmSyncEnabled?: boolean;
 }
 
 /** Core extraction (testable). Retries the model up to 3× on invalid JSON. */
@@ -166,7 +168,8 @@ export async function extractOnce(
   }
 
   // Verify-API (Amendment A1): submit the extraction, record proof_ref (check-before-submit).
-  if (!(await hasProofRef(tenantId, 'extraction', String(extractionId), 'verify_api'))) {
+  // Skipped entirely when SwarmSync is disabled (no outbound call, no proof_scan_unavailable).
+  if (deps.swarmSyncEnabled !== false && !(await hasProofRef(tenantId, 'extraction', String(extractionId), 'verify_api'))) {
     try {
       const v = await deps.verify(normalized, {
         gmail_message_id: messageId,
@@ -205,15 +208,43 @@ export async function extractOnce(
   return { extractionId, status: 'ok' };
 }
 
+// Resolve the LLM backend (and its up-to-3s local-runtime detection) ONCE per
+// process, not on every job. The provider is config-driven and stable for the
+// process lifetime; a newly-started local runtime is picked up on next restart.
+let cachedExtractor: Extractor | null = null;
+
 export async function extractHandler(job: { data: ExtractJob }): Promise<void> {
   const { config } = await import('../config.js');
   const { getExtractor } = await import('../extract/model.js');
   const { swarmsync } = await import('../services.js');
   const { getQueue } = await import('../queue.js');
   const cfg = config();
-  const extractor = await getExtractor(cfg);
+  if (!cachedExtractor) {
+    try {
+      cachedExtractor = await getExtractor(cfg);
+    } catch (err) {
+      // getExtractor / resolveProvider can throw LlmNotConfiguredError (no local
+      // runtime, no key, no explicitly-chosen CLI) — never cached, so a later job
+      // retries after the operator fixes config, without a process restart. Must
+      // surface as a typed exceptions row like every other pipeline failure, never
+      // a bare job throw only visible in pg-boss retry logs (CLAUDE.md: "no silent
+      // failures").
+      logger.warn({ err: String(err), tenantId: job.data.tenantId }, 'LLM backend not configured');
+      await raiseException({
+        tenantId: job.data.tenantId,
+        reasonCode: 'extractor_not_configured',
+        entityRef: job.data.attachmentId
+          ? `attachment:${job.data.attachmentId}`
+          : `message:${job.data.messageId}`,
+        detail: (err as Error).message,
+      });
+      return;
+    }
+  }
+  const extractor = cachedExtractor;
   await extractOnce(job.data.tenantId, job.data, {
     extractor,
+    swarmSyncEnabled: cfg.SWARMSYNC_ENABLED,
     verify: (output, evidence) => swarmsync().verifyDocument(output, evidence),
     enqueueMap: async (extractionId, attachmentId, messageId) => {
       await getQueue().send(JOBS.map, { tenantId: job.data.tenantId, extractionId, attachmentId, messageId });

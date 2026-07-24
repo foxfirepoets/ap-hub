@@ -25,6 +25,7 @@ import { recordProofRef, hasProofRef } from '../swarmsync/proof.js';
 import { writeAudit } from '../audit.js';
 import { logger } from '../logger.js';
 import type { InvoiceScanInput, InvoiceScanResult } from '../swarmsync/client.js';
+import type { SwarmSyncMode } from '../config.js';
 import type { ExtractionResult } from '../extract/schema.js';
 
 export interface MapJob {
@@ -46,6 +47,12 @@ export interface ProposeDeps {
   reviewThreshold: number;
   /** Enqueue the sandbox-posting job for a ready proposal. Omit in tests. */
   enqueuePost?: (proposalId: number) => Promise<void>;
+  /**
+   * SwarmSync mode (default 'on'). 'on' = InvoiceProof scan + proof-gated ready.
+   * 'off_review' = no scan, cap at review (human approves). 'off_autopost' = no
+   * scan, allow ready/post with no fraud gate (operator's explicit choice).
+   */
+  swarmSync?: SwarmSyncMode;
 }
 
 export interface ProposeOutcome {
@@ -194,9 +201,11 @@ export async function proposeOnce(
     amount: r.fields?.total,
   }));
 
+  const mode: SwarmSyncMode = deps.swarmSync ?? 'on';
   let scanFailed = false;
   let findings: InvoiceScanResult['findings'] = [];
-  try {
+  if (mode === 'on') {
+   try {
     const scanRes = await deps.scan({
       invoices: [
         {
@@ -223,6 +232,7 @@ export async function proposeOnce(
       entityRef: `extraction:${ext.id}`,
       detail: `InvoiceProof scan failed: ${(err as Error).message}`,
     });
+   }
   }
 
   const cls = classifyFindings(findings);
@@ -243,8 +253,15 @@ export async function proposeOnce(
   );
 
   // --- Status assignment with the never-ready-without-both-proofs invariant ---
-  const hasVerify = await hasProofRef(tenantId, 'extraction', String(ext.id), 'verify_api');
-  const hasInvoiceProof = !scanFailed;
+  // When SwarmSync is ON, 'ready' requires both proofs and a clean scan. When it
+  // is OFF, there are no proofs: 'off_autopost' treats proofs as satisfied (no
+  // fraud gate), 'off_review' never reaches ready so a human reviews.
+  const hasVerify = mode === 'on' ? await hasProofRef(tenantId, 'extraction', String(ext.id), 'verify_api') : false;
+  const hasInvoiceProof = mode === 'on' ? !scanFailed : false;
+  const proofsSatisfied =
+    mode === 'on'
+      ? hasVerify && hasInvoiceProof && !flags.has('proof_scan_unavailable')
+      : mode === 'off_autopost';
   const blockingFlags = ['total_mismatch', 'bank_change_warning', 'duplicate', 'unknown_vendor', 'unmapped_account', 'unmapped_dimension'];
   const hasBlocking = [...flags].some((f) => blockingFlags.includes(f));
   const hasHighOrCritical = cls.hasCritical || cls.hasHigh;
@@ -254,10 +271,8 @@ export async function proposeOnce(
     status = 'exception';
   } else if (
     confidence >= deps.autoThreshold &&
-    hasVerify &&
-    hasInvoiceProof &&
+    proofsSatisfied &&
     !hasHighOrCritical &&
-    !flags.has('proof_scan_unavailable') &&
     !flags.has('vendor_review')
   ) {
     status = 'ready';
@@ -308,7 +323,7 @@ export async function proposeOnce(
     }
   }
 
-  if (!scanFailed) {
+  if (mode === 'on' && !scanFailed) {
     await recordProofRef({
       tenantId,
       entityKind: 'proposal',
@@ -334,11 +349,12 @@ export async function proposeOnce(
 }
 
 export async function proposeHandler(job: { data: MapJob }): Promise<void> {
-  const { config } = await import('../config.js');
+  const { config, swarmSyncMode } = await import('../config.js');
   const { swarmsync } = await import('../services.js');
   const cfg = config();
   await proposeOnce(job.data.tenantId, job.data, {
     scan: (input) => swarmsync().scanInvoices(input),
+    swarmSync: swarmSyncMode(cfg),
     autoThreshold: cfg.AUTO_THRESHOLD,
     reviewThreshold: cfg.REVIEW_THRESHOLD,
     enqueuePost: async (proposalId) => {

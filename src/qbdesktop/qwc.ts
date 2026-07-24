@@ -41,7 +41,8 @@ export function generateQwc(opts: QwcOptions): string {
     `<?xml version="1.0"?>\n` +
     `<QBWCXML>\n` +
     `  <AppName>${appName}</AppName>\n` +
-    `  <AppID></AppID>\n` +
+    // AppID is optional; emit it ONLY with a value — a present-but-empty
+    // <AppID></AppID> is rejected by some Web Connector versions.
     `  <AppURL>${opts.appUrl}</AppURL>\n` +
     `  <AppDescription>${appDesc}</AppDescription>\n` +
     `  <AppSupport>${support}</AppSupport>\n` +

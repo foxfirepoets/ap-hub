@@ -316,6 +316,116 @@ function Show-QuickBooksHelper {
   [void]$f.ShowDialog($script:W.Form)
 }
 
+function Show-LlmHelper {
+  $f = New-HelperForm -Title "Choose your AI model" -Height 520
+  $script:W.LlmDetect = if ($script:W.Creds) { $script:W.Creds.Llm } else { Get-ApHubLlmDetection }
+  $llm = $script:W.LlmDetect
+  $f.Controls.Add((New-Label -Text "Choose your AI model" -Font $script:FontH -X 20 -Y 14))
+  $f.Controls.Add((New-Label -Text "ap-hub works with a local model (free), any OpenAI-compatible API, or a cloud key. Desktop chat apps (Claude Desktop, ChatGPT Desktop) cannot be used -- they have no API a program can call." -Color $script:Ink -X 20 -Y 46 -Width 555 -Height 44))
+  $status = New-Label -Text "" -Color $script:Good -X 20 -Y 300 -Width 555 -Height 60; $f.Controls.Add($status)
+  $y = 100
+
+  # Local runtime: Ollama
+  if ($llm.Ollama) {
+    $bo = [System.Windows.Forms.Button]::new(); $bo.Text = "Use Ollama (detected, free)"; $bo.Size = [System.Drawing.Size]::new(210, 28); $bo.Location = [System.Drawing.Point]::new(20, $y); $bo.FlatStyle = "System"
+    $bo.Add_Click({
+      $rt = $script:W.LlmDetect.Ollama; $m = if ($rt.Models.Count -gt 0) { $rt.Models[0] } else { 'llama3.2-vision' }
+      (Get-CredBox 'LLM_PROVIDER').Text = 'auto'; (Get-CredBox 'LLM_BASE_URL').Text = $rt.BaseUrl; (Get-CredBox 'LLM_MODEL').Text = $m
+      $status.ForeColor = $script:Good; $status.Text = "Using Ollama at $($rt.BaseUrl) (model $m). For scanned invoices, pull a VISION model, e.g. 'ollama pull llama3.2-vision'."
+    })
+    $f.Controls.Add($bo)
+    $f.Controls.Add((New-Label -Text ("models: " + (($llm.Ollama.Models | Select-Object -First 3) -join ", ")) -Font $script:FontS -Color $script:Muted -X 240 -Y ($y + 6) -Width 320)); $y += 38
+  } else {
+    $bo = [System.Windows.Forms.Button]::new(); $bo.Text = "Install Ollama (free local AI)"; $bo.Size = [System.Drawing.Size]::new(210, 28); $bo.Location = [System.Drawing.Point]::new(20, $y); $bo.FlatStyle = "System"
+    $bo.Add_Click({ Start-Process 'https://ollama.com/download' })
+    $f.Controls.Add($bo)
+    $f.Controls.Add((New-Label -Text "Not running. Install it, run 'ollama pull llama3.2-vision', then reopen this." -Font $script:FontS -Color $script:Muted -X 240 -Y ($y + 6) -Width 320)); $y += 38
+  }
+
+  # Local runtime: LM Studio
+  if ($llm.LmStudio) {
+    $bl = [System.Windows.Forms.Button]::new(); $bl.Text = "Use LM Studio (detected, free)"; $bl.Size = [System.Drawing.Size]::new(210, 28); $bl.Location = [System.Drawing.Point]::new(20, $y); $bl.FlatStyle = "System"
+    $bl.Add_Click({
+      $rt = $script:W.LlmDetect.LmStudio; $m = if ($rt.Models.Count -gt 0) { $rt.Models[0] } else { 'local-model' }
+      (Get-CredBox 'LLM_PROVIDER').Text = 'auto'; (Get-CredBox 'LLM_BASE_URL').Text = $rt.BaseUrl; (Get-CredBox 'LLM_MODEL').Text = $m
+      $status.ForeColor = $script:Good; $status.Text = "Using LM Studio at $($rt.BaseUrl) (model $m)."
+    })
+    $f.Controls.Add($bl); $y += 38
+  }
+
+  $y += 10
+  $f.Controls.Add((New-Label -Text "...or use a cloud key / any OpenAI-compatible endpoint on the main screen:" -Font $script:FontB -X 20 -Y $y -Width 555)); $y += 24
+  $f.Controls.Add((New-Label -Text ("Detected: " +
+        ($(if ($llm.Cli) { "CLI '$($llm.Cli)' (text-only)  " } else { "" })) +
+        ($(if ($llm.AnthropicKey) { "ANTHROPIC_API_KEY in env  " } else { "" })) +
+        ($(if ($llm.OpenAiKey) { "OPENAI_API_KEY in env  " } else { "" })) +
+        ($(if (-not ($llm.Cli -or $llm.AnthropicKey -or $llm.OpenAiKey)) { "no CLI or cloud key" } else { "" }))) `
+      -Font $script:FontS -Color $script:Muted -X 20 -Y $y -Width 555 -Height 20)); $y += 26
+  $btnOpenAI = [System.Windows.Forms.Button]::new(); $btnOpenAI.Text = "Get an OpenAI key"; $btnOpenAI.Size = [System.Drawing.Size]::new(150, 26); $btnOpenAI.Location = [System.Drawing.Point]::new(20, $y); $btnOpenAI.FlatStyle = "System"
+  $btnOpenAI.Add_Click({ Start-Process 'https://platform.openai.com/api-keys' })
+  $btnAnthropic = [System.Windows.Forms.Button]::new(); $btnAnthropic.Text = "Get an Anthropic key"; $btnAnthropic.Size = [System.Drawing.Size]::new(160, 26); $btnAnthropic.Location = [System.Drawing.Point]::new(180, $y); $btnAnthropic.FlatStyle = "System"
+  $btnAnthropic.Add_Click({ Start-Process 'https://console.anthropic.com/settings/keys' })
+  $f.Controls.Add($btnOpenAI); $f.Controls.Add($btnAnthropic)
+
+  Add-HelperClose -Form $f -Y 440
+  [void]$f.ShowDialog($script:W.Form)
+}
+
+function Show-SwarmSyncHelper {
+  $f = New-HelperForm -Title "Document proofs (SwarmSync)" -Height 570
+  $f.Controls.Add((New-Label -Text "Document proofs (SwarmSync)" -Font $script:FontH -X 20 -Y 14))
+  $desc = "SwarmSync adds three OPTIONAL proof features to every invoice:`r`n" +
+          "  - InvoiceProof: a fraud scan (bank-detail changes, duplicates, PO mismatches) that blocks risky auto-posts.`r`n" +
+          "  - Verify-API: notarizes the extracted data as a tamper-evident proof (with a confidence score).`r`n" +
+          "  - AuditProof: anchors the daily audit trail into a verifiable hash chain.`r`n" +
+          "They need a SwarmSync key (ssk_live_...). You can also run ap-hub without them."
+  $f.Controls.Add((New-Label -Text $desc -Color $script:Ink -X 20 -Y 46 -Width 555 -Height 118))
+
+  $curEnabled = ([string](Get-CredBox 'SWARMSYNC_ENABLED').Text).ToLower() -ne 'false'
+  $curMode = [string](Get-CredBox 'SWARMSYNC_OFF_MODE').Text
+
+  $rOn = [System.Windows.Forms.RadioButton]::new(); $rOn.Text = "Use SwarmSync (recommended) -- enter your key below"; $rOn.Location = [System.Drawing.Point]::new(24, 170); $rOn.Size = [System.Drawing.Size]::new(545, 22); $rOn.Font = $script:FontB
+  $rOff = [System.Windows.Forms.RadioButton]::new(); $rOff.Text = "Don't use SwarmSync"; $rOff.Location = [System.Drawing.Point]::new(24, 196); $rOff.Size = [System.Drawing.Size]::new(545, 22); $rOff.Font = $script:FontB
+  if ($curEnabled) { $rOn.Checked = $true } else { $rOff.Checked = $true }
+  $f.Controls.Add($rOn); $f.Controls.Add($rOff)
+
+  $f.Controls.Add((New-Label -Text "SwarmSync API key (ssk_live_...)" -Font $script:FontS -Color $script:Muted -X 44 -Y 224))
+  $key = [System.Windows.Forms.TextBox]::new(); $key.Location = [System.Drawing.Point]::new(44, 244); $key.Size = [System.Drawing.Size]::new(496, 24); $key.Font = $script:FontMono; $key.UseSystemPasswordChar = $true; $key.Text = [string](Get-CredBox 'SWARMSYNC_API_KEY').Text
+  $f.Controls.Add($key)
+
+  $f.Controls.Add((New-Label -Text "If you turn SwarmSync OFF, invoices should:" -Font $script:FontB -X 24 -Y 284 -Width 545))
+  $rReview = [System.Windows.Forms.RadioButton]::new(); $rReview.Text = "Go to human review before posting (safe -- a person is the check)"; $rReview.Location = [System.Drawing.Point]::new(44, 308); $rReview.Size = [System.Drawing.Size]::new(520, 22); $rReview.Font = $script:FontS
+  $rAuto = [System.Windows.Forms.RadioButton]::new(); $rAuto.Text = "Auto-post to the QBO sandbox with NO fraud scan or verification"; $rAuto.Location = [System.Drawing.Point]::new(44, 332); $rAuto.Size = [System.Drawing.Size]::new(520, 22); $rAuto.Font = $script:FontS
+  if ($curMode -eq 'autopost') { $rAuto.Checked = $true } else { $rReview.Checked = $true }
+  $f.Controls.Add($rReview); $f.Controls.Add($rAuto)
+
+  $status = New-Label -Text "" -Color $script:Good -X 20 -Y 372 -Width 545 -Height 44; $f.Controls.Add($status)
+
+  $sync = {
+    $key.Enabled = $rOn.Checked
+    $rReview.Enabled = $rOff.Checked; $rAuto.Enabled = $rOff.Checked
+  }
+  $rOn.Add_CheckedChanged($sync); $rOff.Add_CheckedChanged($sync); & $sync
+
+  $apply = [System.Windows.Forms.Button]::new(); $apply.Text = "Apply"; $apply.Size = [System.Drawing.Size]::new(100, 30); $apply.Location = [System.Drawing.Point]::new(20, 490); $apply.FlatStyle = "System"
+  $apply.Add_Click({
+    if ($rOn.Checked) {
+      (Get-CredBox 'SWARMSYNC_ENABLED').Text = 'true'
+      (Get-CredBox 'SWARMSYNC_API_KEY').Text = $key.Text.Trim()
+      $status.ForeColor = $script:Good; $status.Text = "SwarmSync ON: InvoiceProof + Verify-API + AuditProof will run (needs the key)."
+    } else {
+      (Get-CredBox 'SWARMSYNC_ENABLED').Text = 'false'
+      $m = if ($rAuto.Checked) { 'autopost' } else { 'review' }
+      (Get-CredBox 'SWARMSYNC_OFF_MODE').Text = $m
+      $status.ForeColor = $script:Good
+      $status.Text = "SwarmSync OFF: invoices will " + $(if ($m -eq 'autopost') { "auto-post to the sandbox with no fraud gate." } else { "go to human review before posting." })
+    }
+  })
+  $f.Controls.Add($apply)
+  Add-HelperClose -Form $f -Y 490
+  [void]$f.ShowDialog($script:W.Form)
+}
+
 function Show-CredentialsPage {
   $script:W.Page = "credentials"; Clear-Content; Set-Subtitle "Step 2 of 3  -  Keys and credentials"
   $c = $script:W.Content
@@ -323,7 +433,8 @@ function Show-CredentialsPage {
   $disc = $script:W.Creds
 
   $c.Controls.Add((New-Label -Text "We searched this computer and filled in what we found" -Font $script:FontH -Y 8 -Width 545))
-  $foundNote = "Encryption key generated for you." + $(if ($disc.PostgresDetected) { "  PostgreSQL detected." } else { "" }) + $(if ($disc.ClaudeCliDetected) { "  Claude CLI detected." } else { "" })
+  $llmNote = if ($disc.Llm -and $disc.Llm.Ollama) { "  Ollama detected (LLM ready)." } elseif ($disc.Llm -and $disc.Llm.LmStudio) { "  LM Studio detected (LLM ready)." } else { "" }
+  $foundNote = "Encryption key generated for you." + $(if ($disc.PostgresDetected) { "  PostgreSQL detected." } else { "" }) + $(if ($disc.ClaudeCliDetected) { "  Claude CLI detected." } else { "" }) + $llmNote
   $c.Controls.Add((New-Label -Text $foundNote -Font $script:FontS -Color $script:Teal -Y 40 -Width 545))
   $c.Controls.Add((New-Label -Text "Fields marked * are required. Anything already filled was found on this machine or generated -- you can edit it." -Font $script:FontS -Color $script:Muted -Y 60 -Width 545))
 
@@ -339,8 +450,10 @@ function Show-CredentialsPage {
       $scroll.Controls.Add($g)
       # A "Guide me" button opens the step-by-step walkthrough for guided groups.
       $helper = $null
-      if ($f.Group -like 'Gmail*') { $helper = { Show-GmailHelper } }
+      if ($f.Group -like 'AI*') { $helper = { Show-LlmHelper } }
+      elseif ($f.Group -like 'Gmail*') { $helper = { Show-GmailHelper } }
       elseif ($f.Group -like 'QuickBooks*') { $helper = { Show-QuickBooksHelper } }
+      elseif ($f.Group -like '*SwarmSync*' -or $f.Group -like 'Document proofs*') { $helper = { Show-SwarmSyncHelper } }
       elseif ($f.Group -like 'Gatekeeper*') { $helper = { Show-TelegramHelper } }
       if ($helper) {
         $gb = [System.Windows.Forms.Button]::new(); $gb.Text = "Guide me"; $gb.Size = [System.Drawing.Size]::new(96, 22)

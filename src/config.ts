@@ -24,9 +24,19 @@ const RawSchema = z.object({
   ENCRYPTION_KEY: z
     .string()
     .min(64, 'ENCRYPTION_KEY must be a 32-byte hex string (64 hex chars). Generate: openssl rand -hex 32'),
-  // Optional so BROKER MODE (keys held by the broker) can boot without it. In
-  // DIRECT mode (no BROKER_BASE_URL) it is required — enforced post-parse below.
+
+  // --- LLM backend (provider-agnostic) ---
+  // ap-hub works with WHATEVER LLM the operator has: a local runtime (Ollama /
+  // LM Studio), any OpenAI-compatible API (LLM_BASE_URL), a cloud key, or — with
+  // an explicit LLM_PROVIDER=claude|codex|gemini — a local CLI. No key is
+  // required at boot in ANY mode (including BROKER MODE below); the provider is
+  // resolved at extraction time (see src/llm/provider.ts, ExtractorNotConfiguredError).
   ANTHROPIC_API_KEY: z.string().default(''),
+  OPENAI_API_KEY: z.string().default(''),
+  LLM_PROVIDER: z.string().default('auto'), // auto | anthropic | openai | ollama | lmstudio | custom | claude | codex | gemini
+  LLM_BASE_URL: z.string().default(''), // an OpenAI-compatible endpoint (…/v1)
+  LLM_API_KEY: z.string().default(''), // key for LLM_BASE_URL (blank for local)
+  LLM_MODEL: z.string().default(''), // model id; blank = provider default / first available
 
   // --- Gmail (read-only in all phases; send scope added only for the gatekeeper relay) ---
   GMAIL_CLIENT_ID: z.string().min(1, 'GMAIL_CLIENT_ID is required'),
@@ -47,6 +57,13 @@ const RawSchema = z.object({
   QBO_SANDBOX_REDIRECT_URI: z.string().url().default('http://localhost:3001/oauth/qbo/callback'),
 
   // --- SwarmSync proof suite (Amendment A1) ---
+  // SwarmSync proof suite (InvoiceProof fraud scan · Verify-API notarization ·
+  // AuditProof anchoring) is OPTIONAL. Enabled by default (existing behavior).
+  // When disabled, no proof calls are made; SWARMSYNC_OFF_MODE decides whether
+  // invoices then route to human review ('review', safe default) or auto-post
+  // to the QBO sandbox with no fraud gate ('autopost').
+  SWARMSYNC_ENABLED: boolish(true),
+  SWARMSYNC_OFF_MODE: z.enum(['review', 'autopost']).default('review'),
   SWARMSYNC_API_BASE: z.string().url().default('https://api.swarmsync.ai'),
   SWARMSYNC_WEB_BASE: z.string().url().default('https://swarmsync.ai'),
   SWARMSYNC_API_KEY: z.string().default(''),
@@ -93,6 +110,13 @@ const RawSchema = z.object({
 
 export type Config = z.infer<typeof RawSchema> & { QBO_ENV: 'sandbox' };
 
+/** SwarmSync operating mode derived from config. */
+export type SwarmSyncMode = 'on' | 'off_review' | 'off_autopost';
+export function swarmSyncMode(cfg: Config): SwarmSyncMode {
+  if (cfg.SWARMSYNC_ENABLED) return 'on';
+  return cfg.SWARMSYNC_OFF_MODE === 'autopost' ? 'off_autopost' : 'off_review';
+}
+
 export class ConfigError extends Error {
   constructor(message: string) {
     super(message);
@@ -127,12 +151,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
         `BROKER_BASE_URL must be https:// (or http://127.0.0.1 in tests); got "${cfg.BROKER_BASE_URL}".`,
       );
     }
-  } else if (!cfg.ANTHROPIC_API_KEY) {
-    // DIRECT mode (no broker) requires a local Anthropic key.
-    throw new ConfigError(
-      'ANTHROPIC_API_KEY is required in direct mode. Set it, or set BROKER_BASE_URL to run in broker mode.',
-    );
   }
+  // No boot-time key requirement outside broker mode: src/llm/provider.ts
+  // resolves a local runtime, an OpenAI-compatible endpoint, a cloud key, or an
+  // explicitly-chosen CLI at extraction time, and throws LlmNotConfiguredError
+  // (surfaced as a typed exceptions row, never a bare boot refusal) if none apply.
 
   // QuickBooks Desktop, when enabled, needs a Web Connector password (the QBWC
   // login the operator sets when importing the .QWC). Write mode is a loud,

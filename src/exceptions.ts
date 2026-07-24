@@ -60,6 +60,11 @@ export const REASON_CODES = [
   'dimension_mapping_not_found',
   'dimension_mapping_not_mapped',
   'dimension_mapping_not_reviewed',
+  // LLM backend router (src/llm/provider.ts): no local runtime, no OpenAI-compatible
+  // endpoint, no key, and no explicitly-chosen CLI — resolved lazily per extract job
+  // (LlmNotConfiguredError), so this must be a visible exceptions row, not a bare
+  // job throw (fail-closed; see src/pipeline/extract.ts extractHandler).
+  'extractor_not_configured',
 ] as const;
 
 export type ReasonCode = (typeof REASON_CODES)[number];

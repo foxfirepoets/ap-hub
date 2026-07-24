@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { SwarmSyncClient } from '../src/swarmsync/client.js';
 import { getBrokerExtractor } from '../src/extract/model.js';
-import { loadConfig, ConfigError } from '../src/config.js';
+import { loadConfig } from '../src/config.js';
 
 /**
  * CHUNK_4 — guarantee-5 under the broker. The broker adds a new hop in front of
@@ -99,9 +99,10 @@ describe('broker-mode config — keys optional with a broker, required without',
     expect(cfg.ANTHROPIC_API_KEY).toBe('');
   });
 
-  it('DIRECT MODE: refuses to boot without ANTHROPIC_API_KEY', () => {
-    expect(() => loadConfig({ ...base } as any)).toThrow(ConfigError);
-    expect(() => loadConfig({ ...base } as any)).toThrow(/ANTHROPIC_API_KEY is required/);
+  it('DIRECT MODE: boots with no ANTHROPIC_API_KEY (the LLM backend is resolved at extraction time)', () => {
+    const cfg = loadConfig({ ...base } as any);
+    expect(cfg.ANTHROPIC_API_KEY).toBe('');
+    expect(cfg.BROKER_BASE_URL).toBeUndefined();
   });
 
   it('rejects a non-https BROKER_BASE_URL (except http://127.0.0.1)', () => {
