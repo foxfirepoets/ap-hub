@@ -23,3 +23,19 @@ Total chunks: 6
 - Targeted evidence: `npx vitest run test/accounting-intake-migration.test.ts` -> 1 file passed, 1 test passed.
 - Repository evidence: `npm run verify` -> lint PASS; boundary scan PASS; typecheck PASS; 49 files / 367 tests PASS; Next.js production build PASS; Playwright 8/8 PASS.
 <promise>CHUNK TASK COMPLETE: CHUNK_1_SCHEMA</promise>
+
+## CBV Truth Audit — CHUNK_1_SCHEMA
+- Source: commit `5559df10f41511dfa5c3bf4a5cd4cab6fff9d4e0`
+- Database proof: disposable PostgreSQL UP, constraint checks, retained-row DOWN refusal, empty DOWN, and UP passed.
+- Repository proof: `npm run verify` exited 0; 49 files / 367 tests and 8 UI contracts passed.
+- Verdict: GREEN_COMPLETE for this task. Live external integrations are N/A.
+
+## CHUNK_1_TYPES - 2026-07-24
+- Added provider-neutral contracts for accounting documents, statement facts/lines, provider capabilities/jobs, and reply-draft projections.
+- Added tenant-scoped repositories using the existing `scopedQuery` boundary; core contains no provider writer imports or provider calls.
+- Runtime contract validation rejects invalid document, statement, job-operation, and draft lifecycle values before database access.
+- Repository failures preserve PostgreSQL duplicate-key (`23505`) and foreign-tenant-reference (`23503`) evidence for callers.
+- Targeted evidence: `npx vitest run test/accounting-intake-contracts.test.ts` -> 1 file passed, 5 tests passed.
+- Boundary evidence: `npm run lint:noleak` -> no provider/OS boundary leaks.
+- Repository evidence: `npm run verify` -> lint PASS; boundary scan PASS; typecheck PASS; 50 files / 372 tests PASS; Next.js production build PASS; Playwright 8/8 PASS.
+<promise>CHUNK TASK COMPLETE: CHUNK_1_TYPES</promise>
