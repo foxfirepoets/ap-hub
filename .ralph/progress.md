@@ -57,3 +57,23 @@ Total chunks: 6
 - Repository evidence: `npm run verify` -> lint PASS; boundary scan PASS; typecheck PASS; 51 files / 380 tests PASS; Next.js production build PASS with the new API route; Playwright 8/8 PASS.
 - Live external proof: N/A for this read-only capability-truth task.
 <promise>CHUNK TASK COMPLETE: CHUNK_2_CAPABILITIES</promise>
+## CHUNK_2_CAPABILITIES — independent truth audit
+
+- Commit: `33e0577cbd1c7645eeb01db13ccccc501841c4f6`
+- Verdict: GREEN
+- Independent validation: `npm run verify` exited 0.
+- Evidence: ESLint, secret-leak scan, TypeScript, 51 Vitest files / 380 tests, Next.js production build, and 8 Playwright contract flows passed.
+- Boundary evidence: capability tests cover QBO, supported Windows QBD Pro/Premier/Enterprise, incompatible editions/platforms/providers, RBAC, and tenant isolation.
+- Live external proof: N/A; this task declares certified local capability truth and performs no provider writes.
+
+## CHUNK_2_DURABLE_JOBS - 2026-07-24
+- Added a PostgreSQL-authoritative QBD job service with deterministic SHA-256 idempotency keys and insert deduplication that survives service reconstruction.
+- Added transaction/advisory-lock leasing that permits one active lease per connection, scopes every operation by tenant and connection, and safely recovers expired pre-send leases.
+- Expired sent jobs move to `held/UNCERTAIN_OUTCOME`; retries are refused until the next posting-contract task supplies provider query/adoption evidence.
+- QBD company identity is checked against the connection record before any job is leased; mismatches visibly hold all queued connection work.
+- Added owner-only tenant-scoped `GET /api/provider-jobs` and `POST /api/provider-jobs/:id/retry`; bookkeeper/CPA and foreign-tenant access fail closed.
+- Targeted evidence: `npx vitest run test/provider-durable-jobs.test.ts` -> 1 file passed, 5 tests passed.
+- Paired cleanup evidence: migration + durable-job suites -> 2 files passed, 6 tests passed.
+- Repository evidence: `npm run verify` -> lint PASS; boundary scan PASS; typecheck PASS; 52 files / 385 tests PASS; Next.js production build PASS; Playwright 8/8 PASS.
+- No provider calls, production writes, or real-company writes were performed.
+<promise>CHUNK TASK COMPLETE: CHUNK_2_DURABLE_JOBS</promise>
