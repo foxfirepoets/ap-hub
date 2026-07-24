@@ -1,0 +1,6 @@
+{
+  "subject": "Invoice INV-100",
+  "filename": "invoice-100.pdf",
+  "mime": "application/pdf",
+  "expectedKind": "invoice"
+}

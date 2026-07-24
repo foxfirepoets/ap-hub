@@ -1,0 +1,12 @@
+{
+  "institutionName": "Fixture Community Bank",
+  "accountHint": "1234",
+  "currency": "USD",
+  "periodStart": "2026-06-01",
+  "periodEnd": "2026-06-30",
+  "openingBalance": "1000.00",
+  "closingBalance": "900.00",
+  "lines": [
+    { "postedOn": "2026-06-02", "description": "Vendor", "amount": "-100.00", "balance": "900.00" }
+  ]
+}

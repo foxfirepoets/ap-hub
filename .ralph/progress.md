@@ -99,3 +99,26 @@ Total chunks: 6
 - Safety evidence: all provider exchanges were injected simulations; no credentials, live providers, production settings, or real-company writes were used or enabled.
 <promise>CHUNK TASK COMPLETE: CHUNK_2_POSTING_CONTRACT</promise>
 <promise>CHUNK COMPLETE: CHUNK_2_QBD</promise>
+## CHUNK_2_POSTING_CONTRACT — independent truth audit
+
+- Commit: `a1ce78c10c18d669fba3d667dca6f60e414f1b66`
+- Verdict: GREEN
+- Independent validation: `npm run verify` exited 0.
+- Evidence: ESLint, secret-leak scan, TypeScript, 53 Vitest files / 390 tests, Next.js production build, and 8 Playwright contract flows passed.
+- Posting evidence: simulated QBD happy path, lost-response adoption with exactly one create, strict qbXML parsing, durable uncertain-result adoption, QBO regressions, reconciliation/audit projection, and proof-gate fail-closed behavior passed.
+- Live external proof: NOT VERIFIED by design; no live QBO/QBD calls or production writes.
+
+## CHUNK_3_INGEST - 2026-07-24
+- Extended canonical attachment routing to distinguish `invoice`, `bank_statement`, and fail-closed `unknown`; unknowns are held and statements cannot enter the invoice extractor.
+- Preserved the existing invoice path: recognized invoice attachments enqueue exactly one existing `extract` job.
+- Added deterministic exact-cent normalization for statement headers and ordered source lines, including commas, currency symbols, and parentheses negatives without floating-point arithmetic.
+- Added one-transaction persistence for the canonical document, statement header, and every ordered line; pre-routed statement documents are adopted rather than duplicated.
+- Duplicate files return the existing statement without inserts; duplicate lines and invalid periods/dates/money fail before accounting writes.
+- Arithmetic imbalance persists source evidence as `unbalanced`, holds the canonical document with `STATEMENT_UNBALANCED`, and exposes the exact failing equation.
+- Encrypted/unreadable input persists only a held source document with a named reason and creates zero statement facts or lines.
+- Fixture evidence: balanced, multi-page, missing-running-balance, parentheses-negative, duplicate-line/document, imbalanced, encrypted, and existing-invoice cases.
+- Targeted evidence: `npx vitest run test/bank-statements.test.ts` -> 1 file / 11 tests passed.
+- Regression evidence: statement, classification, existing invoice extraction, and attachment-infra suites -> 4 files / 36 tests passed before the final routing assertion; the full gate includes all 11 statement tests.
+- Repository evidence: `npm run verify` exited 0 -> lint PASS; boundary scan PASS; typecheck PASS; complete Vitest suite PASS; Next.js production build PASS; Playwright 8/8 PASS.
+- Safety evidence: no provider call, external accounting write, email action, or live credential was used.
+<promise>CHUNK TASK COMPLETE: CHUNK_3_INGEST</promise>

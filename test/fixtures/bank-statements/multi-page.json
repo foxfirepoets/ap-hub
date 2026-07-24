@@ -1,0 +1,12 @@
+{
+  "institutionName": "Fixture Community Bank",
+  "periodStart": "2026-06-01",
+  "periodEnd": "2026-06-30",
+  "openingBalance": "100.00",
+  "closingBalance": "125.00",
+  "pageCount": 3,
+  "lines": [
+    { "postedOn": "2026-06-03", "description": "Deposit", "amount": "50.00", "balance": "150.00" },
+    { "postedOn": "2026-06-20", "description": "Fee", "amount": "-25.00", "balance": "125.00" }
+  ]
+}

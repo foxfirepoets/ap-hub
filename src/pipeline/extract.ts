@@ -13,6 +13,7 @@ import { recordProofRef, hasProofRef } from '../swarmsync/proof.js';
 import { writeAudit } from '../audit.js';
 import { logger } from '../logger.js';
 import type { VerifyResult } from '../swarmsync/client.js';
+import { classifyAccountingAttachment } from '../statements/ingest.js';
 
 export interface ClassifyJob {
   tenantId: number;
@@ -25,7 +26,10 @@ export interface ExtractJob {
 }
 
 /** CHUNK_5 classify: deterministic rules first; flag needs_review when not confident. */
-export async function classifyHandler(job: { data: ClassifyJob }): Promise<void> {
+export async function classifyOnce(
+  job: { data: ClassifyJob },
+  enqueue: (jobName: string, data: ExtractJob) => Promise<void>,
+): Promise<void> {
   const { tenantId, messageId } = job.data;
   const msg = (
     await query<{ subject: string | null; from_addr: string | null; body_only: boolean }>(
@@ -36,8 +40,8 @@ export async function classifyHandler(job: { data: ClassifyJob }): Promise<void>
   if (!msg) return;
 
   const atts = (
-    await query<{ id: number; mime: string | null }>(
-      'SELECT id, mime FROM attachments WHERE tenant_id=$1 AND message_id=$2',
+    await query<{ id: number; mime: string | null; filename: string | null; sha256: string }>(
+      'SELECT id, mime, filename, sha256 FROM attachments WHERE tenant_id=$1 AND message_id=$2',
       [tenantId, messageId],
     )
   ).rows;
@@ -56,14 +60,43 @@ export async function classifyHandler(job: { data: ClassifyJob }): Promise<void>
     !result.confident,
   ]);
 
-  const { getQueue } = await import('../queue.js');
   if (atts.length === 0) {
-    await getQueue().send(JOBS.extract, { tenantId, messageId, attachmentId: null });
+    await enqueue(JOBS.extract, { tenantId, messageId, attachmentId: null });
   } else {
     for (const a of atts) {
-      await getQueue().send(JOBS.extract, { tenantId, messageId, attachmentId: a.id });
+      const route = classifyAccountingAttachment({
+        subject: msg.subject ?? '',
+        filename: a.filename ?? '',
+        mime: a.mime ?? '',
+      });
+      await query(
+        `INSERT INTO accounting_documents
+           (tenant_id,message_id,attachment_id,kind,sha256,status,classification_confidence,hold_reason)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+         ON CONFLICT (tenant_id,sha256,kind) DO NOTHING`,
+        [
+          tenantId,
+          messageId,
+          a.id,
+          route.kind,
+          a.sha256,
+          route.status,
+          route.confidence,
+          route.holdReason,
+        ],
+      );
+      if (route.kind === 'invoice') {
+        await enqueue(JOBS.extract, { tenantId, messageId, attachmentId: a.id });
+      }
     }
   }
+}
+
+export async function classifyHandler(job: { data: ClassifyJob }): Promise<void> {
+  const { getQueue } = await import('../queue.js');
+  await classifyOnce(job, async (jobName, data) => {
+    await getQueue().send(jobName, data);
+  });
 }
 
 export interface ExtractDeps {

@@ -18,7 +18,7 @@ Execute tasks in order. Each checkbox is one independently verifiable Ralph iter
 
 ## CHUNK_3_STATEMENTS — Reviewed bank-statement workflow
 
-- [ ] CHUNK_3_INGEST — Extend attachment routing to classify invoice, bank statement, or unknown; normalize supported statement fixtures into one transactional header plus ordered immutable lines; and deterministically detect duplicate documents/lines, period errors, arithmetic imbalance, and unreadable/encrypted input. Evidence: fixture tests for balanced, multi-page, missing-running-balance, parentheses-negative, duplicate, imbalanced, encrypted, and existing invoice cases; database row assertions; `npm run verify`.
+- [x] CHUNK_3_INGEST — Extend attachment routing to classify invoice, bank statement, or unknown; normalize supported statement fixtures into one transactional header plus ordered immutable lines; and deterministically detect duplicate documents/lines, period errors, arithmetic imbalance, and unreadable/encrypted input. Evidence: fixture tests for balanced, multi-page, missing-running-balance, parentheses-negative, duplicate, imbalanced, encrypted, and existing invoice cases; database row assertions; `npm run verify`.
 
 - [ ] CHUNK_3_REVIEW_API — Implement tenant-scoped statement queue/detail, match, exclude-with-reason, audited correction, and filing services/routes with owner/bookkeeper mutation rights, CPA read-only behavior, and a structural guarantee that filing alone creates no accounting transaction. Evidence: API/service tests for happy path, validation failures, RBAC, foreign IDs, audit rows, zero provider writes during filing, and `npm run verify`.
 

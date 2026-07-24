@@ -1,0 +1,10 @@
+{
+  "periodStart": "2026-06-01",
+  "periodEnd": "2026-06-30",
+  "openingBalance": "1000.00",
+  "closingBalance": "800.00",
+  "lines": [
+    { "postedOn": "2026-06-02", "description": "Vendor", "amount": "-100.00", "balance": "900.00" },
+    { "postedOn": "2026-06-02", "description": "Vendor", "amount": "-100.00", "balance": "900.00" }
+  ]
+}

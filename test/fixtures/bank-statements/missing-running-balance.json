@@ -1,0 +1,9 @@
+{
+  "periodStart": "2026-06-01",
+  "periodEnd": "2026-06-30",
+  "openingBalance": "300.00",
+  "closingBalance": "280.00",
+  "lines": [
+    { "postedOn": "2026-06-04", "description": "Debit", "amount": "-20.00" }
+  ]
+}
