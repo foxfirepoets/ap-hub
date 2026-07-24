@@ -122,3 +122,24 @@ Total chunks: 6
 - Repository evidence: `npm run verify` exited 0 -> lint PASS; boundary scan PASS; typecheck PASS; complete Vitest suite PASS; Next.js production build PASS; Playwright 8/8 PASS.
 - Safety evidence: no provider call, external accounting write, email action, or live credential was used.
 <promise>CHUNK TASK COMPLETE: CHUNK_3_INGEST</promise>
+## CHUNK_3_INGEST — independent truth audit
+
+- Commit: `722da3b17cae6032f180c57441788a0e6255e90c`
+- Verdict: GREEN
+- Independent validation: `npm run verify` exited 0.
+- Evidence: ESLint, secret-leak scan, TypeScript, 54 Vitest files / 401 tests, Next.js production build, and 8 Playwright contract flows passed.
+- Ingestion evidence: 11 statement fixtures cover balance, pagination, missing running balance, negative notation, duplicates, imbalance, encryption, and unchanged invoice routing with transactional row assertions.
+- Live external proof: N/A; no provider writes or email actions.
+
+## CHUNK_3_REVIEW_API - 2026-07-24
+- Added tenant-scoped statement queue and detail reads for owner, bookkeeper, and read-only CPA roles.
+- Added owner/bookkeeper match, exclude-with-reason, allowlisted fact correction, and evidence-filing actions with human audit rows.
+- Foreign statement/line identifiers fail as 404 without mutation or existence disclosure; CPA mutations fail 403 and unauthenticated reads fail 401.
+- Filing requires every line to be matched or excluded and rejects held/unbalanced statements.
+- Filing updates only `bank_statements` and `accounting_documents`; behavioral DB assertions prove unchanged `proposals`, `provider_jobs`, `postings_ap`, and `reconciliation` counts.
+- A hostile static test rejects connector/posting/provider-writer imports and transaction/job INSERT statements in the review module.
+- Targeted evidence: `npx vitest run test/bank-statement-api.test.ts` -> 1 file / 7 tests passed.
+- Repository evidence: `npm run verify` exited 0 -> lint PASS; boundary scan PASS; typecheck PASS; 55 Vitest files / 408 tests PASS; Next.js production build PASS; Playwright 8/8 PASS.
+- Live external proof: N/A; statement filing is local evidence organization and performed no provider call or accounting write.
+<promise>CHUNK TASK COMPLETE: CHUNK_3_REVIEW_API</promise>
+<promise>CHUNK COMPLETE: CHUNK_3_STATEMENTS</promise>
