@@ -6,7 +6,7 @@ import { hasProofRef } from '../src/swarmsync/proof.js';
 import {
   resetTables, createTenant, insertMessage, insertAttachment, insertExtraction, countRows, closeAll,
 } from './helpers.js';
-import type { QboWriteClient } from '../src/qbo/write.js';
+import { mockConnector } from './connector-mock.js';
 
 async function seedVendorAndAccount(t: number): Promise<void> {
   await query(
@@ -21,16 +21,6 @@ async function seedExtractionNoProof(t: number): Promise<{ a: number; e: number 
   const a = await insertAttachment(t, m);
   const e = await insertExtraction(t, m, a, {}, 0.95);
   return { a, e };
-}
-
-function mockWriter(): QboWriteClient {
-  return {
-    realm: 'sandbox-realm',
-    createEntity: vi.fn().mockResolvedValue({ id: 'q1', syncToken: '0', entity: { Id: 'q1' } }),
-    readEntity: vi.fn().mockResolvedValue({ TotalAmt: 100, DocNumber: 'INV-1' }),
-    queryExisting: vi.fn().mockResolvedValue([]),
-    attach: vi.fn().mockResolvedValue(undefined),
-  } as unknown as QboWriteClient;
 }
 
 describe('SwarmSync optional (ap-hub)', () => {
@@ -93,7 +83,7 @@ describe('SwarmSync optional (ap-hub)', () => {
     // No invoiceproof / verify_api proof refs recorded at all.
     const anchor = vi.fn();
     const out = await postOnce(t, pid, {
-      writer: mockWriter(), anchor, loadPdf: async () => Buffer.from('%PDF'),
+      connector: mockConnector(), anchor, loadPdf: async () => Buffer.from('%PDF'),
       amountCeiling: 10000, autoThreshold: 0.9, swarmSyncEnabled: false,
     });
     expect(out.status).toBe('posted');
