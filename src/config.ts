@@ -82,11 +82,13 @@ const RawSchema = z.object({
   TELEGRAM_CHAT_ID: z.string().default(''),
 
   // --- QuickBooks Desktop via Web Connector (opt-in) ---
-  // NOTE: this path talks to a REAL company file, so it deliberately OVERRIDES
-  // the QBO sandbox-only guarantee. It is disabled by default and read-only by
-  // default. Real-books writes are deliberately unavailable in this build.
+  // NOTE: this path can talk to a REAL company file. It is disabled by default
+  // and writes require both the explicit write flag and a verified company ID.
   QB_DESKTOP_ENABLED: boolish(false),
   QB_DESKTOP_MODE: z.literal('readonly').default('readonly'),
+  QB_DESKTOP_COMPANY_ID: z.string().default(''),
+  QB_DESKTOP_WRITE_ENABLED: boolish(false),
+  PROVIDER_JOB_LEASE_SECONDS: z.coerce.number().int().min(30).max(900).default(300),
   QBWC_USERNAME: z.string().default('aphub'),
   QBWC_PASSWORD: z.string().default(''),
 
@@ -167,6 +169,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     throw new ConfigError(
       'QB_DESKTOP_ENABLED=true but QBWC_PASSWORD is empty. Set the Web Connector password ' +
         '(the same one you enter when importing the .QWC into the Web Connector).',
+    );
+  }
+  if (cfg.QB_DESKTOP_WRITE_ENABLED && !cfg.QB_DESKTOP_ENABLED) {
+    throw new ConfigError('QB_DESKTOP_WRITE_ENABLED=true requires QB_DESKTOP_ENABLED=true.');
+  }
+  if (cfg.QB_DESKTOP_WRITE_ENABLED && !cfg.QB_DESKTOP_COMPANY_ID) {
+    throw new ConfigError(
+      'QB_DESKTOP_WRITE_ENABLED=true requires QB_DESKTOP_COMPANY_ID for company verification.',
     );
   }
 

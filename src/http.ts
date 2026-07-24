@@ -2,6 +2,69 @@ import { createServer, type IncomingMessage, type ServerResponse, type Server } 
 import { query } from './db/pool.js';
 import { logger } from './logger.js';
 
+export interface OperationalHealth {
+  providerJobs: {
+    queued: number;
+    oldestQueuedSeconds: number | null;
+    expiredLeases: number;
+    resultUnknown: number;
+    failed: number;
+    held: number;
+  };
+  statements: { held: number; unbalanced: number };
+  drafts: { failed: number };
+}
+
+type HealthQuery = <T extends Record<string, unknown>>(
+  sql: string,
+  params?: unknown[],
+) => Promise<{ rows: T[] }>;
+
+function numeric(value: unknown): number {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+/** Aggregate counts only: no tenant data, payloads, addresses, or provider secrets. */
+export async function collectOperationalHealth(
+  runQuery: HealthQuery = query as HealthQuery,
+): Promise<OperationalHealth> {
+  const provider = await runQuery<Record<string, unknown>>(
+    `SELECT
+       count(*) FILTER (WHERE status='queued')::int AS queued,
+       extract(epoch FROM (now()-min(created_at) FILTER (WHERE status='queued')))::int AS oldest_queued_seconds,
+       count(*) FILTER (WHERE status='leased' AND lease_expires_at < now())::int AS expired_leases,
+       count(*) FILTER (WHERE error_code='PROVIDER_RESULT_UNKNOWN')::int AS result_unknown,
+       count(*) FILTER (WHERE status='failed')::int AS failed,
+       count(*) FILTER (WHERE status='held')::int AS held
+     FROM provider_jobs`,
+  );
+  const statements = await runQuery<Record<string, unknown>>(
+    `SELECT count(*) FILTER (WHERE status='held')::int AS held,
+            count(*) FILTER (WHERE status='unbalanced')::int AS unbalanced
+       FROM bank_statements`,
+  );
+  const drafts = await runQuery<Record<string, unknown>>(
+    `SELECT count(*) FILTER (WHERE status='proposed' AND reason IS NOT NULL)::int AS failed
+       FROM reply_drafts`,
+  );
+  const p = provider.rows[0] ?? {};
+  const s = statements.rows[0] ?? {};
+  const d = drafts.rows[0] ?? {};
+  return {
+    providerJobs: {
+      queued: numeric(p.queued),
+      oldestQueuedSeconds: p.oldest_queued_seconds == null ? null : numeric(p.oldest_queued_seconds),
+      expiredLeases: numeric(p.expired_leases),
+      resultUnknown: numeric(p.result_unknown),
+      failed: numeric(p.failed),
+      held: numeric(p.held),
+    },
+    statements: { held: numeric(s.held), unbalanced: numeric(s.unbalanced) },
+    drafts: { failed: numeric(d.failed) },
+  };
+}
+
 /**
  * Minimal HTTP server: /health liveness probe (db + queue status) plus OAuth
  * callback routes registered by CHUNK_2. No framework — one small handler.
@@ -90,7 +153,21 @@ export function createHttpServer(): Server {
       } catch {
         db = false;
       }
-      respond(db ? 200 : 503, { status: db ? 'ok' : 'degraded', db, queue: true });
+      let operations: OperationalHealth | null = null;
+      if (db) {
+        try {
+          operations = await collectOperationalHealth();
+          logger.info({ operations }, 'operational health snapshot');
+        } catch (err) {
+          logger.warn({ err: String(err) }, 'operational health metrics unavailable');
+        }
+      }
+      respond(db ? 200 : 503, {
+        status: db ? 'ok' : 'degraded',
+        db,
+        queue: true,
+        operations,
+      });
       return;
     }
 

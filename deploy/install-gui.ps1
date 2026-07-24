@@ -21,7 +21,7 @@
     7. Finish / Error.
 
   No graphical dependency beyond Windows' built-in .NET (System.Windows.Forms).
-  This build writes only to a QuickBooks sandbox and never modifies Gmail.
+  QBO writes are sandbox-only. Gmail may create drafts but never sends replies.
 
 .PARAMETER SelfTest
   Build every page and exercise the gating logic WITHOUT showing a window or
@@ -227,7 +227,7 @@ function Show-GmailHelper {
            "      http://localhost:3001/oauth/gmail/callback`r`n" +
            "5.  Download the JSON, then click 'Load client_secret.json' below -- it fills the`r`n" +
            "      client ID and secret for you. ap-hub only ever requests read-only Gmail."
-  $f.Controls.Add((New-Label -Text "Connect Gmail (read-only)" -Font $script:FontH -X 20 -Y 16))
+  $f.Controls.Add((New-Label -Text "Connect Gmail (read + optional drafts)" -Font $script:FontH -X 20 -Y 16))
   $f.Controls.Add((New-Label -Text $steps -Color $script:Ink -X 20 -Y 54 -Width 545 -Height 150))
   $open = [System.Windows.Forms.Button]::new(); $open.Text = "Open Google Cloud Console"; $open.Size = [System.Drawing.Size]::new(220, 30); $open.Location = [System.Drawing.Point]::new(20, 210); $open.FlatStyle = "System"
   $open.Add_Click({ Start-Process "https://console.cloud.google.com/apis/credentials" }); $f.Controls.Add($open)
@@ -600,7 +600,7 @@ function Show-FinishPage {
   if ($res.QwcPath) {
     $c.Controls.Add((New-Label -Text ("QuickBooks Desktop: import this into the Web Connector -> " + $res.QwcPath) -Font $script:FontS -Color $script:Teal -Y 194 -Width 545))
   }
-  $c.Controls.Add((New-Label -Text "This build writes only to a QuickBooks sandbox and never modifies Gmail." -Font $script:FontS -Color $script:Muted -Y 220 -Width 520))
+  $c.Controls.Add((New-Label -Text "QBO writes are sandbox-only. Gmail may create drafts but never sends replies." -Font $script:FontS -Color $script:Muted -Y 220 -Width 520))
   $script:W.Next.Text = "Close"; $script:W.Next.Enabled = $true
   Set-BackHandler $null
   Set-NextHandler { $script:W.Form.Close() }

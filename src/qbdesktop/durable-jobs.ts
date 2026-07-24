@@ -48,7 +48,7 @@ function mapJob(row: JobRow): ProviderJob {
 export class DurableProviderJobs {
   constructor(
     private readonly pool: pg.Pool = getPool(),
-    private readonly leaseSeconds = Number(process.env.PROVIDER_JOB_LEASE_SECONDS ?? 120),
+    private readonly leaseSeconds = Number(process.env.PROVIDER_JOB_LEASE_SECONDS ?? 300),
   ) {}
 
   async enqueue(input: {

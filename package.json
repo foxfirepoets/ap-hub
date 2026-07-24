@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "AI Accountant Hub — Gmail → proof-gated → QuickBooks Online (sandbox) invoice pipeline",
+  "description": "AI Accountant Hub — human-supervised Gmail invoice and statement intake for supported QuickBooks editions",
   "engines": {
     "node": ">=20"
   },

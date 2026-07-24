@@ -268,3 +268,44 @@ Total chunks: 6
   and no real draft or email transmission occurred.
 <promise>CHUNK TASK COMPLETE: CHUNK_5_DRAFT_UI</promise>
 <promise>CHUNK COMPLETE: CHUNK_5_PRODUCT</promise>
+## CHUNK_5_DRAFT_UI — independent truth audit
+
+- Commit: `530e71b2250994e13b20cc18fe897dc33bfd4c47`
+- Verdict: GREEN
+- Independent validation: `npm run verify` exited 0.
+- Evidence: ESLint, secret-leak scan, TypeScript, 57 Vitest files / 421 tests, Next.js production build, and 18 Playwright contract flows passed.
+- UI safety evidence: lifecycle, compose-scope recovery, roles, immutable externally sent state, source-thread link, screenshot generation, and hostile DOM/source no-send assertions passed.
+- Live external proof: N/A; browser contracts use stubbed APIs.
+
+## CHUNK_6_OPERATIONS - 2026-07-24
+- Aligned typed config, `.env.example`, CLI/GUI installer output, and durable-job
+  defaults for optional Gmail drafts and company-bound QBD processing.
+- Safe defaults remain `GMAIL_DRAFTS_ENABLED=false`,
+  `QB_DESKTOP_ENABLED=false`, and `QB_DESKTOP_WRITE_ENABLED=false`. QBD write
+  enablement is refused unless Desktop is enabled and an expected company ID is
+  configured; provider-job leases are bounded to 30–900 seconds and default 300.
+- Extended `/health` with count-only operational signals for queued/expired/
+  uncertain/failed/held provider jobs, held/unbalanced statements, and failed
+  draft attempts. Structured health logs contain aggregates only, never payloads,
+  addresses, document contents, tokens, passwords, or provider secrets.
+- Added executable disposable recovery tooling that hard-refuses database names
+  outside `aphub_disposable_*`, plus honest backup/restore, migration rollback,
+  monitoring, and disposable Gmail/QBO/QBD certification instructions.
+- PowerShell parser evidence: `POWERSHELL_PARSE_PASS files=4`.
+- Guided installer evidence: `install-gui self-test OK -- all pages built (incl.
+  credentials) + recovery-key gate enforced`.
+- Compose evidence: `docker compose config --quiet` exited 0. Docker Desktop's
+  engine was not running, so no container-runtime health claim is made.
+- Recovery evidence against local PostgreSQL:
+  `RECOVERY_REHEARSAL_PASS database=aphub_disposable_cbv_operations
+  marker=before-backup`; the disposable database was removed afterward.
+- Targeted evidence: config and operational-health tests -> 2 files / 11 tests
+  passed; TypeScript passed.
+- Secret-shaped diff scan: no credential-shaped tracked value; only environment
+  variable names, blank placeholders, generated variables, and test-only literals.
+- Repository evidence: `npm run verify` exited 0 -> lint PASS; boundary scan PASS;
+  typecheck PASS; 58 Vitest files / 426 tests PASS; Next.js production build PASS;
+  Playwright 18/18 PASS.
+- Live external proof: NOT VERIFIED by design; no Gmail operation, QBO/QBD write,
+  deployment, or real-company change was performed.
+<promise>CHUNK TASK COMPLETE: CHUNK_6_OPERATIONS</promise>

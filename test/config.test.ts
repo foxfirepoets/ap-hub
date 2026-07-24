@@ -64,4 +64,46 @@ describe('config', () => {
       /QB_DESKTOP_MODE/,
     );
   });
+
+  it('keeps Gmail drafts and QBD writes off by default with a bounded job lease', () => {
+    const cfg = loadConfig({ ...baseEnv } as any);
+    expect(cfg.GMAIL_DRAFTS_ENABLED).toBe(false);
+    expect(cfg.QB_DESKTOP_ENABLED).toBe(false);
+    expect(cfg.QB_DESKTOP_WRITE_ENABLED).toBe(false);
+    expect(cfg.QB_DESKTOP_COMPANY_ID).toBe('');
+    expect(cfg.PROVIDER_JOB_LEASE_SECONDS).toBe(300);
+  });
+
+  it('requires an enabled, company-bound QBD connection before write enablement', () => {
+    expect(() =>
+      loadConfig({ ...baseEnv, QB_DESKTOP_WRITE_ENABLED: 'true' } as any),
+    ).toThrow(/QB_DESKTOP_ENABLED/);
+    expect(() =>
+      loadConfig({
+        ...baseEnv,
+        QB_DESKTOP_ENABLED: 'true',
+        QBWC_PASSWORD: 'test-only-password',
+        QB_DESKTOP_WRITE_ENABLED: 'true',
+      } as any),
+    ).toThrow(/QB_DESKTOP_COMPANY_ID/);
+    const cfg = loadConfig({
+      ...baseEnv,
+      QB_DESKTOP_ENABLED: 'true',
+      QBWC_PASSWORD: 'test-only-password',
+      QB_DESKTOP_WRITE_ENABLED: 'true',
+      QB_DESKTOP_COMPANY_ID: 'test-company-only',
+      PROVIDER_JOB_LEASE_SECONDS: '600',
+    } as any);
+    expect(cfg.QB_DESKTOP_WRITE_ENABLED).toBe(true);
+    expect(cfg.PROVIDER_JOB_LEASE_SECONDS).toBe(600);
+  });
+
+  it('rejects unsafe QBD lease durations', () => {
+    expect(() =>
+      loadConfig({ ...baseEnv, PROVIDER_JOB_LEASE_SECONDS: '5' } as any),
+    ).toThrow(/PROVIDER_JOB_LEASE_SECONDS/);
+    expect(() =>
+      loadConfig({ ...baseEnv, PROVIDER_JOB_LEASE_SECONDS: '3600' } as any),
+    ).toThrow(/PROVIDER_JOB_LEASE_SECONDS/);
+  });
 });

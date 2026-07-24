@@ -36,7 +36,7 @@ Execute tasks in order. Each checkbox is one independently verifiable Ralph iter
 
 ## CHUNK_6_HARDENING — Operational and adversarial proof
 
-- [ ] CHUNK_6_OPERATIONS — Align config, `.env.example`, installers, health/diagnostics, monitoring logs, backup/restore, migration rollback, and disposable live-certification instructions with QBD durable writes, Gmail drafts, and statement processing while retaining safe defaults. Evidence: env-contract tests, PowerShell parser/SelfTest output, `docker compose config`, secret-shaped diff scan, backup/restore rehearsal on a disposable DB, health/metric assertions, and `npm run verify`.
+- [x] CHUNK_6_OPERATIONS — Align config, `.env.example`, installers, health/diagnostics, monitoring logs, backup/restore, migration rollback, and disposable live-certification instructions with QBD durable writes, Gmail drafts, and statement processing while retaining safe defaults. Evidence: env-contract tests, PowerShell parser/SelfTest output, `docker compose config`, secret-shaped diff scan, backup/restore rehearsal on a disposable DB, health/metric assertions, and `npm run verify`.
 
 - [ ] CHUNK_6_RELEASE_PROOF — Run the complete adversarial release gate and record artifacts for must-not-break guarantees, capability truth, duplicate prevention, tenant isolation, statement correctness, Gmail no-send, existing invoice/auth/proof/audit behavior, broker tests, build outputs, and separately labeled disposable-account checks. Evidence: zero unchecked local acceptance criteria, `npm run verify`, broker test transcript, hostile `rg`/boundary scans, whole-build `spec-vs-build-brutal-audit`, and deployed-environment HTTP/DB/screenshot/log artifacts; external items remain explicitly `NOT VERIFIED` unless actually observed.
 
