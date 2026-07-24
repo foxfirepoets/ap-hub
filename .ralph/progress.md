@@ -77,3 +77,25 @@ Total chunks: 6
 - Repository evidence: `npm run verify` -> lint PASS; boundary scan PASS; typecheck PASS; 52 files / 385 tests PASS; Next.js production build PASS; Playwright 8/8 PASS.
 - No provider calls, production writes, or real-company writes were performed.
 <promise>CHUNK TASK COMPLETE: CHUNK_2_DURABLE_JOBS</promise>
+## CHUNK_2_DURABLE_JOBS — independent truth audit
+
+- Commit: `e016b7e385ef289b57ed202b3a561eb1e510f847`
+- Verdict: GREEN
+- Independent validation: `npm run verify` exited 0.
+- Evidence: ESLint, secret-leak scan, TypeScript, 52 Vitest files / 385 tests, Next.js production build, and 8 Playwright contract flows passed.
+- Database evidence: restart persistence, per-connection lease exclusion, tenant isolation, expired-lease recovery, company mismatch hold, and uncertain-result retry refusal passed against PostgreSQL.
+- Live external proof: N/A; no provider or production writes were performed.
+
+## CHUNK_2_POSTING_CONTRACT - 2026-07-24
+- Added a QBD `AccountingConnector` implementation behind the same provider-neutral posting boundary used by QBO.
+- Added BillQuery qbXML generation and strict BillRet response parsing for external TxnID, EditSequence, vendor, reference, date, and amount; provider errors and incomplete identities fail visibly.
+- QBD duplicate probes use vendor/reference/date and authoritative read-back uses TxnID. Unsupported attachments, currency, and dimensions are declared and never silently discarded.
+- Added durable known-result completion, known-failure, uncertain-outcome hold, and provider-evidence adoption transitions to `provider_jobs`.
+- Fixed posting projections to use the actual provider in reconciliation/audit and corrected the timeout-adoption entity-type projection.
+- Simulated QBWC happy path performed pre-create query, exactly one BillAdd, read-back, reconciliation, and provider-labeled audit through `postOnce`.
+- Lost-response simulation proved exactly one provider create followed by query/adoption; malformed and error qbXML fixtures fail closed.
+- Targeted evidence: QBD/shared posting + QBO connector + existing posting + durable job suites -> 4 files / 38 tests passed.
+- Repository evidence: `npm run verify` -> lint PASS; boundary scan PASS; typecheck PASS; 53 files / 390 tests PASS; Next.js production build PASS; Playwright 8/8 PASS.
+- Safety evidence: all provider exchanges were injected simulations; no credentials, live providers, production settings, or real-company writes were used or enabled.
+<promise>CHUNK TASK COMPLETE: CHUNK_2_POSTING_CONTRACT</promise>
+<promise>CHUNK COMPLETE: CHUNK_2_QBD</promise>

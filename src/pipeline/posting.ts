@@ -212,7 +212,7 @@ export async function postOnce(tenantId: number, proposalId: number, deps: PostD
     try {
       const adopt = await deps.connector.detectExisting(txn, p.idempotency_key);
       if (adopt) {
-        await recordPosting(tenantId, p, txn, adopt.externalId, adopt.revision, { adoptedAfterTimeout: true }, adopt.raw);
+        await recordPosting(tenantId, p, txnType, adopt.externalId, adopt.revision, { adoptedAfterTimeout: true }, adopt.raw);
         return { status: 'posted', postingId: -1, qboId: adopt.externalId };
       }
     } catch {
@@ -256,7 +256,7 @@ export async function postOnce(tenantId: number, proposalId: number, deps: PostD
   await query(
     `INSERT INTO reconciliation (tenant_id, kind, left_ref, right_ref, match_status, variance)
      VALUES ($1,'proposal_vs_created',$2,$3,'matched',$4)`,
-    [tenantId, `proposal:${proposalId}`, `qbo:${created.externalId}`, JSON.stringify({ diffHash: hashOf(readBack) })],
+    [tenantId, `proposal:${proposalId}`, `${deps.connector.provider}:${created.externalId}`, JSON.stringify({ diffHash: hashOf(readBack) })],
   );
   await writeAudit({
     tenantId,
@@ -264,7 +264,7 @@ export async function postOnce(tenantId: number, proposalId: number, deps: PostD
     entity: `posting:${postingId}`,
     realm: deps.connector.companyId,
     afterHash: hashOf(readBack),
-    detail: { qboId: created.externalId, txnType },
+    detail: { provider: deps.connector.provider, externalId: created.externalId, txnType },
   });
 
   // --- AuditProof anchor (A1-P2.2): anchor failure NEVER re-creates the txn ---

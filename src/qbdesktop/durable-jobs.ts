@@ -171,6 +171,57 @@ export class DurableProviderJobs {
     return result.rowCount === 1;
   }
 
+  async complete(input: {
+    tenantId: number; jobId: number; leaseToken: string;
+    responsePayload: Record<string, unknown>;
+  }): Promise<ProviderJob | null> {
+    const { rows } = await this.pool.query<JobRow>(
+      `UPDATE provider_jobs SET status='succeeded',response_payload=$4,
+         lease_token=NULL,leased_at=NULL,lease_expires_at=NULL,
+         error_code=NULL,error_detail=NULL,updated_at=now()
+       WHERE tenant_id=$1 AND id=$2 AND status='sent' AND lease_token=$3
+       RETURNING *`,
+      [input.tenantId, input.jobId, input.leaseToken, input.responsePayload],
+    );
+    return rows[0] ? mapJob(rows[0]) : null;
+  }
+
+  async fail(input: {
+    tenantId: number; jobId: number; leaseToken: string;
+    errorCode: string; errorDetail: string; outcomeKnown: boolean;
+  }): Promise<ProviderJob | null> {
+    const { rows } = await this.pool.query<JobRow>(
+      `UPDATE provider_jobs SET status=$4,error_code=$5,error_detail=$6,
+         lease_token=NULL,leased_at=NULL,lease_expires_at=NULL,updated_at=now()
+       WHERE tenant_id=$1 AND id=$2 AND status='sent' AND lease_token=$3
+       RETURNING *`,
+      [input.tenantId, input.jobId, input.leaseToken,
+        input.outcomeKnown ? 'failed' : 'held',
+        input.outcomeKnown ? input.errorCode : 'UNCERTAIN_OUTCOME', input.errorDetail],
+    );
+    return rows[0] ? mapJob(rows[0]) : null;
+  }
+
+  /** Resolve an ambiguous create only after a provider query found the existing bill. */
+  async adoptUncertain(input: {
+    tenantId: number; jobId: number; externalId: string; revision: string;
+    providerResponse: Record<string, unknown>;
+  }): Promise<ProviderJob | null> {
+    const { rows } = await this.pool.query<JobRow>(
+      `UPDATE provider_jobs SET status='succeeded',
+         response_payload=$3,error_code=NULL,
+         error_detail='adopted after provider duplicate query',
+         lease_token=NULL,leased_at=NULL,lease_expires_at=NULL,updated_at=now()
+       WHERE tenant_id=$1 AND id=$2 AND status='held' AND error_code='UNCERTAIN_OUTCOME'
+       RETURNING *`,
+      [input.tenantId, input.jobId, {
+        ...input.providerResponse, adopted: true,
+        externalId: input.externalId, revision: input.revision,
+      }],
+    );
+    return rows[0] ? mapJob(rows[0]) : null;
+  }
+
   async retry(tenantId: number, jobId: number): Promise<ProviderJob | null> {
     const updated = await this.pool.query<JobRow>(
       `UPDATE provider_jobs SET status='queued',lease_token=NULL,leased_at=NULL,

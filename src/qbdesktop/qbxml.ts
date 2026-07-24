@@ -54,6 +54,27 @@ export function itemQueryRq(requestID = '1'): string {
   return wrapQbxml(`<ItemQueryRq requestID="${xmlEscape(requestID)}"/>`);
 }
 
+export interface BillQueryInput {
+  txnId?: string;
+  vendorName?: string;
+  refNumber?: string;
+  txnDate?: string;
+}
+
+/** Query a known bill or probe for a vendor/reference/date duplicate before create. */
+export function billQueryRq(input: BillQueryInput, requestID = '1'): string {
+  const filters = [
+    input.txnId ? `<TxnID>${xmlEscape(input.txnId)}</TxnID>` : '',
+    input.vendorName ? `<EntityFilter><FullName>${xmlEscape(input.vendorName)}</FullName></EntityFilter>` : '',
+    input.refNumber ? `<RefNumberFilter><MatchCriterion>Equal</MatchCriterion><RefNumber>${xmlEscape(input.refNumber)}</RefNumber></RefNumberFilter>` : '',
+    input.txnDate
+      ? `<TxnDateRangeFilter><FromTxnDate>${xmlEscape(input.txnDate)}</FromTxnDate><ToTxnDate>${xmlEscape(input.txnDate)}</ToTxnDate></TxnDateRangeFilter>`
+      : '',
+  ].join('');
+  if (!filters) throw new Error('BillQueryRq requires a TxnID or duplicate probe fields');
+  return wrapQbxml(`<BillQueryRq requestID="${xmlEscape(requestID)}">${filters}</BillQueryRq>`);
+}
+
 // --- Write request (BillAdd) — enqueued ONLY in write mode ------------------
 
 export interface BillLine {
@@ -121,6 +142,63 @@ export interface QbxmlParseResult {
   statuses: QbxmlStatus[];
   ok: boolean; // every response element has statusCode "0"
   raw: string;
+}
+
+export interface QbdBillRet {
+  txnId: string;
+  editSequence: string;
+  refNumber?: string;
+  txnDate?: string;
+  vendorName?: string;
+  amountDue?: number;
+  raw: Record<string, unknown>;
+}
+
+function xmlDecode(value: string): string {
+  return value
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'").replace(/&amp;/g, '&');
+}
+
+function tag(xml: string, name: string): string | undefined {
+  const match = new RegExp(`<${name}>([\\s\\S]*?)</${name}>`).exec(xml);
+  return match?.[1] === undefined ? undefined : xmlDecode(match[1].trim());
+}
+
+/** Extract BillRet identities from BillAddRs/BillQueryRs fixtures. */
+export function parseBillRets(xml: string): QbdBillRet[] {
+  const parsed = parseQbxmlResponse(xml);
+  if (!parsed.ok) {
+    const first = parsed.statuses.find((status) => status.statusCode !== '0');
+    throw new Error(`QBD_${first?.statusCode ?? 'MALFORMED'}: ${first?.statusMessage || 'qbXML response failed'}`);
+  }
+  const rows: QbdBillRet[] = [];
+  const retRe = /<BillRet>([\s\S]*?)<\/BillRet>/g;
+  let match: RegExpExecArray | null;
+  while ((match = retRe.exec(xml)) !== null) {
+    const body = match[1] ?? '';
+    const txnId = tag(body, 'TxnID');
+    const editSequence = tag(body, 'EditSequence');
+    if (!txnId || !editSequence) throw new Error('QBD_MALFORMED: BillRet missing TxnID or EditSequence');
+    const amount = tag(body, 'AmountDue');
+    rows.push({
+      txnId,
+      editSequence,
+      refNumber: tag(body, 'RefNumber'),
+      txnDate: tag(body, 'TxnDate'),
+      vendorName: tag(tag(body, 'VendorRef') ?? '', 'FullName'),
+      amountDue: amount === undefined ? undefined : Number(amount),
+      raw: {
+        TxnID: txnId,
+        EditSequence: editSequence,
+        RefNumber: tag(body, 'RefNumber'),
+        TxnDate: tag(body, 'TxnDate'),
+        VendorName: tag(tag(body, 'VendorRef') ?? '', 'FullName'),
+        AmountDue: amount === undefined ? undefined : Number(amount),
+      },
+    });
+  }
+  return rows;
 }
 
 /**

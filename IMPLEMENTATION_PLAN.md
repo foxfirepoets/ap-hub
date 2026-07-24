@@ -14,7 +14,7 @@ Execute tasks in order. Each checkbox is one independently verifiable Ralph iter
 
 - [x] CHUNK_2_DURABLE_JOBS — Replace the QBD process-memory queue with PostgreSQL `provider_jobs`, stable idempotency keys, one active write lease per connection, lease expiry recovery, company-identity verification, and owner-only job status/retry APIs. Evidence: real-test-Postgres tests proving restart persistence, connection/tenant lease isolation, expired-lease recovery, identity mismatch hold, retry refusal for uncertain results, and `npm run verify`.
 
-- [ ] CHUNK_2_POSTING_CONTRACT — Route approved bills through the existing provider-neutral posting boundary, implementing QBD BillAdd response parsing, provider duplicate query/read-back adoption, reconciliation/audit projection, and shared QBO/QBD connector contract behavior without enabling production or real-company writes in automation. Evidence: simulated QBWC happy path, lost-response adoption with exactly one provider create, replay/error fixtures, QBO sandbox-adapter contract tests, proof-gate regression tests, and `npm run verify`.
+- [x] CHUNK_2_POSTING_CONTRACT — Route approved bills through the existing provider-neutral posting boundary, implementing QBD BillAdd response parsing, provider duplicate query/read-back adoption, reconciliation/audit projection, and shared QBO/QBD connector contract behavior without enabling production or real-company writes in automation. Evidence: simulated QBWC happy path, lost-response adoption with exactly one provider create, replay/error fixtures, QBO sandbox-adapter contract tests, proof-gate regression tests, and `npm run verify`.
 
 ## CHUNK_3_STATEMENTS — Reviewed bank-statement workflow
 
