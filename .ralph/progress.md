@@ -309,3 +309,47 @@ Total chunks: 6
 - Live external proof: NOT VERIFIED by design; no Gmail operation, QBO/QBD write,
   deployment, or real-company change was performed.
 <promise>CHUNK TASK COMPLETE: CHUNK_6_OPERATIONS</promise>
+
+## CHUNK_6_OPERATIONS — independent truth audit
+
+- Commit: `a4e0ff02976bd0c5009073b7e1205fa51390c1ad`
+- Verdict: GREEN for the local/disposable evidence boundary.
+- Independent validation: `npm run verify` exited 0: ESLint, boundary and secret scans,
+  TypeScript, 58 Vitest files / 426 tests, Next.js production build, and 18 Playwright
+  contracts passed.
+- Independent installer check: `deploy/install-gui.ps1 -SelfTest` exited 0 and reported
+  all pages built, including credentials, with the recovery-key gate enforced.
+- Compose configuration and PowerShell parsing passed. The Docker runtime, live Gmail,
+  live QBO/QBD, production deployment, and real-company changes remain NOT VERIFIED.
+
+## CHUNK_6_RELEASE_PROOF - 2026-07-24
+
+- Fresh-context whole-build reconciliation is recorded at
+  `docs/CHUNK_6_RELEASE_PROOF-audit-2026-07-24.md`.
+- Local verdict: GREEN. Gate-4 launch verdict: CANNOT CERTIFY (code-only), because no
+  safe deployed URL, deployed test identities, disposable Gmail, QBO sandbox, or QBD
+  test-company credentials/artifacts were supplied.
+- Clean repository evidence: `npm run verify` exited 0; ESLint, boundary/secret scan,
+  TypeScript, 58 Vitest files / 426 tests, Next.js production build, and 18 Playwright
+  UI contracts passed.
+- Hostile critical-path rerun: migration, durable jobs, QBD posting, statements,
+  statement review, Gmail drafts, reply-draft API, capabilities, auth, posting, and
+  broker suites passed: 11 files / 92 tests.
+- Adversarial evidence covers duplicate/lost-response adoption, concurrent approval,
+  tenant and connection isolation, role denial, statement zero-write filing, Gmail
+  reply-draft no-send, proof fail-closed, unsupported capability truth, oversized
+  attachments, existing invoice/auth/audit regressions, and random 10% re-audit.
+- The first full-gate run had all 426 test bodies pass but exited 1 after the accounting
+  intake migration suite teardown exceeded 30 seconds. The suite then passed in the
+  targeted rerun and in the clean complete rerun. The audit retains this as an
+  operational flake risk instead of suppressing it.
+- Static route/button/form/stub/TODO scans found no active-path release defect. The
+  legacy locked gatekeeper forward path is distinct from reply drafts and remains
+  covered by lockdown/idempotency tests.
+- External owner-gated items remain NOT VERIFIED: deployed cross-tenant/auth probes,
+  live Gmail draft/no-send observation, QBO/QBD disposable create/read-back, target
+  backup restoration, live capability UI matrix, and performance targets.
+- No deployment, live email, provider call, production mutation, or real-company write
+  was performed.
+<promise>CHUNK TASK COMPLETE: CHUNK_6_RELEASE_PROOF</promise>
+<promise>CHUNK COMPLETE: CHUNK_6_HARDENING</promise>
