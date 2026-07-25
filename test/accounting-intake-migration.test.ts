@@ -261,6 +261,12 @@ describe.sequential('008 accounting intake migration', () => {
          '{"scope":["gmail.readonly","gmail.compose"]}')`,
       [tenant1],
     );
+    // CHUNK_2_DATABASE layers 014/015 above 013, the same way 009-013 are layered above 008
+    // below. Revert them first so this test can still exercise 013's retained-credential
+    // refusal. Neither carries a refusal guard: 014 holds only this install's own identity
+    // row and 015 only backup bookkeeping, so both roll back cleanly.
+    await expect(migrateDown(disposableUrl.toString())).resolves.toBe('015_backups.sql');
+    await expect(migrateDown(disposableUrl.toString())).resolves.toBe('014_local_install.sql');
     await expect(migrateDown(disposableUrl.toString())).rejects.toThrow(
       'refusing DOWN for 013_local_runtime_credentials: retained rows exist',
     );
@@ -289,7 +295,33 @@ describe.sequential('008 accounting intake migration', () => {
     )).rows[0].relation).toBeNull();
     await expect(migrateUp(disposableUrl.toString())).resolves.toEqual([
       '013_local_runtime_credentials.sql',
+      '014_local_install.sql',
+      '015_backups.sql',
     ]);
+    // 014 UP -> DOWN -> UP has now completed a full cycle. Prove the singleton it exists to
+    // guarantee actually holds, per spec §13.
+    expect((await pool.query(
+      `SELECT to_regclass('public.local_install') AS relation`,
+    )).rows[0].relation).toBe('local_install');
+    await pool.query(
+      `INSERT INTO local_install (install_id, os_account_id, platform, app_version, db_port)
+       VALUES (gen_random_uuid(), 'S-1-5-21-0-0-0-1001', 'win32', '0.1.0', 55433)`,
+    );
+    await expect(pool.query(
+      `INSERT INTO local_install (id, install_id, os_account_id, platform, app_version, db_port)
+       VALUES (2, gen_random_uuid(), 'S-1-5-21-0-0-0-1002', 'win32', '0.1.0', 55434)`,
+    )).rejects.toMatchObject({ code: '23514' });
+    // 015: an unverified backup must remain distinguishable from a verified one, because
+    // rotation counts only the verified ones.
+    await pool.query(
+      `INSERT INTO backups (kind, path, size_bytes, manifest_hash, row_counts, verified_at)
+       VALUES ('scheduled', '/b/unverified.enc', 10, 'h1', '{}'::jsonb, NULL),
+              ('scheduled', '/b/verified.enc',   10, 'h2', '{}'::jsonb, now())`,
+    );
+    expect((await pool.query(
+      `SELECT count(*)::int AS count FROM backups WHERE verified_at IS NOT NULL`,
+    )).rows[0].count).toBe(1);
+    await pool.query('TRUNCATE backups, local_install');
     const document1 = (await pool.query<{ id: string }>(
       `INSERT INTO accounting_documents
          (tenant_id, message_id, kind, sha256, status, classification_confidence)
@@ -349,6 +381,8 @@ describe.sequential('008 accounting intake migration', () => {
 
     // Later additive migrations are layered above 008. Revert them first so
     // this test can exercise 008's retained-accounting-data refusal.
+    await expect(migrateDown(disposableUrl.toString())).resolves.toBe('015_backups.sql');
+    await expect(migrateDown(disposableUrl.toString())).resolves.toBe('014_local_install.sql');
     await expect(migrateDown(disposableUrl.toString())).resolves.toBe(
       '013_local_runtime_credentials.sql',
     );
@@ -387,9 +421,18 @@ describe.sequential('008 accounting intake migration', () => {
       '011_sso_login_states.sql',
       '012_classification_dispatches.sql',
       '013_local_runtime_credentials.sql',
+      '014_local_install.sql',
+      '015_backups.sql',
     ]);
     expect((await pool.query(
       `SELECT to_regclass('public.accounting_documents') AS relation`,
     )).rows[0].relation).toBe('accounting_documents');
+    // Full stack, including the two migrations this phase adds, reaches head from empty.
+    expect((await pool.query(
+      `SELECT to_regclass('public.local_install') AS relation`,
+    )).rows[0].relation).toBe('local_install');
+    expect((await pool.query(
+      `SELECT to_regclass('public.backups') AS relation`,
+    )).rows[0].relation).toBe('backups');
   }, 60_000);
 });

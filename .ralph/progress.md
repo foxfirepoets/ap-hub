@@ -232,3 +232,58 @@ NOT verified, and not claimed:
 - Packaged-installer behavior (CHUNK_9 owns it) — the shell was exercised unpackaged.
 
 <promise>CHUNK COMPLETE: CHUNK_1_SHELL</promise>
+
+### 2026-07-25 — CHUNK_2_DATABASE — PARTIAL (promise NOT appended)
+
+**Open Question 1 resolved with measured numbers** — full workings in
+`docs/audits/postgres-bundling-spike-2026-07-25.md`.
+
+| Metric | A: official binaries | B: embedded-postgres |
+|---|---|---|
+| Shippable subset (bin+lib+share) | 119.6 MB | 99 MB |
+| initdb (first launch only) | 11,820 ms | 14,455 ms |
+| Total first launch | 12,755 ms | 14,838 ms |
+| Warm start → query | 726 ms | 691 ms |
+| Release channel | stable | **beta only, every version** |
+
+Decision: **candidate A**, trimmed to bin+lib+share (the full 919.8 MB download is 87%
+pgAdmin/symbols/doc, none of which ships). Decided on release channel first — `embedded-postgres`
+has never shipped a stable release across its 16.x, 17.x or 18.x lines, and this component holds
+the user's entire AP history — and on first-launch headroom second: against the ≤15 s cold-launch
+budget A leaves 2.2 s and B leaves 0.2 s, before Electron/engine/migrations take their share.
+Honest counter-argument recorded: B is clearly better on macOS (free platform binaries via
+optionalDependencies); revisit for the macOS target specifically if sourcing a relocatable macOS
+build proves hard in CHUNK_9.
+
+Done:
+- `migrations/014_local_install.sql` + `.down.sql`, `migrations/015_backups.sql` + `.down.sql`.
+  Verified against the live database: singleton CHECK enforced (23514), db_port range enforced,
+  platform enum enforced, verified/unverified backups distinguishable, UP → DOWN → UP green.
+- `src/db/bootstrap.ts` — port probe from 55432 upward, 5432 additionally refused outright,
+  bounded search, binds 127.0.0.1 explicitly (never 0.0.0.0, which would briefly expose a port
+  on every interface). `test/db-bootstrap.test.ts` 11/11, holding real sockets open rather than
+  mocking the answer being discovered.
+
+**ESCALATED AND RESOLVED BY THE OWNER:** adding 014/015 broke
+`test/accounting-intake-migration.test.ts`, which is structurally coupled to 013 being the head
+migration (`migrateDown` pops exactly one). The standing rule forbids editing an existing safety
+test; spec §13 names that same file as where the new migrations' UP → DOWN → UP must be proven.
+Stopped and escalated rather than deciding. Owner chose the additive extension. Result:
+**43 insertions, 0 deletions** — no existing assertion weakened, deleted or changed, and the new
+cycle spec §13 asks for is now proven there.
+
+NOT done — CHUNK_2 is genuinely incomplete:
+- PostgreSQL is not bundled into the installer; no trim script exists yet.
+- No supervised PostgreSQL child, no private data directory.
+- The probed port is not yet written to `install.json`.
+- Migrations are not yet wired to run automatically at launch.
+
+Verification: `npm run verify` **exit 0**. 66 test files (was 65), 31 Playwright.
+Locked forwarder: **exactly one** provider-send call site. Not zero.
+
+Environment note found while measuring: this machine already runs two PostgreSQL instances —
+a scoop install on 5432 and the archived `cbv-loc001` build's bundled instance on 55432
+(`%LOCALAPPDATA%\APHub\bin\pgsql`, PostgreSQL 16.4). Both ports the spec's collision test cares
+about are genuinely occupied here, which is a useful fixture for CHUNK_2's remaining work. That
+install root also contains a `.env` and a `secrets/` directory from the old design, which spec §9
+now forbids — outside the repo, but relevant to CHUNK_9's uninstall/repair story.
