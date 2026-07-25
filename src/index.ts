@@ -5,6 +5,8 @@ import { startQueue, stopQueue, getQueue, JOBS } from './queue.js';
 import { createHttpServer } from './http.js';
 import { registerAuthRoutes } from './auth/routes.js';
 import { registerPipelineJobs } from './pipeline/register.js';
+import { initializeTokenCredentialAuthority } from './auth/tokens.js';
+import { createHostAdapter } from './host/index.js';
 
 /**
  * Service boot: HTTP server (health + OAuth callbacks) + pg-boss workers in one
@@ -14,6 +16,12 @@ import { registerPipelineJobs } from './pipeline/register.js';
 export async function boot(): Promise<() => Promise<void>> {
   const cfg = config();
   getPool(cfg.DATABASE_URL);
+  const installId = process.env.APHUB_INSTALL_ID;
+  if (!installId) throw new Error('APHUB_INSTALL_ID_REQUIRED');
+  await initializeTokenCredentialAuthority({
+    store: createHostAdapter().secretStore,
+    installId,
+  });
 
   const boss = await startQueue(cfg.DATABASE_URL);
 

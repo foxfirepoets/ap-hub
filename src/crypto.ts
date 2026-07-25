@@ -1,4 +1,10 @@
-import { createCipheriv, createDecipheriv, randomBytes, createHash } from 'node:crypto';
+import {
+  createCipheriv,
+  createDecipheriv,
+  randomBytes,
+  createHash,
+  timingSafeEqual,
+} from 'node:crypto';
 
 /**
  * AES-256-GCM encryption for OAuth tokens at rest (CHUNK_2). Key = ENCRYPTION_KEY,
@@ -39,4 +45,23 @@ export function sha256Hex(buf: Buffer | string): string {
   return createHash('sha256')
     .update(typeof buf === 'string' ? Buffer.from(buf, 'utf8') : buf)
     .digest('hex');
+}
+
+/** Constant-time comparison once lengths match; neither value is included in errors. */
+export function secretMaterialEqual(expected: string, actual: string): boolean {
+  const left = Buffer.from(expected, 'utf8');
+  const right = Buffer.from(actual, 'utf8');
+  return left.length === right.length && timingSafeEqual(left, right);
+}
+
+/**
+ * Provider-independent proof used before retiring a legacy secret. Besides exact
+ * read-back equality, this proves the recovered bytes survive authenticated
+ * encryption/decryption. The ephemeral key and ciphertext are never persisted.
+ */
+export function verifySecretMaterial(expected: string, actual: string): boolean {
+  if (!secretMaterialEqual(expected, actual)) return false;
+  const ephemeralKey = randomBytes(32).toString('hex');
+  const recovered = decrypt(encrypt(actual, ephemeralKey), ephemeralKey);
+  return secretMaterialEqual(expected, recovered);
 }

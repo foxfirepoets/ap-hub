@@ -10,7 +10,14 @@ import { handleQboCallback as handleQboCallbackBound } from '../src/auth/qbo-oau
 import { resetTables, createTenant, createUser, countRows, closeAll } from './helpers.js';
 import { query } from '../src/db/pool.js';
 import { findActiveConnectionForTenant } from '../src/mapping/dimensionMappingStore.js';
-import { loadToken, saveToken } from '../src/auth/tokens.js';
+import {
+  configureTokenSecretAuthority,
+  initializeTokenCredentialAuthority,
+  loadToken,
+  migrateLegacyOAuthToken,
+  saveToken,
+} from '../src/auth/tokens.js';
+import type { SecretStore } from '../src/host/types.js';
 
 /**
  * CHUNK_2_REDIRECT — the plain HTTP server's OAuth callbacks now verify the signed
@@ -64,6 +71,7 @@ function handleQboCallback(
 
 describe('CHUNK_2_REDIRECT — handleGmailCallback / handleQboCallback', () => {
   beforeEach(() => {
+    configureTokenSecretAuthority(null);
     sessionForState.clear();
     getTokenMock.mockReset();
     fetchMock.mockReset();
@@ -71,6 +79,7 @@ describe('CHUNK_2_REDIRECT — handleGmailCallback / handleQboCallback', () => {
     return resetTables();
   });
   afterEach(() => {
+    configureTokenSecretAuthority(null);
     vi.unstubAllGlobals();
   });
   afterAll(closeAll);
@@ -390,5 +399,169 @@ describe('CHUNK_2_REDIRECT — handleGmailCallback / handleQboCallback', () => {
       expect(redirect).toHaveBeenCalledWith(`${config().WEB_BASE_URL}/onboarding?connect_error=qbo&reason=missing_code`);
       expect(await countRows('oauth_tokens', 'tenant_id=$1', [t])).toBe(0);
     });
+  });
+});
+
+class MemorySecretStore implements SecretStore {
+  readonly values = new Map<string, string>();
+  async put(target: string, secret: string) { this.values.set(target, secret); }
+  async get(target: string) { return this.values.get(target) ?? null; }
+  async delete(target: string) { this.values.delete(target); }
+}
+
+class FaultySecretStore extends MemorySecretStore {
+  putMode: 'ok' | 'pre-write' | 'post-write' = 'ok';
+  deleteFails = false;
+  override async put(target: string, secret: string) {
+    if (this.putMode === 'pre-write') throw new Error('injected');
+    await super.put(target, secret);
+    if (this.putMode === 'post-write') throw new Error('lost ack');
+  }
+  override async delete(target: string) {
+    if (this.deleteFails) throw new Error('cleanup failed');
+    await super.delete(target);
+  }
+}
+
+describe('credential-authority OAuth token persistence', () => {
+  beforeEach(async () => {
+    configureTokenSecretAuthority(null);
+    await resetTables();
+  });
+  afterEach(() => configureTokenSecretAuthority(null));
+
+  it('copies, reads back, cryptographically verifies, references, then retires legacy ciphertext', async () => {
+    const tenantId = await createTenant();
+    await saveToken(tenantId, 'gmail', {
+      accessToken: 'legacy-access',
+      refreshToken: 'legacy-refresh',
+      expiresAt: new Date('2030-01-02T03:04:05.000Z'),
+      scope: 'scope.read scope.compose',
+      realm: null,
+    });
+    const store = new MemorySecretStore();
+    const authority = { store, installId: 'install-test' };
+
+    await expect(migrateLegacyOAuthToken(tenantId, 'gmail', authority)).resolves.toBe('migrated');
+    expect(await countRows('oauth_tokens', 'tenant_id=$1', [tenantId])).toBe(0);
+    expect(await countRows('credential_refs', 'tenant_id=$1', [tenantId])).toBe(1);
+    expect(store.values.get(`APHub/install-test/gmail.oauth.${tenantId}`)).toContain('legacy-refresh');
+
+    configureTokenSecretAuthority(authority);
+    expect(await loadToken(tenantId, 'gmail')).toMatchObject({
+      accessToken: 'legacy-access',
+      refreshToken: 'legacy-refresh',
+      scope: 'scope.read scope.compose',
+    });
+  });
+
+  it('preserves the legacy row and removes a new target when verification is injected to fail', async () => {
+    const tenantId = await createTenant();
+    await saveToken(tenantId, 'qbo', {
+      accessToken: 'still-usable-access',
+      refreshToken: 'still-usable-refresh',
+      expiresAt: null,
+      scope: null,
+      realm: 'realm-1',
+    });
+    const store = new MemorySecretStore();
+
+    await expect(
+      migrateLegacyOAuthToken(
+        tenantId,
+        'qbo',
+        { store, installId: 'install-test' },
+        () => false,
+      ),
+    ).rejects.toThrow('SECRET_MIGRATION_FAILED');
+    expect(await countRows('oauth_tokens', 'tenant_id=$1', [tenantId])).toBe(1);
+    expect(await countRows('credential_refs', 'tenant_id=$1', [tenantId])).toBe(0);
+    expect(store.values.size).toBe(0);
+    expect((await loadToken(tenantId, 'qbo'))?.refreshToken).toBe('still-usable-refresh');
+  });
+
+  it.each(['pre-write', 'post-write'] as const)(
+    'reconciles an injected %s put failure without retiring legacy',
+    async (putMode) => {
+      const tenantId = await createTenant();
+      await saveToken(tenantId, 'gmail', {
+        accessToken: 'access', refreshToken: 'refresh', expiresAt: null, scope: null, realm: null,
+      });
+      const store = new FaultySecretStore();
+      store.putMode = putMode;
+      await expect(
+        migrateLegacyOAuthToken(tenantId, 'gmail', { store, installId: 'install-test' }),
+      ).rejects.toThrow('SECRET_MIGRATION_FAILED');
+      expect(store.values.size).toBe(0);
+      expect(await countRows('oauth_tokens', 'tenant_id=$1', [tenantId])).toBe(1);
+    },
+  );
+
+  it('reports cleanup failure explicitly while preserving the legacy authority', async () => {
+    const tenantId = await createTenant();
+    await saveToken(tenantId, 'gmail', {
+      accessToken: 'access', refreshToken: 'refresh', expiresAt: null, scope: null, realm: null,
+    });
+    const store = new FaultySecretStore();
+    store.putMode = 'post-write';
+    store.deleteFails = true;
+    await expect(
+      migrateLegacyOAuthToken(tenantId, 'gmail', { store, installId: 'install-test' }),
+    ).rejects.toThrow('SECRET_MIGRATION_CLEANUP_FAILED');
+    expect(await countRows('oauth_tokens', 'tenant_id=$1', [tenantId])).toBe(1);
+  });
+
+  it('never deletes a pre-existing matching target and is retry-idempotent', async () => {
+    const tenantId = await createTenant();
+    const original = {
+      accessToken: 'access', refreshToken: 'refresh', expiresAt: null, scope: null, realm: null,
+    };
+    await saveToken(tenantId, 'gmail', original);
+    const store = new MemorySecretStore();
+    const target = `APHub/install-test/gmail.oauth.${tenantId}`;
+    store.values.set(target, JSON.stringify(original));
+    await expect(
+      migrateLegacyOAuthToken(
+        tenantId, 'gmail', { store, installId: 'install-test' }, () => false,
+      ),
+    ).rejects.toThrow('SECRET_MIGRATION_FAILED');
+    expect(store.values.has(target)).toBe(true);
+    await expect(
+      migrateLegacyOAuthToken(tenantId, 'gmail', { store, installId: 'install-test' }),
+    ).resolves.toBe('migrated');
+    await expect(
+      migrateLegacyOAuthToken(tenantId, 'gmail', { store, installId: 'install-test' }),
+    ).resolves.toBe('absent');
+  });
+
+  it('startup composition migrates every tenant and subsequent saves bypass legacy storage', async () => {
+    const first = await createTenant('First');
+    const second = await createTenant('Second');
+    configureTokenSecretAuthority(null);
+    for (const tenantId of [first, second]) {
+      await saveToken(tenantId, 'gmail', {
+        accessToken: `access-${tenantId}`,
+        refreshToken: `refresh-${tenantId}`,
+        expiresAt: null,
+        scope: null,
+        realm: null,
+      });
+    }
+    const store = new MemorySecretStore();
+    await initializeTokenCredentialAuthority({ store, installId: 'install-test' });
+    expect(await countRows('oauth_tokens')).toBe(0);
+    expect(await countRows('credential_refs')).toBe(2);
+    expect(store.values.size).toBe(2);
+
+    await saveToken(first, 'gmail', {
+      accessToken: 'rotated',
+      refreshToken: 'rotated-refresh',
+      expiresAt: null,
+      scope: null,
+      realm: null,
+    });
+    expect(await countRows('oauth_tokens')).toBe(0);
+    expect((await loadToken(first, 'gmail'))?.refreshToken).toBe('rotated-refresh');
+    expect((await loadToken(second, 'gmail'))?.refreshToken).toBe(`refresh-${second}`);
   });
 });

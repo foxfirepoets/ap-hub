@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { encrypt, decrypt, sha256Hex } from '../src/crypto.js';
+import {
+  encrypt,
+  decrypt,
+  sha256Hex,
+  secretMaterialEqual,
+  verifySecretMaterial,
+} from '../src/crypto.js';
 import { redact, redactString } from '../src/logger.js';
 
 const KEY = 'a'.repeat(64);
@@ -15,6 +21,12 @@ describe('crypto', () => {
   });
   it('hashes deterministically', () => {
     expect(sha256Hex('abc')).toBe(sha256Hex(Buffer.from('abc')));
+  });
+  it('verifies exact UTF-8 bytes plus an authenticated encryption round trip', () => {
+    expect(secretMaterialEqual('päss🔐', 'päss🔐')).toBe(true);
+    expect(secretMaterialEqual('päss🔐', 'päss')).toBe(false);
+    expect(verifySecretMaterial('token-material', 'token-material')).toBe(true);
+    expect(verifySecretMaterial('token-material', 'token-material ')).toBe(false);
   });
 });
 

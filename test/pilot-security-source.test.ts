@@ -36,4 +36,11 @@ describe('pilot installer evidence and secret custody', () => {
     expect(gui).toContain('$res.RecoveryVerified');
     expect(gui).not.toContain('I have saved my recovery key');
   });
+
+  it('documents environment secret slots as migration-only legacy inputs', async () => {
+    const env = await source('.env.example');
+    expect(env).toContain('APHUB_INSTALL_ID=');
+    expect(env).toContain('LEGACY SECRET INPUTS — migration only');
+    expect(env).toContain('Windows Credential Manager is the runtime authority');
+  });
 });
