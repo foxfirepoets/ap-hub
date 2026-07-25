@@ -1,0 +1,35 @@
+{
+  "session_id": "2026-07-24T14:30:00Z-apqb01",
+  "started_at": "2026-07-24T14:30:00Z",
+  "updated_at": "2026-07-24T14:45:00Z",
+  "project_root": "C:\\Users\\Administrator\\Desktop\\ap-hub",
+  "pipeline_mode": "FULL",
+  "upstream_phases": {
+    "o2o_mapping": "SKIPPED",
+    "spec_generation": "COMPLETE",
+    "workspace_scaffold": "COMPLETE",
+    "ralph_planning": "COMPLETE"
+  },
+  "o2o_map_path": null,
+  "spec_path": "C:\\Users\\Administrator\\Desktop\\ap-hub\\specs\\SPEC-multi-edition-accounting-intake.md",
+  "tasks": [
+    {"task_name":"CHUNK_1_SCHEMA","phase":"COMPLETE","ralph_iterations":1,"tfl_cycles":1,"verdict":"GREEN","commit_sha":"5559df10f41511dfa5c3bf4a5cd4cab6fff9d4e0","validation_evidence":"npm run verify: 49 files, 367 tests, 8 UI contracts; disposable PostgreSQL UP-DOWN-UP and retained-row refusal passed","completed_at":"2026-07-24T19:55:00Z","escalation_reason":null},
+    {"task_name":"CHUNK_1_TYPES","phase":"COMPLETE","ralph_iterations":1,"tfl_cycles":1,"verdict":"GREEN","commit_sha":"50d32b8a045a2012755e23740c828438735c9b30","validation_evidence":"npm run verify: 50 files, 372 tests, 8 UI contracts; provider-neutral boundary and tenant-scoped repository tests passed","completed_at":"2026-07-24T20:20:00Z","escalation_reason":null},
+    {"task_name":"CHUNK_2_CAPABILITIES","phase":"COMPLETE","ralph_iterations":1,"tfl_cycles":1,"verdict":"GREEN","commit_sha":"33e0577cbd1c7645eeb01db13ccccc501841c4f6","validation_evidence":"npm run verify: 51 files, 380 tests, 8 UI contracts; capability matrix, incompatible-edition refusal, RBAC, and tenant isolation passed","completed_at":"2026-07-24T21:25:00Z","escalation_reason":null},
+    {"task_name":"CHUNK_2_DURABLE_JOBS","phase":"COMPLETE","ralph_iterations":1,"tfl_cycles":1,"verdict":"GREEN","commit_sha":"e016b7e385ef289b57ed202b3a561eb1e510f847","validation_evidence":"npm run verify: 52 files, 385 tests, 8 UI contracts; real-Postgres persistence, leases, identity holds, and uncertain retry refusal passed","completed_at":"2026-07-24T22:25:00Z","escalation_reason":null},
+    {"task_name":"CHUNK_2_POSTING_CONTRACT","phase":"COMPLETE","ralph_iterations":1,"tfl_cycles":1,"verdict":"GREEN","commit_sha":"a1ce78c10c18d669fba3d667dca6f60e414f1b66","validation_evidence":"npm run verify: 53 files, 390 tests, 8 UI contracts; simulated QBD create/adoption, QBO regressions, proof gates, reconciliation and audit passed","completed_at":"2026-07-24T23:15:00Z","escalation_reason":null},
+    {"task_name":"CHUNK_3_INGEST","phase":"COMPLETE","ralph_iterations":1,"tfl_cycles":1,"verdict":"GREEN","commit_sha":"722da3b17cae6032f180c57441788a0e6255e90c","validation_evidence":"npm run verify: 54 files, 401 tests, 8 UI contracts; 11 statement fixtures and invoice-routing regressions passed","completed_at":"2026-07-25T00:05:00Z","escalation_reason":null},
+    {"task_name":"CHUNK_3_REVIEW_API","phase":"COMPLETE","ralph_iterations":1,"tfl_cycles":1,"verdict":"GREEN","commit_sha":"b46340260781b65c9be6ce93a5d2eb7c99f183ed","validation_evidence":"npm run verify: 55 files, 408 tests, 8 UI contracts; statement RBAC/tenant/audit and zero-write static+dynamic invariants passed","completed_at":"2026-07-25T00:45:00Z","escalation_reason":null},
+    {"task_name":"CHUNK_4_GMAIL_ADAPTER","phase":"COMPLETE","ralph_iterations":1,"tfl_cycles":1,"verdict":"GREEN","commit_sha":"568ebee930f839439721115b900ddfad75afe37e","validation_evidence":"npm run verify: 56 files, 416 tests, 8 UI contracts; compose-scope, source binding, retries, gatekeeper regression, static/runtime no-send passed","completed_at":"2026-07-25T01:25:00Z","escalation_reason":null},
+    {"task_name":"CHUNK_4_DRAFT_API","phase":"COMPLETE","ralph_iterations":1,"tfl_cycles":1,"verdict":"GREEN","commit_sha":"0cbe60271110b521dc402bc6939d37ac982535de","validation_evidence":"npm run verify: 57 files, 421 tests, 8 UI contracts; lifecycle, RBAC, tenant, audit, external sent projection and no-send passed","completed_at":"2026-07-25T02:10:00Z","escalation_reason":null},
+    {"task_name":"CHUNK_5_PROVIDER_STATEMENT_UI","phase":"COMPLETE","ralph_iterations":1,"tfl_cycles":1,"verdict":"GREEN","commit_sha":"437508e8f1acb0b85253ef3ebb654208c0ed7053","validation_evidence":"npm run verify: 57 files, 421 tests, 13 UI contracts; SMB owner QBO/QBD health and statement workflows/roles/states passed","completed_at":"2026-07-25T02:55:00Z","escalation_reason":null},
+    {"task_name":"CHUNK_5_DRAFT_UI","phase":"COMPLETE","ralph_iterations":1,"tfl_cycles":1,"verdict":"GREEN","commit_sha":"530e71b2250994e13b20cc18fe897dc33bfd4c47","validation_evidence":"npm run verify: 57 files, 421 tests, 18 UI contracts; draft lifecycle/recovery/roles/external sent/source link/no-send passed","completed_at":"2026-07-25T03:35:00Z","escalation_reason":null},
+    {"task_name":"CHUNK_6_OPERATIONS","phase":"COMPLETE","ralph_iterations":1,"tfl_cycles":1,"verdict":"GREEN","commit_sha":"a4e0ff02976bd0c5009073b7e1205fa51390c1ad","validation_evidence":"npm run verify: 58 files, 426 tests, 18 UI contracts; installer SelfTest, compose config, PowerShell parse, operational health and disposable recovery rehearsal passed","completed_at":"2026-07-25T04:30:00Z","escalation_reason":null},
+    {"task_name":"CHUNK_6_RELEASE_PROOF","phase":"PENDING","ralph_iterations":0,"tfl_cycles":0,"verdict":"NOT_RUN","commit_sha":null,"validation_evidence":null,"completed_at":null,"escalation_reason":null}
+  ],
+  "current_task_idx": 12,
+  "current_phase": "RALPH",
+  "owner_blocked": false,
+  "owner_gated_items": [],
+  "all_complete": false
+}

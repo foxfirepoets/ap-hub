@@ -1,57 +1,41 @@
 # Ralph State
 
-**Current Iteration:** 11
+**Current Iteration:** 0
 
-Current chunk: CHUNK_5_PRODUCT
-Current task: 2 of 2
-Last completed: CHUNK_5_DRAFT_UI
-Status: TASK_COMPLETE
+Current chunk: CHUNK_1_SHELL
+Current task: 1 of 4
+Last completed: none — plan reset 2026-07-25 for the local desktop direction
+Status: NOT_STARTED
 
 ## Instructions for ralph
 
 Update this file after every task. Never delete history — append below.
 Keep the `**Current Iteration:**` line intact and in that exact format.
 
-## Iteration 8 — CHUNK_4_GMAIL_ADAPTER
+Controlling documents:
+- `specs/SPEC-local-desktop-shell.md`
+- `architecture-decision-packet-ap-hub-local-desktop-2026-07-25.md`
+- `IMPLEMENTATION_PLAN.md`
+- `.ralph/guardrails.md` — **read the email carve-out before any send-related change**
 
-Least-privilege Gmail reply-draft adapter is complete.
-Next task: CHUNK_4_DRAFT_API.
-- Draft client exposes create/update/read-status/discard only; recipient and thread
-  remain bound to the source conversation.
-- OAuth requests readonly plus compose only when drafting is enabled; reconnect uses
-  incremental authorization and no broad mailbox scope.
-- Gatekeeper forwarding remains separate and unchanged.
+## History
 
-## Iteration 2 — CHUNK_1_TYPES
+- 2026-07-25: Plan reset. The `cbv-loc001` "Windows local-only runtime" build was stopped at
+  CHUNK_1 task 3 and archived to `archive/pre-local-desktop-20260725/`. It targeted a browser UI at
+  `127.0.0.1:3000`, which the local desktop direction removes.
+- **Retained from that build:** commits `78c5522` (credential schema), `eb150e0` (Windows Credential
+  Manager secret store), `fef9d43` (legacy secret migration). All three carry forward unchanged —
+  the desktop architecture still stores provider tokens in the OS credential store.
+- **Dropped from that build:** the archived CHUNK_2 loopback HTTP session work. Electron IPC removes
+  the listening socket it was designed to defend, so the bootstrap-nonce session is not built.
+- Prior forensics: `docs/audits/architecture-map-2026-07-25.md`.
+- Migration evidence: `docs/audits/electron-migration-inventory-2026-07-25.md` — 14 of 14 pages are
+  `'use client'`, 52 route files total 528 lines, and only 2 renderer files perform network I/O.
 
-Provider-neutral accounting contracts and tenant-scoped repositories are complete.
-Next task: CHUNK_2_CAPABILITIES.
+### Pre-reset history (cbv-loc001, archived)
 
-## Iteration 6 — CHUNK_3_INGEST
-
-Statement routing and transactional normalization are complete.
-Next task: CHUNK_3_REVIEW_API.
-- Fixture proof: 1 file / 11 statement-ingestion tests passed.
-- Repository proof: `npm run verify` exited 0; complete Vitest suite, Next.js production build, and 8 UI contracts passed.
-- Verdict: GREEN_COMPLETE for this task. Live external integrations are N/A.
-
-## Iteration 7 — CHUNK_3_REVIEW_API
-
-Statement queue/detail, reviewed line dispositions, audited fact correction, and
-evidence-only filing are complete.
-Next task: CHUNK_4_GMAIL_ADAPTER.
-- Targeted proof: 1 file / 7 statement API and architecture tests passed.
-- Repository proof: `npm run verify` exited 0; 55 files / 408 tests, Next.js
-  production build, and 8 UI contracts passed.
-- Verdict: GREEN_COMPLETE for this task. Live external integrations are N/A.
-
-## Iteration 11 — CHUNK_5_DRAFT_UI
-
-The exception-detail Gmail draft workspace is complete.
-Next task: CHUNK_6_OPERATIONS.
-- Owner and bookkeeper can prepare, update, discard, and open the source-thread draft;
-  CPA and externally-sent projections are read-only.
-- Missing compose scope retains the proposed copy and presents owner reconnect guidance.
-- The UI exposes no reply transmission control or provider-send path.
-- Repository proof: `npm run verify` exited 0; 57 files / 421 tests, Next.js
-  production build, and 18 UI contracts passed.
+- Iteration 1: committed CBV-LOC001; full `npm run verify` passed.
+- Iteration 2: closed the camelCase/concatenated secret-key constraint bypass; verify passed.
+- Iteration 3: replaced the secret-key denylist with strict metadata and transport-mode schemas.
+- Iteration 4: closed allowed-field value channels, removed free-form refresh messages.
+- Iteration 5: closed whitespace/case value-validation bypasses; amended as `78c5522`.

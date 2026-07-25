@@ -1,18 +1,32 @@
-# README.ralph.md — Multi-Edition Accounting Intake
+# README.ralph.md — Windows Local-Only AP Hub
 
-Generated from `specs/SPEC-multi-edition-accounting-intake.md` on 2026-07-24.
+Generated from `specs/SPEC-windows-local-only-runtime.md` on 2026-07-25.
 
-Chunks:
+## Chunks
 
-- CHUNK_1_CONTRACTS — durable document and integration contracts
-- CHUNK_2_QBD — supported QuickBooks Desktop bill posting
-- CHUNK_3_STATEMENTS — reviewed bank-statement workflow
-- CHUNK_4_DRAFTS — human-sent Gmail drafts
-- CHUNK_5_PRODUCT — SMB-owner product surface
-- CHUNK_6_HARDENING — adversarial verification and operations
+- CHUNK_1_SECRETS: Windows Credential Manager and credential references
+- CHUNK_2_AUTH: SID-bound loopback product access
+- CHUNK_3_GMAIL: Desktop OAuth with PKCE
+- CHUNK_4_TRANSPORTS: Direct/API/MCP QBO transports
+- CHUNK_5_DESKTOP: Durable local QBD
+- CHUNK_6_WATCHDOG: Standard-user continuous operation
+- CHUNK_7_CERTIFICATION: Installed-environment proof
 
-Setup: `npm install`, `docker compose up -d db`, `npm run migrate:up`, then `npm run verify`.
+## Setup
 
-Planning produces `IMPLEMENTATION_PLAN.md`. Build mode completes one task at a time. External Gmail/QBO/QBD certification uses disposable accounts and is owner-gated; local mocks never count as launch proof.
+```powershell
+npm install
+docker compose up -d db
+npm run migrate:up
+```
 
-No spec-parsing warnings.
+Planning creates `IMPLEMENTATION_PLAN.md`; CBV then builds one task at a time and records evidence
+in `.claude/cbv/session_state.json`.
+
+## Validation
+
+```powershell
+npm run verify
+```
+
+Warnings from spec parsing: none.

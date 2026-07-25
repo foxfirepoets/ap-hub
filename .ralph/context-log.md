@@ -1,3 +1,4 @@
 # Context Log
 
-Ralph writes working notes here. `progress.md` is the durable completion record.
+ralph writes working notes here during long chunks.
+Reset between chunks is acceptable — progress.md is the durable record.

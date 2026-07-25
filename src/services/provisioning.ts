@@ -4,7 +4,10 @@ import { ServiceError } from './index.js';
 
 /**
  * First-owner tenant provisioning (gap flagged by HKO-audit remediation, see
- * ralph-northstar-ux/.ralph/state.md). SSO login is invite-gated / UPDATE-only
+ * archive/pre-local-desktop-20260725/ralph-workspaces/ralph-northstar-ux/.ralph/state.md).
+ * NOTE: SSO is being replaced by OS-account identity in CHUNK_4_IDENTITY; this path
+ * becomes first-run tenant creation for the installing user.
+ * SSO login is invite-gated / UPDATE-only
  * (src/auth/google-sso.ts activateUserForLogin) and never auto-creates a tenant
  * or user — so a brand-new tenant needs an out-of-band path to create its first
  * user before anyone can log in at all. This is that path: CLI-only (the `cli

@@ -1,370 +1,155 @@
 # Progress Log (append-only)
 
-Project: ap-hub-multi-edition-accounting-intake
-Initialized: 2026-07-24
-Total chunks: 6
+Project: ap-hub-windows-local-only
+Initialized: 2026-07-25
+Total chunks: 7
 
 ## Log
 
 (no entries yet)
 
-## Planning - 2026-07-24
-- Accepted primary user: any small-to-medium-sized business owner.
-- Created `IMPLEMENTATION_PLAN.md` with 13 independently verifiable tasks across all six chunks in dependency order.
-- Every task names concrete validation evidence and preserves the provider-write, tenant-isolation, proof-gate, and Gmail no-send guardrails.
+### 2026-07-25 — Planning
+
+Read the frozen Windows local-only specification, all seven generated chunk
+specifications, project commands, and Ralph guardrails. Created the dependency-ordered
+CBV task plan in `IMPLEMENTATION_PLAN.md`; no application code or tests were written.
+
 <promise>PLANNING COMPLETE</promise>
 
-## CHUNK_1_SCHEMA - 2026-07-24
-- Added `008_accounting_intake` UP/DOWN migration for all five durable intake tables.
-- Tenant ownership is enforced by composite foreign keys for messages, attachments, documents, statements, connections, proposals, and users.
-- Added lifecycle/status checks, period/confidence/lease/attempt checks, query indexes, document/line/job idempotency, and one-active-draft uniqueness.
-- DOWN refuses retained financial rows transactionally and leaves migration history intact on refusal.
-- Added real disposable-PostgreSQL coverage for schema presence, valid inserts, SQLSTATE `23503` tenant rejection, `23514` check rejection, `23505` duplicate rejection, retained-row DOWN refusal, and empty UP -> DOWN -> UP.
-- Targeted evidence: `npx vitest run test/accounting-intake-migration.test.ts` -> 1 file passed, 1 test passed.
-- Repository evidence: `npm run verify` -> lint PASS; boundary scan PASS; typecheck PASS; 49 files / 367 tests PASS; Next.js production build PASS; Playwright 8/8 PASS.
-<promise>CHUNK TASK COMPLETE: CHUNK_1_SCHEMA</promise>
+### 2026-07-25 — Iteration 1 — CBV-LOC001
 
-## CBV Truth Audit — CHUNK_1_SCHEMA
-- Source: commit `5559df10f41511dfa5c3bf4a5cd4cab6fff9d4e0`
-- Database proof: disposable PostgreSQL UP, constraint checks, retained-row DOWN refusal, empty DOWN, and UP passed.
-- Repository proof: `npm run verify` exited 0; 49 files / 367 tests and 8 UI contracts passed.
-- Verdict: GREEN_COMPLETE for this task. Live external integrations are N/A.
+Implemented migration 013 for non-secret Windows Credential Manager references and
+constrained QuickBooks transport metadata. PostgreSQL rejects malformed credential
+targets and recursively rejects secret-bearing metadata/configuration. DOWN now
+refuses while credential references or configured transport modes remain.
 
-## CHUNK_1_TYPES - 2026-07-24
-- Added provider-neutral contracts for accounting documents, statement facts/lines, provider capabilities/jobs, and reply-draft projections.
-- Added tenant-scoped repositories using the existing `scopedQuery` boundary; core contains no provider writer imports or provider calls.
-- Runtime contract validation rejects invalid document, statement, job-operation, and draft lifecycle values before database access.
-- Repository failures preserve PostgreSQL duplicate-key (`23505`) and foreign-tenant-reference (`23503`) evidence for callers.
-- Targeted evidence: `npx vitest run test/accounting-intake-contracts.test.ts` -> 1 file passed, 5 tests passed.
-- Boundary evidence: `npm run lint:noleak` -> no provider/OS boundary leaks.
-- Repository evidence: `npm run verify` -> lint PASS; boundary scan PASS; typecheck PASS; 50 files / 372 tests PASS; Next.js production build PASS; Playwright 8/8 PASS.
-<promise>CHUNK TASK COMPLETE: CHUNK_1_TYPES</promise>
-## CHUNK_1_TYPES — independent truth audit
+Verification:
 
-- Commit: `50d32b8a045a2012755e23740c828438735c9b30`
-- Verdict: GREEN
-- Independent validation: `npm run verify` exited 0.
-- Evidence: ESLint, secret-leak scan, TypeScript, 50 Vitest files / 372 tests, Next.js production build, and 8 Playwright contract flows passed.
-- Boundary evidence: provider-neutral accounting contracts and tenant-scoped repository behavior are covered by `test/accounting-intake-contracts.test.ts`.
-- Live external proof: N/A for this local contract-only task.
+- Focused migration UP → DOWN → UP/schema/constraint/rollback test: passed.
+- `npm run verify`: exit 0.
+- Unit suite, production web build, and 24 Playwright UI contracts: passed.
+- Commit: `16db0b8 feat: add local credential schema cbv-loc001`
 
-## CHUNK_2_CAPABILITIES - 2026-07-24
-- Added an executable, fail-closed QuickBooks capability matrix for certified QBO editions and Windows QBD Pro, Premier, and Enterprise.
-- Every connection exposes operation-level results for company verification, query, bill posting, read-back, and attachments, plus explicit unsupported fields.
-- Incompatible providers, QBO Self-Employed/unknown editions, QBD Mac/unknown editions, non-Windows Desktop connections, and inactive connections return `supported:false` with an actionable remediation reason.
-- Added tenant-scoped `GET /api/provider-capabilities`; the session tenant is the only query authority and owner, bookkeeper, and CPA reads are explicitly allowed while unauthenticated/unknown roles are rejected.
-- Targeted evidence: `npx vitest run test/provider-capabilities.test.ts` -> 1 file passed, 8 tests passed.
-- Repository evidence: `npm run verify` -> lint PASS; boundary scan PASS; typecheck PASS; 51 files / 380 tests PASS; Next.js production build PASS with the new API route; Playwright 8/8 PASS.
-- Live external proof: N/A for this read-only capability-truth task.
-<promise>CHUNK TASK COMPLETE: CHUNK_2_CAPABILITIES</promise>
-## CHUNK_2_CAPABILITIES — independent truth audit
+<promise>TASK_COMPLETE</promise>
 
-- Commit: `33e0577cbd1c7645eeb01db13ccccc501841c4f6`
-- Verdict: GREEN
-- Independent validation: `npm run verify` exited 0.
-- Evidence: ESLint, secret-leak scan, TypeScript, 51 Vitest files / 380 tests, Next.js production build, and 8 Playwright contract flows passed.
-- Boundary evidence: capability tests cover QBO, supported Windows QBD Pro/Premier/Enterprise, incompatible editions/platforms/providers, RBAC, and tenant isolation.
-- Live external proof: N/A; this task declares certified local capability truth and performs no provider writes.
+### 2026-07-25T09:14:14-07:00 — CBV-LOC001 Task 1 terminal verification
 
-## CHUNK_2_DURABLE_JOBS - 2026-07-24
-- Added a PostgreSQL-authoritative QBD job service with deterministic SHA-256 idempotency keys and insert deduplication that survives service reconstruction.
-- Added transaction/advisory-lock leasing that permits one active lease per connection, scopes every operation by tenant and connection, and safely recovers expired pre-send leases.
-- Expired sent jobs move to `held/UNCERTAIN_OUTCOME`; retries are refused until the next posting-contract task supplies provider query/adoption evidence.
-- QBD company identity is checked against the connection record before any job is leased; mismatches visibly hold all queued connection work.
-- Added owner-only tenant-scoped `GET /api/provider-jobs` and `POST /api/provider-jobs/:id/retry`; bookkeeper/CPA and foreign-tenant access fail closed.
-- Targeted evidence: `npx vitest run test/provider-durable-jobs.test.ts` -> 1 file passed, 5 tests passed.
-- Paired cleanup evidence: migration + durable-job suites -> 2 files passed, 6 tests passed.
-- Repository evidence: `npm run verify` -> lint PASS; boundary scan PASS; typecheck PASS; 52 files / 385 tests PASS; Next.js production build PASS; Playwright 8/8 PASS.
-- No provider calls, production writes, or real-company writes were performed.
-<promise>CHUNK TASK COMPLETE: CHUNK_2_DURABLE_JOBS</promise>
-## CHUNK_2_DURABLE_JOBS — independent truth audit
+- Commit: `78c5522`
+- Independent `npm run verify`: exit 0 in 605.5 seconds.
+- Gate evidence: lint, no-leak scan, typecheck, 64 files / 484 tests, production web build, 24/24 Playwright.
+- Truth-fix audit: `GREEN_COMPLETE` after 168 actual hostile database operations, seven positive controls, and direct DOWN → UP lifecycle proof.
+- Earlier aggregate verification timeout was superseded by the successful exact-SHA rerun.
 
-- Commit: `e016b7e385ef289b57ed202b3a561eb1e510f847`
-- Verdict: GREEN
-- Independent validation: `npm run verify` exited 0.
-- Evidence: ESLint, secret-leak scan, TypeScript, 52 Vitest files / 385 tests, Next.js production build, and 8 Playwright contract flows passed.
-- Database evidence: restart persistence, per-connection lease exclusion, tenant isolation, expired-lease recovery, company mismatch hold, and uncertain-result retry refusal passed against PostgreSQL.
-- Live external proof: N/A; no provider or production writes were performed.
+<promise>TFL GREEN: CBV-LOC001 TASK 1</promise>
 
-## CHUNK_2_POSTING_CONTRACT - 2026-07-24
-- Added a QBD `AccountingConnector` implementation behind the same provider-neutral posting boundary used by QBO.
-- Added BillQuery qbXML generation and strict BillRet response parsing for external TxnID, EditSequence, vendor, reference, date, and amount; provider errors and incomplete identities fail visibly.
-- QBD duplicate probes use vendor/reference/date and authoritative read-back uses TxnID. Unsupported attachments, currency, and dimensions are declared and never silently discarded.
-- Added durable known-result completion, known-failure, uncertain-outcome hold, and provider-evidence adoption transitions to `provider_jobs`.
-- Fixed posting projections to use the actual provider in reconciliation/audit and corrected the timeout-adoption entity-type projection.
-- Simulated QBWC happy path performed pre-create query, exactly one BillAdd, read-back, reconciliation, and provider-labeled audit through `postOnce`.
-- Lost-response simulation proved exactly one provider create followed by query/adoption; malformed and error qbXML fixtures fail closed.
-- Targeted evidence: QBD/shared posting + QBO connector + existing posting + durable job suites -> 4 files / 38 tests passed.
-- Repository evidence: `npm run verify` -> lint PASS; boundary scan PASS; typecheck PASS; 53 files / 390 tests PASS; Next.js production build PASS; Playwright 8/8 PASS.
-- Safety evidence: all provider exchanges were injected simulations; no credentials, live providers, production settings, or real-company writes were used or enabled.
-<promise>CHUNK TASK COMPLETE: CHUNK_2_POSTING_CONTRACT</promise>
-<promise>CHUNK COMPLETE: CHUNK_2_QBD</promise>
-## CHUNK_2_POSTING_CONTRACT — independent truth audit
+### 2026-07-25 — Iteration 5 — CBV-LOC001 final whitespace/case truth-fix
 
-- Commit: `a1ce78c10c18d669fba3d667dca6f60e414f1b66`
-- Verdict: GREEN
-- Independent validation: `npm run verify` exited 0.
-- Evidence: ESLint, secret-leak scan, TypeScript, 53 Vitest files / 390 tests, Next.js production build, and 8 Playwright contract flows passed.
-- Posting evidence: simulated QBD happy path, lost-response adoption with exactly one create, strict qbXML parsing, durable uncertain-result adoption, QBO regressions, reconciliation/audit projection, and proof-gate fail-closed behavior passed.
-- Live external proof: NOT VERIFIED by design; no live QBO/QBD calls or production writes.
+Closed leading/trailing ASCII whitespace, control-character, and mixed-case matching
+bypasses in the centralized non-secret text validator. Every anchored credential-shape
+check now uses the same trimmed value and case-insensitive matching where appropriate.
+Provider account identifiers reject surrounding whitespace/control characters while
+retaining common Gmail email/opaque identifiers and numeric QBO realms.
 
-## CHUNK_3_INGEST - 2026-07-24
-- Extended canonical attachment routing to distinguish `invoice`, `bank_statement`, and fail-closed `unknown`; unknowns are held and statements cannot enter the invoice extractor.
-- Preserved the existing invoice path: recognized invoice attachments enqueue exactly one existing `extract` job.
-- Added deterministic exact-cent normalization for statement headers and ordered source lines, including commas, currency symbols, and parentheses negatives without floating-point arithmetic.
-- Added one-transaction persistence for the canonical document, statement header, and every ordered line; pre-routed statement documents are adopted rather than duplicated.
-- Duplicate files return the existing statement without inserts; duplicate lines and invalid periods/dates/money fail before accounting writes.
-- Arithmetic imbalance persists source evidence as `unbalanced`, holds the canonical document with `STATEMENT_UNBALANCED`, and exposes the exact failing equation.
-- Encrypted/unreadable input persists only a held source document with a named reason and creates zero statement facts or lines.
-- Fixture evidence: balanced, multi-page, missing-running-balance, parentheses-negative, duplicate-line/document, imbalanced, encrypted, and existing-invoice cases.
-- Targeted evidence: `npx vitest run test/bank-statements.test.ts` -> 1 file / 11 tests passed.
-- Regression evidence: statement, classification, existing invoice extraction, and attachment-infra suites -> 4 files / 36 tests passed before the final routing assertion; the full gate includes all 11 statement tests.
-- Repository evidence: `npm run verify` exited 0 -> lint PASS; boundary scan PASS; typecheck PASS; complete Vitest suite PASS; Next.js production build PASS; Playwright 8/8 PASS.
-- Safety evidence: no provider call, external accounting write, email action, or live credential was used.
-<promise>CHUNK TASK COMPLETE: CHUNK_3_INGEST</promise>
-## CHUNK_3_INGEST — independent truth audit
+Actual INSERT coverage includes leading/trailing spaces, tabs, newlines, mixed-case
+Google/GitHub/sk credential forms, and JWT variants across every credential metadata
+string/array channel. Legitimate email, opaque, scope, timestamp, and numeric-realm
+controls remain accepted.
 
-- Commit: `722da3b17cae6032f180c57441788a0e6255e90c`
-- Verdict: GREEN
-- Independent validation: `npm run verify` exited 0.
-- Evidence: ESLint, secret-leak scan, TypeScript, 54 Vitest files / 401 tests, Next.js production build, and 8 Playwright contract flows passed.
-- Ingestion evidence: 11 statement fixtures cover balance, pagination, missing running balance, negative notation, duplicates, imbalance, encryption, and unchanged invoice routing with transactional row assertions.
-- Live external proof: N/A; no provider writes or email actions.
+Verification:
 
-## CHUNK_3_REVIEW_API - 2026-07-24
-- Added tenant-scoped statement queue and detail reads for owner, bookkeeper, and read-only CPA roles.
-- Added owner/bookkeeper match, exclude-with-reason, allowlisted fact correction, and evidence-filing actions with human audit rows.
-- Foreign statement/line identifiers fail as 404 without mutation or existence disclosure; CPA mutations fail 403 and unauthenticated reads fail 401.
-- Filing requires every line to be matched or excluded and rejects held/unbalanced statements.
-- Filing updates only `bank_statements` and `accounting_documents`; behavioral DB assertions prove unchanged `proposals`, `provider_jobs`, `postings_ap`, and `reconciliation` counts.
-- A hostile static test rejects connector/posting/provider-writer imports and transaction/job INSERT statements in the review module.
-- Targeted evidence: `npx vitest run test/bank-statement-api.test.ts` -> 1 file / 7 tests passed.
-- Repository evidence: `npm run verify` exited 0 -> lint PASS; boundary scan PASS; typecheck PASS; 55 Vitest files / 408 tests PASS; Next.js production build PASS; Playwright 8/8 PASS.
-- Live external proof: N/A; statement filing is local evidence organization and performed no provider call or accounting write.
-<promise>CHUNK TASK COMPLETE: CHUNK_3_REVIEW_API</promise>
-<promise>CHUNK COMPLETE: CHUNK_3_STATEMENTS</promise>
-## CHUNK_3_REVIEW_API — independent truth audit
+- Focused migration whitespace/case/value/schema/rollback matrix: passed.
+- `npm run verify`: exit 0.
+- Production web build and 24 Playwright contracts: passed.
+- Amended commit: `78c5522 feat: add local credential schema cbv-loc001`
 
-- Commit: `b46340260781b65c9be6ce93a5d2eb7c99f183ed`
-- Verdict: GREEN
-- Independent validation: `npm run verify` exited 0.
-- Evidence: ESLint, secret-leak scan, TypeScript, 55 Vitest files / 408 tests, Next.js production build, and 8 Playwright contract flows passed.
-- Safety evidence: queue/detail, match, exclude, correct and file RBAC/tenant tests passed; filing changes zero proposals/provider jobs/postings/reconciliation rows and a static invariant forbids posting imports/inserts.
-- Live external proof: N/A; no provider calls or writes.
+<promise>TASK_COMPLETE</promise>
 
-## CHUNK_4_GMAIL_ADAPTER - 2026-07-24
-- Added optional least-privilege Gmail OAuth compose access alongside existing readonly
-  access, gated by `GMAIL_DRAFTS_ENABLED` with incremental reconnect authorization.
-- Added a provider-bound draft client with create, update, read-status, and discard
-  operations only. It derives the recipient from source Reply-To/From, rejects header
-  injection, and requires every provider result/mutation to stay in the source thread.
-- Added bounded three-attempt retry for transient provider failures and explicit
-  reconnect/auth errors for missing scope or rejected tokens.
-- The draft boundary has no transmission method or Gmail message-send call; runtime
-  export and static source assertions enforce this invariant.
-- Existing locked gatekeeper forwarding code was not modified; gatekeeper, lockdown,
-  and digest regression suites remain green.
-- Targeted evidence: 2 files / 10 draft and OAuth tests passed; 3 files / 24
-  gatekeeper/lockdown/digest tests passed.
-- Repository evidence: `npm run verify` exited 0 -> lint PASS; boundary scan PASS;
-  typecheck PASS; 56 Vitest files / 416 tests PASS; Next.js production build PASS;
-  Playwright 8/8 PASS.
-- Live external proof: NOT VERIFIED by design; no Gmail draft was created and no email
-  was transmitted.
-<promise>CHUNK TASK COMPLETE: CHUNK_4_GMAIL_ADAPTER</promise>
-## CHUNK_4_GMAIL_ADAPTER — independent truth audit
+### 2026-07-25 — Iteration 4 — CBV-LOC001 value-channel truth-fix
 
-- Commit: `568ebee930f839439721115b900ddfad75afe37e`
-- Verdict: GREEN
-- Independent validation: `npm run verify` exited 0.
-- Evidence: ESLint, secret-leak scan, TypeScript, 56 Vitest files / 416 tests, Next.js production build, and 8 Playwright contract flows passed.
-- Gmail safety evidence: readonly+compose scope, source-thread/recipient binding, bounded retry, provider IDs/discard, gatekeeper regressions, and runtime/static no-send invariants passed.
-- Live external proof: NOT VERIFIED; no live Gmail operations or transmissions.
+Closed plaintext value channels inside otherwise allowed JSON fields. Migration 013
+now centrally rejects authorization headers, JWT-shaped values, common API/private-key
+prefixes, PEM material, and suspicious long high-entropy strings. Free-form
+`last_refresh_status.message` was removed. Refresh state is a bounded enum, and
+endpoint/command identifiers require the documented `registered-*` namespace.
 
-## CHUNK_4_DRAFT_API - 2026-07-24
-- Added tenant-scoped GET/POST/PATCH/DELETE reply-draft routes backed by the canonical
-  `reply_drafts` table and source Gmail message/thread identity.
-- Added a distinct `draft_reply` permission for owner and bookkeeper. CPA remains
-  read-only, and the legacy locked-forward release permission remains owner-only.
-- Create and update persist the human's proposed copy before provider access, so
-  missing compose scope or provider failure retains recoverable local intent.
-- Gmail draft IDs, source thread, recipient, reason, lifecycle status, and external
-  human-sent projection are retained locally; sent-external and discarded drafts
-  reject further mutation.
-- Every human mutation appends an identifiable actor audit row with before/after
-  hashes and a human-sends-in-Gmail marker; reads add no human mutation audit.
-- DELETE invokes only provider draft discard and then records local discarded status;
-  no reply email send operation exists in the service, HTTP layer, or routes.
-- Targeted evidence: reply-draft API, Gmail draft adapter, existing reply action, and
-  service regression suites -> 4 files / 36 tests passed.
-- Repository evidence: `npm run verify` exited 0 -> lint PASS; boundary scan PASS;
-  typecheck PASS; 57 Vitest files / 421 tests PASS; Next.js production build PASS;
-  Playwright 8/8 PASS.
-- Live external proof: NOT VERIFIED by design; injected Gmail simulations only, and
-  no draft or email was created, discarded, or transmitted in a real mailbox.
-<promise>CHUNK TASK COMPLETE: CHUNK_4_DRAFT_API</promise>
-<promise>CHUNK COMPLETE: CHUNK_4_DRAFTS</promise>
-## CHUNK_4_DRAFT_API — independent truth audit
+Actual INSERT/UPDATE tests cover every allowed string and scope/tool-array surface
+with bearer, JWT, API-key, PEM, and entropy-shaped values. Positive controls retain
+Gmail scopes, provider account IDs, numeric QBO realms, registered transport
+references, tool names, and company identifiers.
 
-- Commit: `0cbe60271110b521dc402bc6939d37ac982535de`
-- Verdict: GREEN
-- Independent validation: `npm run verify` exited 0.
-- Evidence: ESLint, secret-leak scan, TypeScript, 57 Vitest files / 421 tests, Next.js production build, and 8 Playwright contract flows passed.
-- Draft evidence: lifecycle, missing-scope preservation, external-send immutability, RBAC/tenant isolation, human audit identity, provider discard, and static/runtime no-send invariants passed.
-- Live external proof: NOT VERIFIED; no email transmission.
+Verification:
 
-## CHUNK_5_PROVIDER_STATEMENT_UI - 2026-07-24
-- Added an SMB-owner-facing QuickBooks settings surface showing connected company,
-  detected edition, operation-level capability truth, gaps, verification recency, and
-  owner-visible queued/held/failed job health.
-- Offline QBD and active-but-unsupported QBO edition states have distinct actionable
-  recovery copy; supported QBO and Windows QBD remain capability-driven rather than
-  presented as interchangeable products.
-- Added statement queue/detail routes with filtering, source evidence, line matching,
-  exclusion, allowlisted fact corrections, and filing only after every line resolves.
-- Held/unbalanced statements expose validation evidence and correction guidance while
-  filing stays disabled. Failed reads provide retry; foreign records use a
-  non-disclosing not-found state.
-- Owner and bookkeeper mutation controls are visible; CPA sees evidence read-only;
-  anonymous navigation redirects to login. Server-side tenant/RBAC contracts remain
-  covered by `test/bank-statement-api.test.ts` and provider capability tests.
-- Playwright evidence: 13/13 contracts passed, including existing
-  Today/Exceptions/Transactions-adjacent flows, owner/bookkeeper/CPA/anonymous roles,
-  offline/unsupported providers, held validation recovery, and foreign-record refusal.
-- Reproducible screenshot artifacts are generated by Playwright at
-  `test-results/evidence/provider-health.png` and
-  `test-results/evidence/statement-review.png` (runtime artifacts are gitignored).
-- Repository evidence: `npm run verify` exited 0 -> lint PASS; boundary scan PASS;
-  typecheck PASS; 57 Vitest files / 421 tests PASS; Next.js production build PASS;
-  Playwright 13/13 PASS.
-- Live external proof: NOT VERIFIED by design; all UI provider responses were stubbed
-  and no external accounting write occurred.
-<promise>CHUNK TASK COMPLETE: CHUNK_5_PROVIDER_STATEMENT_UI</promise>
-## CHUNK_5_PROVIDER_STATEMENT_UI — independent truth audit
+- Focused migration value-channel/schema/rollback matrix: passed.
+- `npm run verify`: exit 0.
+- Production web build and 24 Playwright contracts: passed.
+- Amended commit: `40722d1 feat: add local credential schema cbv-loc001`
 
-- Commit: `437508e8f1acb0b85253ef3ebb654208c0ed7053`
-- Verdict: GREEN
-- Independent validation: `npm run verify` exited 0.
-- Evidence: ESLint, secret-leak scan, TypeScript, 57 Vitest files / 421 tests, Next.js production build, and 13 Playwright contract flows passed.
-- Product evidence: SMB-owner QBO/QBD capability/health plus statement role, cross-tenant, offline, unsupported, held and recovery workflows passed; screenshot generation paths are recorded.
-- Live external proof: N/A; UI contracts use stubbed APIs.
+<promise>TASK_COMPLETE</promise>
 
-## CHUNK_5_DRAFT_UI - 2026-07-24
-- Added an exception-detail reply-draft panel driven by the source evidence message ID
-  and the canonical tenant-scoped reply-draft API.
-- Owners and bookkeepers can prepare, edit, update, discard, and open the source thread
-  in Gmail. The Gmail link targets `#all/{threadId}`, never compose or transmit.
-- Missing Gmail compose scope retains the proposed subject/body/reason and gives owners
-  a reconnect action; bookkeepers receive clear owner-assisted recovery guidance.
-- CPA access is read-only. Discarded and `sent_external` projections are immutable for
-  every role while retaining source-thread evidence access.
-- Hostile Playwright assertions prove the draft action DOM has no transmission control
-  and the component/routes have no Gmail provider-send source path.
-- Screenshot evidence: `test-results/evidence/reply-draft-lifecycle.png`.
-- Repository evidence: `npm run verify` exited 0 -> lint PASS; boundary scan PASS;
-  typecheck PASS; 57 Vitest files / 421 tests PASS; Next.js production build PASS;
-  Playwright 18/18 PASS.
-- Live external proof: NOT VERIFIED by design; all Gmail responses were injected fixtures
-  and no real draft or email transmission occurred.
-<promise>CHUNK TASK COMPLETE: CHUNK_5_DRAFT_UI</promise>
-<promise>CHUNK COMPLETE: CHUNK_5_PRODUCT</promise>
-## CHUNK_5_DRAFT_UI — independent truth audit
+### 2026-07-25 — Iteration 3 — CBV-LOC001 strict-schema truth-fix
 
-- Commit: `530e71b2250994e13b20cc18fe897dc33bfd4c47`
-- Verdict: GREEN
-- Independent validation: `npm run verify` exited 0.
-- Evidence: ESLint, secret-leak scan, TypeScript, 57 Vitest files / 421 tests, Next.js production build, and 18 Playwright contract flows passed.
-- UI safety evidence: lifecycle, compose-scope recovery, roles, immutable externally sent state, source-thread link, screenshot generation, and hostile DOM/source no-send assertions passed.
-- Live external proof: N/A; browser contracts use stubbed APIs.
+Replaced denylist-based JSON inspection with strict database schemas. Credential
+metadata now accepts only bounded scope, expiry, provider-account, and refresh-status
+fields with explicit types. Connection configuration is validated by transport mode
+and accepts only bounded non-secret identifiers, allowlisted tools, and timeouts.
+Unknown keys are rejected recursively.
 
-## CHUNK_6_OPERATIONS - 2026-07-24
-- Aligned typed config, `.env.example`, CLI/GUI installer output, and durable-job
-  defaults for optional Gmail drafts and company-bound QBD processing.
-- Safe defaults remain `GMAIL_DRAFTS_ENABLED=false`,
-  `QB_DESKTOP_ENABLED=false`, and `QB_DESKTOP_WRITE_ENABLED=false`. QBD write
-  enablement is refused unless Desktop is enabled and an expected company ID is
-  configured; provider-job leases are bounded to 30–900 seconds and default 300.
-- Extended `/health` with count-only operational signals for queued/expired/
-  uncertain/failed/held provider jobs, held/unbalanced statements, and failed
-  draft attempts. Structured health logs contain aggregates only, never payloads,
-  addresses, document contents, tokens, passwords, or provider secrets.
-- Added executable disposable recovery tooling that hard-refuses database names
-  outside `aphub_disposable_*`, plus honest backup/restore, migration rollback,
-  monitoring, and disposable Gmail/QBO/QBD certification instructions.
-- PowerShell parser evidence: `POWERSHELL_PARSE_PASS files=4`.
-- Guided installer evidence: `install-gui self-test OK -- all pages built (incl.
-  credentials) + recovery-key gate enforced`.
-- Compose evidence: `docker compose config --quiet` exited 0. Docker Desktop's
-  engine was not running, so no container-runtime health claim is made.
-- Recovery evidence against local PostgreSQL:
-  `RECOVERY_REHEARSAL_PASS database=aphub_disposable_cbv_operations
-  marker=before-backup`; the disposable database was removed afterward.
-- Targeted evidence: config and operational-health tests -> 2 files / 11 tests
-  passed; TypeScript passed.
-- Secret-shaped diff scan: no credential-shaped tracked value; only environment
-  variable names, blank placeholders, generated variables, and test-only literals.
-- Repository evidence: `npm run verify` exited 0 -> lint PASS; boundary scan PASS;
-  typecheck PASS; 58 Vitest files / 426 tests PASS; Next.js production build PASS;
-  Playwright 18/18 PASS.
-- Live external proof: NOT VERIFIED by design; no Gmail operation, QBO/QBD write,
-  deployment, or real-company change was performed.
-<promise>CHUNK TASK COMPLETE: CHUNK_6_OPERATIONS</promise>
+Hostile tests cover bearer, authorization, OAuth, client/signing keys, passphrases,
+password abbreviations, auth, generic keys, refresh/session/certificate terms, and
+randomized punctuation/casing/nesting on both protected JSON columns. Positive
+controls cover documented metadata and every current transport mode.
 
-## CHUNK_6_OPERATIONS — independent truth audit
+Verification:
 
-- Commit: `a4e0ff02976bd0c5009073b7e1205fa51390c1ad`
-- Verdict: GREEN for the local/disposable evidence boundary.
-- Independent validation: `npm run verify` exited 0: ESLint, boundary and secret scans,
-  TypeScript, 58 Vitest files / 426 tests, Next.js production build, and 18 Playwright
-  contracts passed.
-- Independent installer check: `deploy/install-gui.ps1 -SelfTest` exited 0 and reported
-  all pages built, including credentials, with the recovery-key gate enforced.
-- Compose configuration and PowerShell parsing passed. The Docker runtime, live Gmail,
-  live QBO/QBD, production deployment, and real-company changes remain NOT VERIFIED.
+- Focused migration schema/rollback/hostile matrix: passed.
+- `npm run verify`: exit 0.
+- Production web build and 24 Playwright contracts: passed.
+- Amended commit: `b394ad3 feat: add local credential schema cbv-loc001`
 
-## CHUNK_6_RELEASE_PROOF - 2026-07-24
+<promise>TASK_COMPLETE</promise>
 
-- Fresh-context whole-build reconciliation is recorded at
-  `docs/CHUNK_6_RELEASE_PROOF-audit-2026-07-24.md`.
-- Local verdict: GREEN. Gate-4 launch verdict: CANNOT CERTIFY (code-only), because no
-  safe deployed URL, deployed test identities, disposable Gmail, QBO sandbox, or QBD
-  test-company credentials/artifacts were supplied.
-- Clean repository evidence: `npm run verify` exited 0; ESLint, boundary/secret scan,
-  TypeScript, 58 Vitest files / 426 tests, Next.js production build, and 18 Playwright
-  UI contracts passed.
-- Hostile critical-path rerun: migration, durable jobs, QBD posting, statements,
-  statement review, Gmail drafts, reply-draft API, capabilities, auth, posting, and
-  broker suites passed: 11 files / 92 tests.
-- Adversarial evidence covers duplicate/lost-response adoption, concurrent approval,
-  tenant and connection isolation, role denial, statement zero-write filing, Gmail
-  reply-draft no-send, proof fail-closed, unsupported capability truth, oversized
-  attachments, existing invoice/auth/audit regressions, and random 10% re-audit.
-- The first full-gate run had all 426 test bodies pass but exited 1 after the accounting
-  intake migration suite teardown exceeded 30 seconds. The suite then passed in the
-  targeted rerun and in the clean complete rerun. The audit retains this as an
-  operational flake risk instead of suppressing it.
-- Static route/button/form/stub/TODO scans found no active-path release defect. The
-  legacy locked gatekeeper forward path is distinct from reply drafts and remains
-  covered by lockdown/idempotency tests.
-- External owner-gated items remain NOT VERIFIED: deployed cross-tenant/auth probes,
-  live Gmail draft/no-send observation, QBO/QBD disposable create/read-back, target
-  backup restoration, live capability UI matrix, and performance targets.
-- No deployment, live email, provider call, production mutation, or real-company write
-  was performed.
-<promise>CHUNK TASK COMPLETE: CHUNK_6_RELEASE_PROOF</promise>
-<promise>CHUNK COMPLETE: CHUNK_6_HARDENING</promise>
+### 2026-07-25 — Iteration 2 — CBV-LOC001 truth-fix
 
-## Infinite improvement convergence - 2026-07-24
+Closed the migration 013 JSON-key normalization bypass found by the independent
+truth-fix audit. Keys are normalized by removing non-alphanumeric separators before
+rejecting token, secret, password, credential, API-key, access-key, and private-key
+forms. Hostile nested object/array coverage now includes snake_case, kebab-case,
+camelCase, PascalCase, and concatenated variants for both credential metadata and
+connection transport configuration. Safe metadata/configuration controls remain valid.
 
-- Ran five hostile improvement iterations across accounting integrity,
-  OAuth/email safety, SMB-owner operations, installation/recovery, and UI truth.
-- Closed all locally reproducible P0/P1 findings, including QBO production and
-  exact-realm gates, QBD durable/atomic posting, Gmail draft ambiguity, durable
-  OAuth/SSO state, provider-authoritative statement matching, human document
-  classification, owner write controls, and effective-once dispatch recovery.
-- Final independent convergence audit: 9.4/10 local; no P0/P1 findings.
-- Final `npm run verify`: PASS — 62 Vitest files / 477 tests, production web
-  build, and 24 Playwright contracts.
-- Live Gmail/QBO/QBD/deployment/restore proof remains owner-gated and NOT
-  VERIFIED; launch remains CANNOT CERTIFY (code-only).
-<promise>INFINITE IMPROVEMENT LOOP COMPLETE: LOCAL CONVERGENCE GREEN</promise>
+Verification:
+
+- Focused migration hostile matrix and UP → DOWN → UP test: passed.
+- `npm run verify`: exit 0.
+- Production web build and 24 Playwright contracts: passed.
+- Amended commit: `978935e feat: add local credential schema cbv-loc001`
+
+<promise>TASK_COMPLETE</promise>
+
+### 2026-07-25 — CBV task 2 — Windows Credential Manager secret store
+
+Replaced the Windows DPAPI-file secret backend with a current-user Windows Generic
+Credential implementation backed by the native Advapi32 Credential Management APIs.
+The host contract now validates strict `APHub/...` targets and supports put, get,
+idempotent delete, and target listing without placing secret values in command lines,
+environment variables, files, browser storage, logs, or surfaced errors.
+
+Verification:
+
+- Host contract: 6/6 passed.
+- Windows-only native Credential Manager integration: 1/1 passed with randomized
+  target cleanup.
+- UI contract: 24/24 passed on an isolated configurable port.
+- `APHUB_E2E_PORT=34123 npm run verify`: exit 0.
+
+<promise>CBV_BUILD_COMPLETE: Windows Credential Manager secret store</promise>
+
+### 2026-07-25T10:03:01-07:00 — CBV-LOC001 Task 2 terminal verification
+
+- Commit: `eb150e083b58e8c383d6aafe5fb0328c253bf29a`
+- Independent `APHUB_E2E_PORT=35371 npm run verify`: exit 0 in 457.6 seconds.
+- Gate evidence: lint, no-leak scan, typecheck, 64 files / 485 tests, production web build, 24/24 Playwright.
+- Real Windows Credential Manager integration proved exact UTF-8 limits, current-user storage, target isolation, overwrite/delete behavior, redacted failures, and cleanup.
+- Truth-fix audit: `GREEN_COMPLETE`.
+
+<promise>TFL GREEN: CBV-LOC001 TASK 2</promise>
