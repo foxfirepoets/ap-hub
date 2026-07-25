@@ -3,9 +3,25 @@
 **Current Iteration:** 1
 
 Current chunk: CHUNK_2_DATABASE
-Current task: 1 of 5
-Last completed: CHUNK_1_SHELL (Windows-evidenced; macOS not verified — no machine available)
-Status: IN_PROGRESS
+Current task: 3 of 5 (tasks 1 and 3 done in part; see below)
+Last completed: CHUNK_2 migrations 014/015 + port probe + Open Question 1 spike
+Status: IN_PROGRESS — CHUNK_2 promise NOT appended, chunk is incomplete
+
+### CHUNK_2 remaining work — pick up here
+
+- [ ] Bundle the chosen PostgreSQL (candidate A: official binaries) and write a trim script
+      that reproduces the bin+lib+share subset. Do not hand-curate the directory.
+- [ ] Start PostgreSQL as a supervised child on a private data directory, using
+      `probeFreePort()` from `src/db/bootstrap.ts`. Never connect to 5432.
+- [ ] Write the probed port to `install.json` and to `local_install.db_port`.
+- [ ] Run migrations automatically at launch (the runner already wraps each migration in a
+      transaction — `src/db/migrate.ts:48` — so the fail-usable property is already there).
+- [ ] Source a relocatable macOS PostgreSQL 16. **Cannot be validated here** — no macOS machine.
+
+Useful local fixture: this machine already runs PostgreSQL on **both** 5432 (scoop) and 55432
+(the archived build's bundled instance at `%LOCALAPPDATA%\APHub\bin\pgsql`, PG 16.4). The
+occupied-5432 and occupied-55432 collision cases the spec requires can be exercised for real
+here rather than simulated.
 
 ## Instructions for ralph
 
