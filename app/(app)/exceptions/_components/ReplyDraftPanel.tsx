@@ -16,21 +16,27 @@ interface ReplyDraft {
   bodyText: string;
   status: DraftStatus;
   reason: string | null;
+  createdAt: string;
+  updatedAt: string;
   sendControl: 'human_in_gmail';
 }
 
 type Notice = { kind: 'good' | 'warn' | 'bad'; text: string; reconnect?: boolean };
 
 function gmailThreadUrl(threadId: string): string {
-  return `https://mail.google.com/mail/u/0/#all/${encodeURIComponent(threadId)}`;
+  // Do not force /u/0: that can open the wrong mailbox when the operator has
+  // multiple Google accounts signed in. Gmail resolves the currently selected account.
+  return `https://mail.google.com/mail/#all/${encodeURIComponent(threadId)}`;
 }
 
 export function ReplyDraftPanel({
   messageId,
   sourceSubject,
+  sourceFrom,
 }: {
   messageId: number;
   sourceSubject: string | null;
+  sourceFrom: string | null;
 }) {
   const me = useSession();
   const mutable = me.role === 'owner_controller' || me.role === 'bookkeeper';
@@ -74,6 +80,26 @@ export function ReplyDraftPanel({
   const immutable = draft?.status === 'discarded' || draft?.status === 'sent_external';
   const canChange = mutable && !immutable;
 
+  async function refresh() {
+    setBusy(true);
+    setNotice(null);
+    try {
+      const latest = await apiGet<ReplyDraft>(`/api/reply-drafts?messageId=${messageId}`);
+      setDraft(latest);
+      setSubject(latest.subject);
+      setBodyText(latest.bodyText);
+      setReason(latest.reason ?? '');
+      setNotice({ kind: 'good', text: 'Draft status refreshed from Gmail.' });
+    } catch (cause) {
+      setNotice({
+        kind: 'bad',
+        text: cause instanceof ApiError ? cause.message : 'Could not refresh the Gmail draft. Check your connection and try again.',
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function save() {
     if (!canChange || busy) return;
     setBusy(true);
@@ -104,6 +130,13 @@ export function ReplyDraftPanel({
           // The recovery message remains actionable even if the refresh is interrupted.
         }
       }
+    } catch (cause) {
+      setNotice({
+        kind: 'bad',
+        text: cause instanceof ApiError
+          ? `${cause.message} The draft was not confirmed in Gmail. Try again.`
+          : 'The draft was not confirmed in Gmail. Check your connection and try again.',
+      });
     } finally {
       setBusy(false);
     }
@@ -122,6 +155,13 @@ export function ReplyDraftPanel({
       } else {
         setNotice({ kind: 'bad', text: result.error?.message ?? 'Could not discard the draft.' });
       }
+    } catch (cause) {
+      setNotice({
+        kind: 'bad',
+        text: cause instanceof ApiError
+          ? `${cause.message} The draft was not confirmed as discarded. Try again.`
+          : 'The draft was not confirmed as discarded. Check your connection and try again.',
+      });
     } finally {
       setBusy(false);
     }
@@ -135,14 +175,15 @@ export function ReplyDraftPanel({
         <div>
           <h2>Draft reply</h2>
           <p className="muted">
-            Prepare the response here. A person reviews and sends it from Gmail.
+            Prepare the response here. <strong>AP Hub cannot send this message.</strong> A person
+            must review and send the unsent draft from Gmail.
           </p>
         </div>
         {draft ? <span className={`badge ${draft.status}`}>{draft.status.replace('_', ' ')}</span> : null}
       </div>
 
       {notice ? (
-        <div className={`notice ${notice.kind}`} data-testid="reply-draft-notice">
+        <div className={`notice ${notice.kind}`} role={notice.kind === 'bad' ? 'alert' : 'status'} aria-live="polite" data-testid="reply-draft-notice">
           {notice.text}{' '}
           {notice.reconnect ? (
             <a href="/api/connections/gmail/start" data-testid="gmail-compose-reconnect">
@@ -170,11 +211,16 @@ export function ReplyDraftPanel({
         </div>
       ) : null}
 
-      {draft ? (
+      {draft?.toAddress || sourceFrom ? (
         <div className="field-row">
           <label htmlFor="draft-to">Recipient from source conversation</label>
-          <input id="draft-to" type="text" value={draft.toAddress} readOnly />
+          <input id="draft-to" type="text" value={draft?.toAddress || sourceFrom || ''} readOnly />
         </div>
+      ) : <p className="muted">The recipient will be derived from the source conversation and shown here before you open Gmail.</p>}
+      {draft ? (
+        <p className="muted" data-testid="draft-timestamps">
+          Created {new Date(draft.createdAt).toLocaleString()} · last synced {new Date(draft.updatedAt).toLocaleString()}
+        </p>
       ) : null}
       <div className="field-row">
         <label htmlFor="draft-subject">Subject</label>
@@ -238,8 +284,13 @@ export function ReplyDraftPanel({
             rel="noreferrer"
             data-testid="draft-open-gmail"
           >
-            Open source thread in Gmail
+            Open conversation in Gmail
           </a>
+        ) : null}
+        {draft ? (
+          <button type="button" onClick={() => void refresh()} disabled={busy} data-testid="draft-refresh">
+            Refresh Gmail status
+          </button>
         ) : null}
       </div>
     </section>

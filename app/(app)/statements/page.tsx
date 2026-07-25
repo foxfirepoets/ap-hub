@@ -42,7 +42,9 @@ export default function StatementsPage() {
       {!loading && !error && items.length === 0 ? <div className="notice warn">No statements match this view.</div> : null}
       {!loading && items.length ? (
         <div className="panel">
-          <table>
+          <div className="table-scroll" tabIndex={0} role="region" aria-label="Bank statements table">
+            <table>
+            <caption className="sr-only">Bank statements awaiting review or already filed</caption>
             <thead><tr><th>Institution</th><th>Period</th><th>Status</th><th>Lines</th><th /></tr></thead>
             <tbody>
               {items.map((item) => (
@@ -55,7 +57,8 @@ export default function StatementsPage() {
                 </tr>
               ))}
             </tbody>
-          </table>
+            </table>
+          </div>
         </div>
       ) : null}
     </div>

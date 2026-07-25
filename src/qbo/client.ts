@@ -11,6 +11,7 @@ import { getFreshQboToken } from '../auth/qbo-refresh.js';
  */
 
 const SANDBOX_BASE = 'https://sandbox-quickbooks.api.intuit.com';
+const PRODUCTION_BASE = 'https://quickbooks.api.intuit.com';
 
 export interface CompanyInfo {
   CompanyName: string;
@@ -23,6 +24,7 @@ export interface QboReadClient {
 }
 
 export interface QboReadDeps {
+  qboEnv?: 'sandbox' | 'production';
   accessToken: string;
   realmId: string;
   minorVersion: string;
@@ -32,7 +34,7 @@ export interface QboReadDeps {
 
 export function createQboReadClient(deps: QboReadDeps): QboReadClient {
   const fetchImpl = deps.fetchImpl ?? (globalThis.fetch as typeof fetch);
-  const base = deps.baseUrl ?? SANDBOX_BASE;
+  const base = deps.baseUrl ?? (deps.qboEnv === 'production' ? PRODUCTION_BASE : SANDBOX_BASE);
 
   async function get(path: string): Promise<any> {
     const url = `${base}/v3/company/${deps.realmId}/${path}${path.includes('?') ? '&' : '?'}minorversion=${deps.minorVersion}`;
@@ -62,9 +64,15 @@ export async function getQboReadClient(tenantId: number): Promise<QboReadClient>
   const cfg = config();
   // QBO access tokens expire (~60 min); refresh when expired/near-expiry before use.
   const tok = await getFreshQboToken(tenantId);
+  const expectedRealm = cfg.QBO_ENV === 'production'
+    ? cfg.QBO_PRODUCTION_REALM_ID : cfg.QBO_SANDBOX_REALM_ID;
+  if (!tok.realm || (expectedRealm && tok.realm !== expectedRealm)) {
+    throw new Error('QBO_TOKEN_REALM_IDENTITY_MISMATCH');
+  }
   return createQboReadClient({
+    qboEnv: cfg.QBO_ENV,
     accessToken: tok.accessToken,
-    realmId: tok.realm ?? cfg.QBO_SANDBOX_REALM_ID,
+    realmId: tok.realm,
     minorVersion: cfg.QBO_MINOR_VERSION,
   });
 }

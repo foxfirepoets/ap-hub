@@ -19,7 +19,7 @@ function text(value: unknown): string | undefined {
     ? undefined : String(value).trim();
 }
 
-function billInput(txn: PostingTxn) {
+export function qbdBillInput(txn: PostingTxn) {
   const row = txn as any;
   if (row.currency) throw new Error('UNSUPPORTED_CAPABILITY: QBD multi-currency bill posting is not certified');
   const dimensions = [
@@ -81,7 +81,7 @@ export function createQbdConnector(exchange: QbdExchange): AccountingConnector {
   });
 
   async function queryBill(txn: PostingTxn, idempotencyKey: string): Promise<QbdBillRet | null> {
-    const input = billInput(txn);
+    const input = qbdBillInput(txn);
     if (!input.refNumber) return null;
     const response = await exchange.execute(billQueryRq({
       vendorName: input.vendorName, refNumber: input.refNumber, txnDate: input.txnDate,
@@ -104,7 +104,7 @@ export function createQbdConnector(exchange: QbdExchange): AccountingConnector {
     async create(entity: CanonicalEntityKind, record: CanonicalRecord, idempotencyKey: string): Promise<CreateResult> {
       if (entity !== 'bill') throw new Error(`QBD create supports 'bill' only, got '${entity}'`);
       const ret = parseBillRets(await exchange.execute(
-        billAddRq(billInput(record.canonical as PostingTxn), idempotencyKey),
+        billAddRq(qbdBillInput(record.canonical as PostingTxn), idempotencyKey),
         { operation: 'post_bill', idempotencyKey },
       ))[0];
       if (!ret) throw new Error('QBD_MALFORMED: BillAdd response did not contain BillRet');
@@ -131,7 +131,7 @@ export function createQbdConnector(exchange: QbdExchange): AccountingConnector {
       return ret ? posted(ret) : null;
     },
     async postBill(txn: PostingTxn, idempotencyKey: string): Promise<PostedRef> {
-      const response = await exchange.execute(billAddRq(billInput(txn), idempotencyKey), {
+      const response = await exchange.execute(billAddRq(qbdBillInput(txn), idempotencyKey), {
         operation: 'post_bill', idempotencyKey,
       });
       const ret = parseBillRets(response)[0];

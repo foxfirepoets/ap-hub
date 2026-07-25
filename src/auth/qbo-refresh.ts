@@ -28,8 +28,11 @@ export async function refreshQboToken(
   if (!existing) throw new Error('QBO not connected for tenant');
 
   const cfg = config();
+  const clientId = cfg.QBO_ENV === 'production' ? cfg.QBO_PRODUCTION_CLIENT_ID : cfg.QBO_SANDBOX_CLIENT_ID;
+  const clientSecret = cfg.QBO_ENV === 'production'
+    ? cfg.QBO_PRODUCTION_CLIENT_SECRET : cfg.QBO_SANDBOX_CLIENT_SECRET;
   const basic = Buffer.from(
-    `${cfg.QBO_SANDBOX_CLIENT_ID}:${cfg.QBO_SANDBOX_CLIENT_SECRET}`,
+    `${clientId}:${clientSecret}`,
   ).toString('base64');
   const body = new URLSearchParams({
     grant_type: 'refresh_token',

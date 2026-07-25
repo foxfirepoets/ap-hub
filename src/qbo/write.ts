@@ -2,17 +2,17 @@ import { config } from '../config.js';
 import { getFreshQboToken } from '../auth/qbo-refresh.js';
 
 /**
- * CHUNK_7 QBO SANDBOX writer. This is the ONLY module that writes to QuickBooks, and
- * it targets the SANDBOX host exclusively. Environment isolation is enforced: the
- * constructor hard-refuses unless QBO_ENV=sandbox, and there is no production base
- * URL anywhere. Proven by `no_prod_write`.
+ * QBO writer. Sandbox remains the default; production construction requires the
+ * explicit production-write gate. Both modes retain the same idempotency,
+ * provider-readback, and uncertain-result safeguards.
  */
 
 const SANDBOX_BASE = 'https://sandbox-quickbooks.api.intuit.com';
+const PRODUCTION_BASE = 'https://quickbooks.api.intuit.com';
 
 export class ProductionWriteRefused extends Error {
   constructor() {
-    super('QBO production writes are refused — this build only ever writes to sandbox.');
+    super('QBO production writes require the explicit production write gate.');
     this.name = 'ProductionWriteRefused';
   }
 }
@@ -33,6 +33,7 @@ export interface QboWriteClient {
 
 export interface QboWriteDeps {
   qboEnv: string;
+  productionWriteEnabled?: boolean;
   accessToken: string;
   realmId: string;
   minorVersion: string;
@@ -41,11 +42,13 @@ export interface QboWriteDeps {
 }
 
 export function createQboWriteClient(deps: QboWriteDeps): QboWriteClient {
-  // HARD REFUSE production. No production code path exists.
-  if (deps.qboEnv !== 'sandbox') throw new ProductionWriteRefused();
+  if (!['sandbox', 'production'].includes(deps.qboEnv)) throw new ProductionWriteRefused();
+  if (deps.qboEnv === 'production' && deps.productionWriteEnabled !== true) {
+    throw new ProductionWriteRefused();
+  }
 
   const fetchImpl = deps.fetchImpl ?? (globalThis.fetch as typeof fetch);
-  const base = deps.baseUrl ?? SANDBOX_BASE;
+  const base = deps.baseUrl ?? (deps.qboEnv === 'production' ? PRODUCTION_BASE : SANDBOX_BASE);
   const realm = deps.realmId;
 
   const url = (path: string) =>
@@ -124,10 +127,16 @@ export async function getQboWriteClient(tenantId: number): Promise<QboWriteClien
   const cfg = config();
   // QBO access tokens expire (~60 min); refresh when expired/near-expiry before use.
   const tok = await getFreshQboToken(tenantId);
+  const expectedRealm = cfg.QBO_ENV === 'production'
+    ? cfg.QBO_PRODUCTION_REALM_ID : cfg.QBO_SANDBOX_REALM_ID;
+  if (!tok.realm || (expectedRealm && tok.realm !== expectedRealm)) {
+    throw new Error('QBO_TOKEN_REALM_IDENTITY_MISMATCH');
+  }
   return createQboWriteClient({
     qboEnv: cfg.QBO_ENV,
+    productionWriteEnabled: cfg.QBO_PRODUCTION_WRITE_ENABLED,
     accessToken: tok.accessToken,
-    realmId: tok.realm ?? cfg.QBO_SANDBOX_REALM_ID,
+    realmId: tok.realm,
     minorVersion: cfg.QBO_MINOR_VERSION,
   });
 }

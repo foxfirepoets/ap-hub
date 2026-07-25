@@ -10,7 +10,7 @@ export default function AppShellLayout({ children }: { children: ReactNode }) {
     <SessionGuard>
       <div className="shell">
         <Nav />
-        <main className="content">{children}</main>
+        <main className="content" id="main-content" tabIndex={-1}>{children}</main>
       </div>
     </SessionGuard>
   );

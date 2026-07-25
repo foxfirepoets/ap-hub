@@ -5,9 +5,9 @@ export async function resetTables(): Promise<void> {
   // `postings_ap` is the base table (migration 006); `postings` is a back-compat view
   // over it, so TRUNCATE targets the base table. `connections` is truncated too.
   await query(`
-    TRUNCATE sessions, users, forwards, proof_refs, postings_ap, reconciliation, corrections,
+    TRUNCATE sso_login_states, oauth_connect_states, sessions, users, forwards, proof_refs, postings_ap, reconciliation, corrections,
              exceptions, proposals, extractions, mappings, attachments, attachment_blobs,
-             messages, oauth_tokens, audit_log, llm_calls, notifications, connections, tenants RESTART IDENTITY CASCADE;
+             classification_dispatches, messages, oauth_tokens, audit_log, llm_calls, notifications, connections, tenants RESTART IDENTITY CASCADE;
   `);
 }
 
@@ -43,14 +43,23 @@ export async function createConnection(
   opts: { provider?: string; connectionClass?: string; externalCompany?: string; status?: string } = {},
 ): Promise<number> {
   const { rows } = await query<{ id: number }>(
-    `INSERT INTO connections (tenant_id, provider, connection_class, external_company, status)
-     VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+    `INSERT INTO connections (tenant_id, provider, connection_class, external_company, status, metadata)
+     VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
     [
       tenantId,
       opts.provider ?? 'qbo',
       opts.connectionClass ?? 'cloud',
       opts.externalCompany ?? `co-${Math.floor(performance.now() * 1000)}`,
       opts.status ?? 'active',
+      opts.provider === 'qbd'
+        ? {
+            ownerWriteGate: {
+              enabled: true,
+              confirmedCompanyId: opts.externalCompany ?? '',
+              backupConfirmedAt: new Date().toISOString(),
+            },
+          }
+        : {},
     ],
   );
   return rows[0]!.id;

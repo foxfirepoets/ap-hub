@@ -49,7 +49,8 @@ export default function TransactionsPage() {
       </div>
 
       <div className="panel">
-        <table>
+        <div className="table-scroll" tabIndex={0} role="region" aria-label="Transactions table">
+          <table>
           <thead>
             <tr>
               <th>Vendor</th>
@@ -93,7 +94,8 @@ export default function TransactionsPage() {
               </tr>
             ) : null}
           </tbody>
-        </table>
+          </table>
+        </div>
       </div>
     </div>
   );

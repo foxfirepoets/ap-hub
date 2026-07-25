@@ -20,9 +20,12 @@ export function buildGmailAuthorizeUrl(cfg: Config, state: string): string {
 }
 
 export function buildQboAuthorizeUrl(cfg: Config, state: string): string {
+  const clientId = cfg.QBO_ENV === 'production' ? cfg.QBO_PRODUCTION_CLIENT_ID : cfg.QBO_SANDBOX_CLIENT_ID;
+  const redirectUri = cfg.QBO_ENV === 'production'
+    ? cfg.QBO_PRODUCTION_REDIRECT_URI : cfg.QBO_SANDBOX_REDIRECT_URI;
   return (
-    `https://appcenter.intuit.com/connect/oauth2?client_id=${cfg.QBO_SANDBOX_CLIENT_ID}` +
-    `&redirect_uri=${encodeURIComponent(cfg.QBO_SANDBOX_REDIRECT_URI)}` +
+    `https://appcenter.intuit.com/connect/oauth2?client_id=${clientId}` +
+    `&redirect_uri=${encodeURIComponent(redirectUri)}` +
     `&response_type=code&scope=${encodeURIComponent(QBO_SCOPE)}&state=${encodeURIComponent(state)}`
   );
 }

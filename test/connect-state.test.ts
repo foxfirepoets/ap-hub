@@ -1,43 +1,59 @@
-import { describe, it, expect } from 'vitest';
-import { signConnectState, verifyConnectState } from '../src/auth/connect-state.js';
-import { resetConfigCache } from '../src/config.js';
+import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { consumeConnectState, createConnectState } from '../src/auth/connect-state.js';
+import { createSession, revokeSession } from '../src/auth/session.js';
+import { closeAll, createTenant, createUser, resetTables } from './helpers.js';
 
-describe('connect-state', () => {
-  it('round-trips: sign for a tenant, verify immediately, get that tenant id back', () => {
-    const token = signConnectState(7);
-    expect(verifyConnectState(token)).toEqual({ tenantId: 7 });
+async function actor() {
+  const tenantId = await createTenant();
+  const userId = await createUser(tenantId);
+  const session = await createSession(userId);
+  return { tenantId: Number(tenantId), userId: Number(userId), sessionId: Number(session.id) };
+}
+
+describe('persistent OAuth connect state', () => {
+  beforeEach(resetTables);
+  afterAll(closeAll);
+
+  it('consumes once for the bound provider', async () => {
+    const a = await actor();
+    const token = await createConnectState(a, 'gmail');
+    await expect(consumeConnectState(token, 'gmail', a.sessionId)).resolves.toMatchObject(a);
+    await expect(consumeConnectState(token, 'gmail', a.sessionId)).resolves.toBeNull();
   });
 
-  it('rejects a tampered token (one flipped character)', () => {
-    const token = signConnectState(7);
-    const flipped = token.at(-1) === 'a' ? token.slice(0, -1) + 'b' : token.slice(0, -1) + 'a';
-    expect(verifyConnectState(flipped)).toBeNull();
+  it('rejects cross-provider use without consuming the valid provider state', async () => {
+    const a = await actor();
+    const token = await createConnectState(a, 'gmail');
+    await expect(consumeConnectState(token, 'qbo', a.sessionId)).resolves.toBeNull();
+    await expect(consumeConnectState(token, 'gmail', a.sessionId)).resolves.toMatchObject(a);
   });
 
-  it('accepts a token checked at exactly 4:59 after signing, rejects at 5:01', () => {
-    const signedAt = 1_000_000;
-    const token = signConnectState(7, () => signedAt);
+  it('rejects expired state and a revoked initiating session', async () => {
+    const a = await actor();
+    const expired = await createConnectState(a, 'gmail', () => Date.now() - 6 * 60 * 1000);
+    await expect(consumeConnectState(expired, 'gmail', a.sessionId)).resolves.toBeNull();
 
-    const at459Later = () => signedAt + (4 * 60 + 59) * 1000; // 4 min 59 s later
-    expect(verifyConnectState(token, at459Later)).toEqual({ tenantId: 7 });
-
-    const at501Later = () => signedAt + (5 * 60 + 1) * 1000; // 5 min 1 s later
-    expect(verifyConnectState(token, at501Later)).toBeNull();
+    const token = await createConnectState(a, 'gmail');
+    await revokeSession(a.sessionId);
+    await expect(consumeConnectState(token, 'gmail', a.sessionId)).resolves.toBeNull();
   });
 
-  it('rejects a token signed then verified with a different SESSION_COOKIE_SECRET', () => {
-    const original = process.env.SESSION_COOKIE_SECRET;
-    try {
-      process.env.SESSION_COOKIE_SECRET = 'connect-state-secret-A-32-bytes-minimum';
-      resetConfigCache();
-      const token = signConnectState(7);
+  it('atomically permits exactly one concurrent consumer', async () => {
+    const a = await actor();
+    const token = await createConnectState(a, 'qbo');
+    const results = await Promise.all([
+      consumeConnectState(token, 'qbo', a.sessionId),
+      consumeConnectState(token, 'qbo', a.sessionId),
+    ]);
+    expect(results.filter(Boolean)).toHaveLength(1);
+    expect(results.filter((v) => v === null)).toHaveLength(1);
+  });
 
-      process.env.SESSION_COOKIE_SECRET = 'connect-state-secret-B-32-bytes-minimum';
-      resetConfigCache();
-      expect(verifyConnectState(token)).toBeNull();
-    } finally {
-      process.env.SESSION_COOKIE_SECRET = original;
-      resetConfigCache();
-    }
+  it('rejects a different valid session without consuming the initiating state', async () => {
+    const initiating = await actor();
+    const otherSession = await createSession(initiating.userId);
+    const token = await createConnectState(initiating, 'gmail');
+    await expect(consumeConnectState(token, 'gmail', Number(otherSession.id))).resolves.toBeNull();
+    await expect(consumeConnectState(token, 'gmail', initiating.sessionId)).resolves.toMatchObject(initiating);
   });
 });

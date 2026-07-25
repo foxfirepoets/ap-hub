@@ -1,10 +1,11 @@
 # ap-hub — AI Accountant Hub
 
-A local TypeScript backend plus a Next.js review UI that read accounting email
+A local TypeScript backend plus a Next.js review UI that reads accounting email
 from Gmail and verify documents through the operator's own **SwarmSync** proof platform
 (InvoiceProof · Verify-API · AuditProof), and produces reviewable QuickBooks Online
-transactions — writing **only to a QBO sandbox company**, never production, and never
-sending or modifying Gmail except one locked-down forward.
+transactions for QBO sandbox or supported Windows QuickBooks Desktop Pro, Premier,
+and Enterprise. It can create, update, inspect, and discard unsent Gmail drafts;
+a human is always responsible for sending them.
 
 It is **white-label**: dropping it into a new business is configuration only (their
 Gmail, their QuickBooks sandbox, their forwarding address, their Telegram chat).
@@ -17,13 +18,14 @@ Gmail (watched label)
   → gatekeeper: InvoiceProof scan → forward clean invoices to QBO capture / HOLD + Telegram alert
   → extract (LLM vision) → Verify-API check
   → map (vendor/account) → InvoiceProof gate → proposal (ready/review/exception)
-  → post_sandbox (QBO sandbox, idempotent, read-back verified) → AuditProof anchor
+  → proof-gated post (QBO sandbox or explicitly enabled, company-bound QBD)
   → daily audit anchor
 ```
 
-Two phases: **Phase 1** (chunks 1–6) writes nothing to QuickBooks and never modifies
-Gmail. **Phase 2** (chunk 7) writes only to the QBO sandbox. No proposal reaches `ready`
-— and nothing posts — without completed proof coverage.
+QuickBooks writes are proof-gated and fail closed. QBO production is default-off and
+requires an explicit production gate plus exact tenant realm/company binding. QBD is
+disabled by default and requires an owner-enabled write gate bound to the expected
+Windows company. Gmail reply handling is draft-only; AP Hub has no reply-send action.
 
 ## Quick start
 
@@ -37,8 +39,9 @@ npm run dev                     # terminal 1: backend + workers
 npm run web:dev                 # terminal 2: authenticated UI
 ```
 
-Requires Node 20+, PostgreSQL, a usable vision LLM, Google SSO, a Gmail OAuth app (readonly), a
-QuickBooks Online **sandbox** app, and (for the gatekeeper) a SwarmSync `ssk_live_` key,
+Requires Node 20+, PostgreSQL, a usable vision LLM, Google SSO, a Gmail OAuth app
+(readonly plus compose when drafts are enabled), a QuickBooks Online sandbox app or
+supported Windows QuickBooks Desktop, and (for the gatekeeper) a SwarmSync `ssk_live_` key,
 the QBO capture address, and a Telegram bot token + chat id.
 
 ## Operator runbook
@@ -69,9 +72,9 @@ it never blocks the queue and never lets an unscanned document through. Holds an
 
 | Guarantee | Test |
 |---|---|
-| No QBO write before posting; Gmail never modified | `no_qbo_write`, `no_write` semantics |
+| Reply drafts cannot be sent by AP Hub | Gmail draft and reply API no-send tests |
 | Forward locked to one configured address | `send_lockdown` |
-| Sandbox-only; production refused | `no_prod_write` |
+| Production default-off; exact realm/company + owner/proof gates required | configuration and posting tests |
 | No double-post / double-forward | `idempotent_double_post`, `replay_after_timeout`, `no_double_forward` |
 | Nothing unscanned gets through | `proof_fail_safe`, `gatekeeper_hold`, `proof_gate_posting`, `unscannable_hold` |
 | White-label = config only | `white_label_install` |
@@ -83,8 +86,17 @@ for external-system evidence. See [INSTALL.md](INSTALL.md), `CLAUDE.md`, and `sp
 
 > **Built ≠ externally certified.** `npm run verify` proves the repository-level
 > gates on the machine where it is run. It does not prove live Gmail, QBO, LLM,
-> broker, deployment, backup restoration, or production readiness. Use disposable
+> broker, deployment, backup restoration, or production readiness. Production QBO
+> writes are default-off and require `QBO_ENV=production`,
+> `QBO_PRODUCTION_WRITE_ENABLED=true`, exact realm/company configuration, an active
+> tenant-owned OAuth connection, owner approval, proof gates, duplicate detection,
+> and provider read-back. Use disposable
 > sandbox credentials for `npm run verify:live` and complete an operator launch audit.
 
-QuickBooks Desktop is read-only in this build. The only accounting write path is
-the proof-gated QuickBooks Online sandbox writer.
+QuickBooks Desktop is disabled and read-only by default. Supported Windows
+QuickBooks Desktop Pro, Premier, and Enterprise companies can use the
+proof-gated bill writer only after an owner explicitly enables
+`QB_DESKTOP_WRITE_ENABLED` and verifies the expected company identity in a
+disposable test company. QuickBooks Mac, Self-Employed, and unknown editions are
+reported as unsupported rather than treated as compatible. Automated
+verification never writes to a production QBO company or a real QBD company.

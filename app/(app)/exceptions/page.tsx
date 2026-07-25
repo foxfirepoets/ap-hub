@@ -11,11 +11,12 @@ import { RemapForm, type RemapValues } from '../../components/RemapForm';
 import type { ExceptionRow, Evidence, ApprovePosted } from '../../lib/types';
 import type { ActionResult } from '../../lib/api';
 import { ReplyDraftPanel } from './_components/ReplyDraftPanel';
+import { ClassificationReviewPanel } from './_components/ClassificationReviewPanel';
 
 type Notice = { kind: 'good' | 'warn' | 'bad'; text: string; qboLink?: string | null };
 
 function gmailUrl(gmailMessageId: string | null): string | null {
-  return gmailMessageId ? `https://mail.google.com/mail/u/0/#all/${gmailMessageId}` : null;
+  return gmailMessageId ? `https://mail.google.com/mail/#all/${gmailMessageId}` : null;
 }
 
 export default function ExceptionsPage() {
@@ -204,6 +205,7 @@ export default function ExceptionsPage() {
           ) : null}
         </div>
       ) : null}
+      <ClassificationReviewPanel />
 
       <div className="split">
         <div className="queue" data-testid="exceptions-queue">
@@ -255,6 +257,7 @@ export default function ExceptionsPage() {
                   key={evidence.email.messageId}
                   messageId={evidence.email.messageId}
                   sourceSubject={evidence.email.subject}
+                  sourceFrom={evidence.email.from}
                 />
               ) : null}
 

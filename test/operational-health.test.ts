@@ -16,7 +16,7 @@ describe('operational health', () => {
         }],
       })
       .mockResolvedValueOnce({ rows: [{ held: 7, unbalanced: 8 }] })
-      .mockResolvedValueOnce({ rows: [{ failed: 9 }] });
+      .mockResolvedValueOnce({ rows: [{ failed: 9, result_unknown: 6 }] });
 
     const result = await collectOperationalHealth(runQuery);
 
@@ -30,7 +30,7 @@ describe('operational health', () => {
         held: 5,
       },
       statements: { held: 7, unbalanced: 8 },
-      drafts: { failed: 9 },
+      drafts: { failed: 9, resultUnknown: 6 },
     });
     expect(JSON.stringify(result)).not.toMatch(/payload|address|password|token|body/i);
   });
@@ -49,7 +49,7 @@ describe('operational health', () => {
         }],
       })
       .mockResolvedValueOnce({ rows: [{ held: '0', unbalanced: '0' }] })
-      .mockResolvedValueOnce({ rows: [{ failed: '0' }] });
+      .mockResolvedValueOnce({ rows: [{ failed: '0', result_unknown: '0' }] });
 
     const result = await collectOperationalHealth(runQuery);
     expect(result.providerJobs.oldestQueuedSeconds).toBeNull();

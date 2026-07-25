@@ -30,15 +30,13 @@ describe.sequential('008 accounting intake migration', () => {
     const admin = new Client({ connectionString: adminUrl.toString() });
     await admin.connect();
     try {
-      await admin.query(
-        'SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()',
-        [databaseName],
-      );
+      // Every test-owned pool is closed above. A direct drop both avoids
+      // requiring pg_signal_backend and catches any leaked connection.
       await admin.query(`DROP DATABASE IF EXISTS "${databaseName}"`);
     } finally {
       await admin.end();
     }
-  });
+  }, 60_000);
 
   it('enforces tenant scope, statuses, idempotency, and UP → DOWN → UP safety', async () => {
     const { rows: tables } = await pool.query<{ table_name: string }>(`
@@ -140,6 +138,20 @@ describe.sequential('008 accounting intake migration', () => {
       [tenant1, message1, user1],
     )).rejects.toMatchObject({ code: '23505' });
 
+    // Later additive migrations are layered above 008. Revert them first so
+    // this test can exercise 008's retained-accounting-data refusal.
+    await expect(migrateDown(disposableUrl.toString())).resolves.toBe(
+      '012_classification_dispatches.sql',
+    );
+    await expect(migrateDown(disposableUrl.toString())).resolves.toBe(
+      '011_sso_login_states.sql',
+    );
+    await expect(migrateDown(disposableUrl.toString())).resolves.toBe(
+      '010_reply_draft_result_unknown.sql',
+    );
+    await expect(migrateDown(disposableUrl.toString())).resolves.toBe(
+      '009_oauth_connect_states.sql',
+    );
     await expect(migrateDown(disposableUrl.toString())).rejects.toThrow(
       'refusing DOWN for 008_accounting_intake: retained rows exist',
     );
@@ -156,7 +168,13 @@ describe.sequential('008 accounting intake migration', () => {
       `SELECT to_regclass('public.accounting_documents') AS relation`,
     )).rows[0].relation).toBeNull();
 
-    await expect(migrateUp(disposableUrl.toString())).resolves.toContain('008_accounting_intake.sql');
+    await expect(migrateUp(disposableUrl.toString())).resolves.toEqual([
+      '008_accounting_intake.sql',
+      '009_oauth_connect_states.sql',
+      '010_reply_draft_result_unknown.sql',
+      '011_sso_login_states.sql',
+      '012_classification_dispatches.sql',
+    ]);
     expect((await pool.query(
       `SELECT to_regclass('public.accounting_documents') AS relation`,
     )).rows[0].relation).toBe('accounting_documents');

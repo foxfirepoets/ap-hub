@@ -43,7 +43,7 @@ export async function guardedPostSandboxHandler(job: { data: PostJob }): Promise
 export async function registerPipelineJobs(boss: PgBoss, cfg: Config): Promise<void> {
   const { pollHandler, schedulePoll } = await import('./poll.js');
   const { gatekeepHandler } = await import('./gatekeep.js');
-  const { classifyHandler, extractHandler } = await import('./extract.js');
+  const { classifyHandler, extractHandler, statementExtractHandler } = await import('./extract.js');
   const { mapHandler, proposeHandler } = await import('./mapping.js');
   const { auditAnchorHandler, scheduleAuditAnchor } = await import('./audit-anchor.js');
   const { digestHandler, scheduleDigest } = await import('../services/digest.js');
@@ -55,11 +55,13 @@ export async function registerPipelineJobs(boss: PgBoss, cfg: Config): Promise<v
     JOBS.gatekeep,
     JOBS.classify,
     JOBS.extract,
+    JOBS.extract_statement,
     JOBS.map,
     JOBS.propose,
     JOBS.post_sandbox,
     JOBS.audit_anchor,
     JOBS.digest,
+    JOBS.dispatch_classifications,
   ]) {
     await boss.createQueue(name);
   }
@@ -68,15 +70,21 @@ export async function registerPipelineJobs(boss: PgBoss, cfg: Config): Promise<v
   await boss.work(JOBS.gatekeep, (job: any) => gatekeepHandler(job));
   await boss.work(JOBS.classify, (job: any) => classifyHandler(job));
   await boss.work(JOBS.extract, (job: any) => extractHandler(job));
+  await boss.work(JOBS.extract_statement, (job: any) => statementExtractHandler(job));
   await boss.work(JOBS.map, (job: any) => mapHandler(job));
   await boss.work(JOBS.propose, (job: any) => proposeHandler(job));
   await boss.work(JOBS.post_sandbox, (job: any) => guardedPostSandboxHandler(job));
   await boss.work(JOBS.audit_anchor, (job: any) => auditAnchorHandler(job));
   await boss.work(JOBS.digest, (job: any) => digestHandler(job));
+  await boss.work(JOBS.dispatch_classifications, async () => {
+    const { dispatchPendingClassifications } = await import('../accounting/document-review.js');
+    await dispatchPendingClassifications();
+  });
 
   await schedulePoll(boss, cfg);
   await scheduleAuditAnchor(boss);
   await scheduleDigest(boss);
+  await boss.schedule(JOBS.dispatch_classifications, '* * * * *');
 
   logger.info('pipeline jobs registered');
 }

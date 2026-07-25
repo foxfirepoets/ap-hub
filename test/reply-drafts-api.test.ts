@@ -2,7 +2,11 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSession } from '../src/auth/session.js';
-import { GmailComposeScopeError, type GmailDraftClient } from '../src/gmail/drafts.js';
+import {
+  GmailComposeScopeError,
+  GmailDraftResultUnknownError,
+  type GmailDraftClient,
+} from '../src/gmail/drafts.js';
 import { query } from '../src/db/pool.js';
 import {
   runCreateReplyDraft,
@@ -67,6 +71,7 @@ function client(): GmailDraftClient {
       to: 'billing@vendor.test',
       status: 'created',
     })),
+    reconcileCreateInSourceThread: vi.fn().mockResolvedValue(null),
     updateInSourceThread: vi.fn().mockImplementation(async (id, source) => ({
       providerDraftId: id,
       providerMessageId: 'gmail-draft-message-2',
@@ -202,6 +207,197 @@ describe('CHUNK_4 reply draft API', () => {
       gmail_draft_id: null,
     });
     expect(await countRows('audit_log', "action='reply_draft.prepared'")).toBe(1);
+  });
+
+  it('holds an ambiguous create and adopts it before any later mutation', async () => {
+    const tenantId = await createTenant();
+    const messageId = await message(tenantId);
+    const bearer = await token(tenantId);
+    const d = deps();
+    vi.mocked(d.api.createInSourceThread)
+      .mockRejectedValueOnce(new GmailDraftResultUnknownError('timeout after create'));
+
+    const response = await runCreateReplyDraft(
+      request('POST', bearer, {
+        messageId,
+        subject: 'Re: Invoice',
+        bodyText: 'Please clarify.',
+      }),
+      d,
+    );
+    expect(response.status).toBe(503);
+    const held = (await query<{ id: number; status: string }>(
+      'SELECT id,status FROM reply_drafts WHERE tenant_id=$1',
+      [tenantId],
+    )).rows[0]!;
+    expect(held.status).toBe('result_unknown');
+    expect(d.api.createInSourceThread).toHaveBeenCalledTimes(1);
+
+    const repeated = await runCreateReplyDraft(
+      request('POST', bearer, {
+        messageId,
+        subject: 'Re: Invoice',
+        bodyText: 'Please clarify.',
+      }),
+      d,
+    );
+    expect(repeated.status).toBe(409);
+    expect(await repeated.json()).toMatchObject({
+      error: { code: 'REPLY_DRAFT_EXISTS' },
+    });
+    expect(d.api.createInSourceThread).toHaveBeenCalledTimes(1);
+
+    vi.mocked(d.api.reconcileCreateInSourceThread).mockResolvedValue({
+      providerDraftId: 'adopted-draft',
+      providerMessageId: 'adopted-message',
+      threadId: `thread-${tenantId}-${messageId}`,
+      to: 'billing@vendor.test',
+      status: 'created',
+    });
+    const updated = await runUpdateReplyDraft(
+      request('PATCH', bearer, {
+        subject: 'Re: Invoice',
+        bodyText: 'Please clarify the total.',
+      }),
+      Number(held.id),
+      d,
+    );
+    expect(updated.status).toBe(200);
+    expect(d.api.reconcileCreateInSourceThread).toHaveBeenCalledTimes(1);
+    expect(d.api.updateInSourceThread).toHaveBeenCalledWith(
+      'adopted-draft',
+      expect.any(Object),
+      expect.any(Object),
+    );
+    expect(d.api.createInSourceThread).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps an unknown create held when reconciliation finds nothing', async () => {
+    const tenantId = await createTenant();
+    const messageId = await message(tenantId);
+    const bearer = await token(tenantId);
+    const d = deps();
+    vi.mocked(d.api.createInSourceThread)
+      .mockRejectedValueOnce(new GmailDraftResultUnknownError('timeout after create'));
+    await runCreateReplyDraft(
+      request('POST', bearer, { messageId, subject: 'Re: Invoice', bodyText: 'Question.' }),
+      d,
+    );
+    const held = (await query<{ id: number }>(
+      'SELECT id FROM reply_drafts WHERE tenant_id=$1',
+      [tenantId],
+    )).rows[0]!;
+
+    const update = await runUpdateReplyDraft(
+      request('PATCH', bearer, { subject: 'Re: Invoice', bodyText: 'Changed.' }),
+      Number(held.id),
+      d,
+    );
+    expect(update.status).toBe(503);
+    expect(d.api.createInSourceThread).toHaveBeenCalledTimes(1);
+    expect(d.api.updateInSourceThread).not.toHaveBeenCalled();
+    expect((await query<{ status: string }>(
+      'SELECT status FROM reply_drafts WHERE id=$1',
+      [held.id],
+    )).rows[0]!.status).toBe('result_unknown');
+
+    const discard = await runDiscardReplyDraft(request('DELETE', bearer), Number(held.id), d);
+    expect(discard.status).toBe(503);
+    expect(d.api.discard).not.toHaveBeenCalled();
+    expect((await query<{ status: string }>(
+      'SELECT status FROM reply_drafts WHERE id=$1',
+      [held.id],
+    )).rows[0]!.status).toBe('result_unknown');
+  });
+
+  it('allows only one provider create across simultaneous first-create requests', async () => {
+    const tenantId = await createTenant();
+    const messageId = await message(tenantId);
+    const bearer = await token(tenantId);
+    const d = deps();
+    let releaseProvider!: () => void;
+    let markProviderStarted!: () => void;
+    const providerGate = new Promise<void>((resolve) => { releaseProvider = resolve; });
+    const providerStarted = new Promise<void>((resolve) => { markProviderStarted = resolve; });
+    vi.mocked(d.api.createInSourceThread).mockImplementationOnce(async (source) => {
+      markProviderStarted();
+      await providerGate;
+      return {
+        providerDraftId: 'gmail-draft-race',
+        providerMessageId: 'gmail-message-race',
+        threadId: source.threadId,
+        to: 'billing@vendor.test',
+        status: 'created',
+      };
+    });
+    const body = {
+      messageId,
+      subject: 'Re: Invoice',
+      bodyText: 'One draft only.',
+    };
+    const first = runCreateReplyDraft(request('POST', bearer, body), d);
+    await providerStarted;
+    const second = runCreateReplyDraft(request('POST', bearer, body), d);
+    releaseProvider();
+    const responses = await Promise.all([first, second]);
+
+    expect(responses.map((response) => response.status).sort()).toEqual([200, 409]);
+    expect(d.api.createInSourceThread).toHaveBeenCalledTimes(1);
+    expect(await countRows('reply_drafts', 'tenant_id=$1 AND message_id=$2', [
+      tenantId,
+      messageId,
+    ])).toBe(1);
+  });
+
+  it('holds an ambiguous update and reads the known provider id before retry', async () => {
+    const tenantId = await createTenant();
+    const messageId = await message(tenantId);
+    const bearer = await token(tenantId);
+    const d = deps();
+    const created = await data(await runCreateReplyDraft(
+      request('POST', bearer, {
+        messageId,
+        subject: 'Re: Invoice',
+        bodyText: 'Original question.',
+      }),
+      d,
+    ));
+    vi.mocked(d.api.updateInSourceThread)
+      .mockRejectedValueOnce(new GmailDraftResultUnknownError('timeout after update'));
+
+    const ambiguous = await runUpdateReplyDraft(
+      request('PATCH', bearer, {
+        subject: 'Re: Invoice',
+        bodyText: 'Changed question.',
+      }),
+      created.id,
+      d,
+    );
+    expect(ambiguous.status).toBe(503);
+    expect((await query<{ status: string; gmail_draft_id: string }>(
+      'SELECT status,gmail_draft_id FROM reply_drafts WHERE id=$1',
+      [created.id],
+    )).rows[0]).toMatchObject({
+      status: 'result_unknown',
+      gmail_draft_id: 'gmail-draft-1',
+    });
+
+    vi.mocked(d.api.updateInSourceThread).mockClear();
+    const retried = await runUpdateReplyDraft(
+      request('PATCH', bearer, {
+        subject: 'Re: Invoice',
+        bodyText: 'Final question.',
+      }),
+      created.id,
+      d,
+    );
+    expect(retried.status).toBe(200);
+    expect(d.api.readStatus).toHaveBeenCalledWith(
+      'gmail-draft-1',
+      `thread-${tenantId}-${messageId}`,
+    );
+    expect(d.api.updateInSourceThread).toHaveBeenCalledTimes(1);
+    expect(d.api.reconcileCreateInSourceThread).not.toHaveBeenCalled();
   });
 
   it('projects a human-sent Gmail status and refuses every later application mutation', async () => {

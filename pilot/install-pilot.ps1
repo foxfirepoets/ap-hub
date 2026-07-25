@@ -19,25 +19,43 @@
 [CmdletBinding()]
 param(
   [Parameter(Mandatory = $true)][string]$BrokerBaseUrl,
-  [Parameter(Mandatory = $true)][string]$InstallToken,
+  [string]$InstallToken,
   [Parameter(Mandatory = $true)][string]$GmailClientId,
-  [Parameter(Mandatory = $true)][string]$GmailClientSecret,
+  [string]$GmailClientSecret,
   [Parameter(Mandatory = $true)][string]$GoogleSsoClientId,
-  [Parameter(Mandatory = $true)][string]$GoogleSsoClientSecret,
+  [string]$GoogleSsoClientSecret,
   [Parameter(Mandatory = $true)][string]$QboSandboxClientId,
-  [Parameter(Mandatory = $true)][string]$QboSandboxClientSecret,
+  [string]$QboSandboxClientSecret,
   [Parameter(Mandatory = $true)][string]$QboSandboxCompanyName,
   [Parameter(Mandatory = $true)][string]$TenantName,
   [Parameter(Mandatory = $true)][string]$OwnerEmail,
   # Portable runtimes: local zip paths (preferred for an offline install) or https URLs.
   [string]$NodeZip = $env:APHUB_NODE_ZIP,
   [string]$PostgresZip = $env:APHUB_PG_ZIP,
+  [string]$CredentialBundlePath,
+  [string]$RecoveryTarget,
   [string]$AppSource = (Split-Path -Parent $PSScriptRoot),  # the ap-hub repo/app to copy
   [switch]$NonInteractive
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+
+if ($CredentialBundlePath) {
+  Add-Type -AssemblyName System.Security
+  $encrypted = [Convert]::FromBase64String((Get-Content -Raw -LiteralPath $CredentialBundlePath).Trim())
+  $json = [Text.Encoding]::UTF8.GetString(
+    [Security.Cryptography.ProtectedData]::Unprotect($encrypted, $null, 'CurrentUser')
+  ) | ConvertFrom-Json
+  $InstallToken = [string]$json.InstallToken
+  $GmailClientSecret = [string]$json.GmailClientSecret
+  $GoogleSsoClientSecret = [string]$json.GoogleSsoClientSecret
+  $QboSandboxClientSecret = [string]$json.QboSandboxClientSecret
+  Remove-Item -LiteralPath $CredentialBundlePath -Force
+}
+if (-not $InstallToken -or -not $GmailClientSecret -or -not $GoogleSsoClientSecret -or -not $QboSandboxClientSecret) {
+  throw 'Secret credentials are required. Use New-PilotCredentialBundle.ps1 and -CredentialBundlePath.'
+}
 
 $AppDir  = Join-Path $env:LOCALAPPDATA 'APHub'
 $BinDir  = Join-Path $AppDir 'bin'
@@ -207,6 +225,41 @@ Protect-Secret 'session_cookie_secret' $sessionSecret
 Protect-Secret 'gmail_client_secret' $GmailClientSecret
 Protect-Secret 'google_sso_client_secret' $GoogleSsoClientSecret
 Protect-Secret 'qbo_sandbox_client_secret' $QboSandboxClientSecret
+
+# Recovery is not certified by leaving another plaintext key on the same disk.
+# Require a removable drive or UNC/network target, copy the DPAPI artifacts, and
+# prove the copied encryption key can be restored by this Windows user.
+if (-not $RecoveryTarget) { throw 'RecoveryTarget is required (removable drive or UNC/network path).' }
+$isNetwork = $RecoveryTarget -match '^[\\]{2}'
+$isRemovable = $false
+if (-not $isNetwork) {
+  try {
+    $root = [IO.Path]::GetPathRoot([IO.Path]::GetFullPath($RecoveryTarget))
+    $isRemovable = ([IO.DriveInfo]::new($root)).DriveType -eq [IO.DriveType]::Removable
+  } catch { $isRemovable = $false }
+}
+if (-not ($isNetwork -or $isRemovable)) {
+  throw 'RecoveryTarget must be a UNC/network location or removable drive, not the application disk.'
+}
+$recoveryDir = Join-Path $RecoveryTarget ("APHub-Recovery-{0}" -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
+New-Item -ItemType Directory -Force -Path $recoveryDir | Out-Null
+Copy-Item -Path (Join-Path $secDir '*.dpapi') -Destination $recoveryDir
+$copiedKey = Join-Path $recoveryDir 'encryption_key.dpapi'
+$restoredEncrypted = [Convert]::FromBase64String((Get-Content -Raw -LiteralPath $copiedKey).Trim())
+$restoredKey = [Text.Encoding]::UTF8.GetString(
+  [Security.Cryptography.ProtectedData]::Unprotect($restoredEncrypted, $null, 'CurrentUser')
+)
+$restorePassed = $restoredKey -eq $encKey
+if (-not $restorePassed) { throw 'Recovery restore proof failed.' }
+$sha = [Security.Cryptography.SHA256]::Create()
+try { $restoredHash = -join ($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($restoredKey)) | ForEach-Object { $_.ToString('x2') }) }
+finally { $sha.Dispose() }
+@{
+  createdAt = (Get-Date).ToString('o')
+  target = $recoveryDir
+  restorePassed = $true
+  encryptionKeySha256 = $restoredHash
+} | ConvertTo-Json | Set-Content -Encoding utf8 (Join-Path $recoveryDir 'recovery-proof.json')
 # The install-time migrate/bootstrap child processes need the same values. They
 # remain in process memory only; the supervisor later reloads them from DPAPI.
 $env:ENCRYPTION_KEY = $encKey

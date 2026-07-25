@@ -9,18 +9,32 @@
 
 import type { Config } from '../config.js';
 import { logger } from '../logger.js';
-import { registerRawRoute, readBody } from '../http.js';
-import { handleQbwcSoap } from './soap.js';
+import { registerRawRoute, readBody, RequestBodyError } from '../http.js';
+import { handleQbwcSoapAsync } from './soap.js';
+import { createDurableQbwcTransport } from './production.js';
 import { enqueueForNextRun, type QbDesktopMode } from './session.js';
 import { companyQueryRq, vendorQueryRq, accountQueryRq } from './qbxml.js';
 
+export const QBWC_MAX_BODY_BYTES = 8 * 1024 * 1024;
+
+export function isSafeQbwcXml(body: string): boolean {
+  return !/<!DOCTYPE|<!ENTITY/i.test(body);
+}
+
 export function qbDesktopMode(_cfg: Config): QbDesktopMode {
-  return 'readonly';
+  return _cfg.QB_DESKTOP_ENABLED &&
+    _cfg.QB_DESKTOP_WRITE_ENABLED &&
+    Boolean(_cfg.QB_DESKTOP_COMPANY_ID) &&
+    Boolean(_cfg.QB_DESKTOP_TENANT_ID) &&
+    Boolean(_cfg.QB_DESKTOP_CONNECTION_ID)
+    ? 'write'
+    : 'readonly';
 }
 
 /** Register the /qbwc SOAP endpoint. No-op unless QB_DESKTOP_ENABLED. */
 export function registerQbDesktop(cfg: Config): void {
   if (!cfg.QB_DESKTOP_ENABLED) return;
+  const durable = createDurableQbwcTransport(cfg);
 
   registerRawRoute(async (req, res, url) => {
     if (url.pathname !== '/qbwc') return false;
@@ -29,14 +43,33 @@ export function registerQbDesktop(cfg: Config): void {
       res.end('POST only');
       return true;
     }
-    // Larger cap than the default: a receiveResponseXML body carries the full
-    // qbXML response (whole vendor/account lists), which inflates when XML-escaped.
-    const body = await readBody(req, 64 * 1024 * 1024);
-    const out = handleQbwcSoap(body, {
+    const declared = Number(req.headers['content-length'] ?? 0);
+    const maxBytes = QBWC_MAX_BODY_BYTES;
+    if (Number.isFinite(declared) && declared > maxBytes) {
+      res.writeHead(413, { 'content-type': 'text/plain', connection: 'close' });
+      res.end('request_too_large');
+      return true;
+    }
+    let body: string;
+    try {
+      body = await readBody(req, maxBytes, 15_000);
+    } catch (err) {
+      const status = err instanceof RequestBodyError ? err.status : 400;
+      res.writeHead(status, { 'content-type': 'text/plain', connection: 'close' });
+      res.end(status === 413 ? 'request_too_large' : status === 408 ? 'request_timeout' : 'invalid_request');
+      return true;
+    }
+    // SOAP/qbXML never needs document type declarations or custom entities.
+    if (!isSafeQbwcXml(body)) {
+      res.writeHead(400, { 'content-type': 'text/plain', connection: 'close' });
+      res.end('unsafe_xml');
+      return true;
+    }
+    const out = await handleQbwcSoapAsync(body, {
       username: cfg.QBWC_USERNAME,
       password: cfg.QBWC_PASSWORD,
       mode: qbDesktopMode(cfg),
-    });
+    }, durable);
     res.writeHead(out.status, { 'content-type': out.contentType });
     res.end(out.body);
     return true;

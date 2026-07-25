@@ -41,6 +41,13 @@ export interface SoapReply {
   body: string;
 }
 
+export interface QbwcAsyncHooks {
+  authenticated?(ticket: string): Promise<void>;
+  requestSent?(ticket: string, qbxml: string): Promise<boolean>;
+  responseReceived?(ticket: string, response: string, hresult: string): Promise<void>;
+  closed?(ticket: string): Promise<void>;
+}
+
 const QBWC_METHODS = [
   'serverVersion',
   'clientVersion',
@@ -190,6 +197,63 @@ export function handleQbwcSoap(soapBody: string, deps: QbwcAuth): SoapReply {
     default:
       return { status: 500, contentType: 'text/xml; charset=utf-8', body: envelope('    <soap:Fault><faultstring>Unknown QBWC method</faultstring></soap:Fault>') };
   }
+}
+
+/**
+ * Async persistence seam used by the registered transport. The pure synchronous
+ * handler remains available for protocol/unit tests and read-only operation.
+ */
+export async function handleQbwcSoapAsync(
+  soapBody: string,
+  deps: QbwcAuth,
+  hooks: QbwcAsyncHooks = {},
+): Promise<SoapReply> {
+  const method = detectMethod(soapBody);
+  if (method === 'receiveResponseXML') {
+    const ticket = tagText(soapBody, 'ticket')?.trim() ?? '';
+    const response = unescapeXml(tagText(soapBody, 'response') ?? '');
+    const hresult = tagText(soapBody, 'hresult')?.trim() ?? '';
+    try {
+      await hooks.responseReceived?.(ticket, response, hresult);
+    } catch (error) {
+      logger.error({ error: String(error), ticket }, 'durable QBWC response processing failed');
+      return reply(intResult('receiveResponseXML', -1));
+    }
+  }
+  const out = handleQbwcSoap(soapBody, deps);
+  if (method === 'authenticate') {
+    const ticket = /<string>([^<]+)<\/string>/.exec(out.body)?.[1] ?? '';
+    if (ticket && !out.body.includes('<string>nvu</string>')) {
+      try {
+        await hooks.authenticated?.(ticket);
+      } catch (error) {
+        logger.error({ error: String(error), ticket }, 'durable QBWC authentication hook failed');
+        return reply(stringArrayResult('authenticate', [ticket, 'none']));
+      }
+      if (getSession(ticket)?.all().length && out.body.includes('<string>none</string>')) {
+        out.body = out.body.replace('<string>none</string>', '<string></string>');
+      }
+    }
+  } else if (method === 'sendRequestXML') {
+    const ticket = tagText(soapBody, 'ticket')?.trim() ?? '';
+    const qbxml = unescapeXml(tagText(out.body, 'sendRequestXMLResult') ?? '');
+    if (qbxml && hooks.requestSent) {
+      try {
+        if (!(await hooks.requestSent(ticket, qbxml))) return reply(stringResult('sendRequestXML', ''));
+      } catch (error) {
+        logger.error({ error: String(error), ticket }, 'durable QBWC send hook failed');
+        return reply(stringResult('sendRequestXML', ''));
+      }
+    }
+  } else if (method === 'closeConnection') {
+    const ticket = tagText(soapBody, 'ticket')?.trim() ?? '';
+    try {
+      await hooks.closed?.(ticket);
+    } catch (error) {
+      logger.error({ error: String(error), ticket }, 'durable QBWC close hook failed');
+    }
+  }
+  return out;
 }
 
 function cryptoRandomId(): string {

@@ -4,6 +4,8 @@ import {
   assessProviderCapabilities,
   type CapabilityAssessment,
 } from '../../accounting/capabilities.js';
+import { config } from '../../config.js';
+import { ownerGateEnabled } from '../../accounting/write-gates.js';
 
 interface ConnectionRow extends pg.QueryResultRow {
   id: number;
@@ -24,6 +26,10 @@ export interface ProviderCapabilityConnection extends CapabilityAssessment {
   externalCompany: string | null;
   status: string;
   lastVerifiedAt: string | null;
+  writeGateEnabled: boolean | null;
+  expectedCompanyId: string | null;
+  observedCompanyId: string | null;
+  lastContactAt: string | null;
 }
 
 function textMetadata(metadata: Record<string, unknown>, key: string): string | null {
@@ -35,6 +41,7 @@ function textMetadata(metadata: Record<string, unknown>, key: string): string | 
 export async function listProviderCapabilities(
   tenantId: number,
 ): Promise<{ connections: ProviderCapabilityConnection[] }> {
+  const cfg = config();
   const { rows } = await scopedQuery<ConnectionRow>(
     tenantId,
     `SELECT id, provider, connection_class, display_name, external_company,
@@ -61,9 +68,33 @@ export async function listProviderCapabilities(
         externalCompany: row.external_company,
         status: row.status,
         lastVerifiedAt: textMetadata(row.metadata, 'lastVerifiedAt'),
+        writeGateEnabled: row.provider === 'qbd'
+          ? Boolean(
+              cfg.QB_DESKTOP_ENABLED &&
+              cfg.QB_DESKTOP_WRITE_ENABLED &&
+              Number(cfg.QB_DESKTOP_TENANT_ID) === tenantId &&
+              Number(cfg.QB_DESKTOP_CONNECTION_ID) === Number(row.id) &&
+              ownerGateEnabled(row.metadata, textMetadata(row.metadata, 'expectedCompanyId') ?? row.external_company ?? ''),
+            )
+          : row.provider === 'qbo'
+            ? Boolean(
+                (cfg.QBO_ENV === 'sandbox' || cfg.QBO_PRODUCTION_WRITE_ENABLED) &&
+                ownerGateEnabled(row.metadata, row.external_company ?? ''),
+              )
+            : null,
+        expectedCompanyId: row.provider === 'qbd'
+          ? textMetadata(row.metadata, 'expectedCompanyId') ?? row.external_company
+          : row.provider === 'qbo'
+            ? (cfg.QBO_ENV === 'production' ? cfg.QBO_PRODUCTION_REALM_ID : cfg.QBO_SANDBOX_REALM_ID) || null
+            : null,
+        observedCompanyId: row.provider === 'qbd'
+          ? textMetadata(row.metadata, 'observedCompanyId')
+          : null,
+        lastContactAt: row.provider === 'qbd'
+          ? textMetadata(row.metadata, 'lastContactAt')
+          : null,
         ...assessment,
       };
     }),
   };
 }
-

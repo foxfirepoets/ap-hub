@@ -65,6 +65,7 @@ export const REASON_CODES = [
   // (LlmNotConfiguredError), so this must be a visible exceptions row, not a bare
   // job throw (fail-closed; see src/pipeline/extract.ts extractHandler).
   'extractor_not_configured',
+  'statement_unreadable',
 ] as const;
 
 export type ReasonCode = (typeof REASON_CODES)[number];

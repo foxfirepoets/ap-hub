@@ -6,10 +6,9 @@ dotenv.config();
 /**
  * Typed configuration loader.
  *
- * Guarantee (CHUNK_1 / brainstorm §9): QBO_ENV must be `sandbox`. A value of
- * `production` is rejected at config load with a descriptive error — there is no
- * code path in Phase 1/2 that can select production. This is enforcement, not
- * convention: the whole process refuses to boot.
+ * QuickBooks Online defaults to sandbox. Production is fail-closed unless the
+ * operator explicitly enables the production write gate and supplies the exact
+ * production OAuth, realm, and company identity binding.
  */
 
 const boolish = (def: boolean) =>
@@ -50,13 +49,19 @@ const RawSchema = z.object({
   MAX_ATTACHMENT_BYTES: z.coerce.number().int().positive().default(25 * 1024 * 1024),
 
   // --- QBO (read-only lists in P1; SANDBOX writes in P2) ---
-  QBO_ENV: z.string().default('sandbox'),
+  QBO_ENV: z.enum(['sandbox', 'production']).default('sandbox'),
+  QBO_PRODUCTION_WRITE_ENABLED: boolish(false),
   QBO_MINOR_VERSION: z.string().default('73'),
   QBO_SANDBOX_CLIENT_ID: z.string().default(''),
   QBO_SANDBOX_CLIENT_SECRET: z.string().default(''),
   QBO_SANDBOX_REALM_ID: z.string().default(''),
   QBO_SANDBOX_COMPANY_NAME: z.string().default(''),
   QBO_SANDBOX_REDIRECT_URI: z.string().url().default('http://localhost:3001/oauth/qbo/callback'),
+  QBO_PRODUCTION_CLIENT_ID: z.string().default(''),
+  QBO_PRODUCTION_CLIENT_SECRET: z.string().default(''),
+  QBO_PRODUCTION_REALM_ID: z.string().default(''),
+  QBO_PRODUCTION_COMPANY_NAME: z.string().default(''),
+  QBO_PRODUCTION_REDIRECT_URI: z.string().url().default('http://localhost:3001/oauth/qbo/callback'),
 
   // --- SwarmSync proof suite (Amendment A1) ---
   // SwarmSync proof suite (InvoiceProof fraud scan · Verify-API notarization ·
@@ -87,6 +92,8 @@ const RawSchema = z.object({
   QB_DESKTOP_ENABLED: boolish(false),
   QB_DESKTOP_MODE: z.literal('readonly').default('readonly'),
   QB_DESKTOP_COMPANY_ID: z.string().default(''),
+  QB_DESKTOP_TENANT_ID: z.string().default(''),
+  QB_DESKTOP_CONNECTION_ID: z.string().default(''),
   QB_DESKTOP_WRITE_ENABLED: boolish(false),
   PROVIDER_JOB_LEASE_SECONDS: z.coerce.number().int().min(30).max(900).default(300),
   QBWC_USERNAME: z.string().default('aphub'),
@@ -112,7 +119,7 @@ const RawSchema = z.object({
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
 });
 
-export type Config = z.infer<typeof RawSchema> & { QBO_ENV: 'sandbox' };
+export type Config = z.infer<typeof RawSchema>;
 
 /** SwarmSync operating mode derived from config. */
 export type SwarmSyncMode = 'on' | 'off_review';
@@ -138,12 +145,21 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   }
   const cfg = parsed.data;
 
-  // HARD REFUSE production. The value must be exactly 'sandbox'.
-  if (cfg.QBO_ENV !== 'sandbox') {
+  if (cfg.QBO_ENV === 'production' && !cfg.QBO_PRODUCTION_WRITE_ENABLED) {
     throw new ConfigError(
-      `QBO_ENV="${cfg.QBO_ENV}" is refused. This build only ever writes to a QuickBooks ` +
-        `SANDBOX company; there is no production write path. Set QBO_ENV=sandbox.`,
+      'QBO_ENV=production requires the explicit QBO_PRODUCTION_WRITE_ENABLED=true owner gate.',
     );
+  }
+  if (cfg.QBO_ENV === 'production') {
+    const missing = [
+      ['QBO_PRODUCTION_CLIENT_ID', cfg.QBO_PRODUCTION_CLIENT_ID],
+      ['QBO_PRODUCTION_CLIENT_SECRET', cfg.QBO_PRODUCTION_CLIENT_SECRET],
+      ['QBO_PRODUCTION_REALM_ID', cfg.QBO_PRODUCTION_REALM_ID],
+      ['QBO_PRODUCTION_COMPANY_NAME', cfg.QBO_PRODUCTION_COMPANY_NAME],
+    ].filter(([, value]) => !value).map(([name]) => name);
+    if (missing.length) {
+      throw new ConfigError(`QBO production mode is missing: ${missing.join(', ')}.`);
+    }
   }
 
   // Broker URL, when set, must be https — except http://127.0.0.1 for local tests.
@@ -177,6 +193,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   if (cfg.QB_DESKTOP_WRITE_ENABLED && !cfg.QB_DESKTOP_COMPANY_ID) {
     throw new ConfigError(
       'QB_DESKTOP_WRITE_ENABLED=true requires QB_DESKTOP_COMPANY_ID for company verification.',
+    );
+  }
+  if (
+    cfg.QB_DESKTOP_WRITE_ENABLED &&
+    (!/^[1-9]\d*$/.test(cfg.QB_DESKTOP_TENANT_ID) ||
+      !/^[1-9]\d*$/.test(cfg.QB_DESKTOP_CONNECTION_ID))
+  ) {
+    throw new ConfigError(
+      'QB_DESKTOP_WRITE_ENABLED=true requires positive QB_DESKTOP_TENANT_ID and ' +
+        'QB_DESKTOP_CONNECTION_ID to bind this Web Connector install.',
     );
   }
 

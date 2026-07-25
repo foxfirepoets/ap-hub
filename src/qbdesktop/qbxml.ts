@@ -40,6 +40,16 @@ export function companyQueryRq(requestID = '1'): string {
   return wrapQbxml(`<CompanyQueryRq requestID="${xmlEscape(requestID)}"/>`);
 }
 
+/** Extract the provider-observed company identity from CompanyQueryRs. */
+export function parseCompanyIdentity(xml: string): string {
+  const parsed = parseQbxmlResponse(xml);
+  if (!parsed.ok) throw new Error('QBD_COMPANY_QUERY_FAILED');
+  const company = /<CompanyRet>([\s\S]*?)<\/CompanyRet>/.exec(xml)?.[1] ?? '';
+  const identity = tag(company, 'CompanyID') ?? tag(company, 'CompanyName') ?? tag(company, 'LegalCompanyName');
+  if (!identity) throw new Error('QBD_COMPANY_IDENTITY_MISSING');
+  return identity.trim();
+}
+
 export function vendorQueryRq(requestID = '1', maxReturned = 100): string {
   return wrapQbxml(
     `<VendorQueryRq requestID="${xmlEscape(requestID)}"><MaxReturned>${maxReturned}</MaxReturned></VendorQueryRq>`,

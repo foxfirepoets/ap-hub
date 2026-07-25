@@ -16,10 +16,11 @@ export interface ApprovePosted {
   qboType: string;
   qboId: string;
   qboLink: string;
-  mode: 'sandbox';
+  mode: 'sandbox' | 'production';
 }
 export type ApproveResult =
   | ApprovePosted
+  | { status: 'queued'; provider: 'qbd'; providerJobId: number }
   | { status: 'held'; reason: string }
   | { status: 'duplicate' }
   | { status: 'skipped'; reason: string };
@@ -46,11 +47,16 @@ export async function defaultPostDeps(tenantId: number): Promise<PostDeps> {
     },
     amountCeiling: cfg.AMOUNT_CEILING,
     autoThreshold: cfg.AUTO_THRESHOLD,
+    accountingMode: cfg.QBO_ENV,
+    expectedCompanyName: (cfg.QBO_ENV === 'production'
+      ? cfg.QBO_PRODUCTION_COMPANY_NAME : cfg.QBO_SANDBOX_COMPANY_NAME).trim() || undefined,
+    swarmSyncEnabled: cfg.SWARMSYNC_ENABLED,
   };
 }
 
-function sandboxLink(realm: string, qboType: string, qboId: string): string {
-  return `https://app.sandbox.qbo.intuit.com/app/${qboType.toLowerCase()}?txnId=${qboId}&realm=${realm}`;
+function qboLink(mode: 'sandbox' | 'production', realm: string, qboType: string, qboId: string): string {
+  const host = mode === 'production' ? 'https://app.qbo.intuit.com' : 'https://app.sandbox.qbo.intuit.com';
+  return `${host}/app/${qboType.toLowerCase()}?txnId=${qboId}&realm=${realm}`;
 }
 
 /**
@@ -72,13 +78,14 @@ export async function runPostAndMap(
   ).rows[0];
   const qboType = row?.qbo_type ?? '';
   const qboId = row?.qbo_id ?? res.qboId;
+  const mode = deps.accountingMode ?? 'sandbox';
   return {
     status: 'posted',
     postingId: row?.id ?? res.postingId,
     qboType,
     qboId,
-    qboLink: sandboxLink(deps.connector.companyId, qboType, qboId),
-    mode: 'sandbox',
+    qboLink: qboLink(mode, deps.connector.companyId, qboType, qboId),
+    mode,
   };
 }
 
@@ -96,6 +103,13 @@ export async function approveProposal(
     async () => {
       // CHUNK_6_ONBOARDING: DRY_RUN_LOCKED — no post while automation_level is 'off'.
       await assertNotDryRunLocked(ctx.tenantId);
+      if (!deps) {
+        const { activeQbdConnection, enqueueApprovedQbdBill } = await import('../qbdesktop/production.js');
+        if (await activeQbdConnection(ctx.tenantId)) {
+          const queued = await enqueueApprovedQbdBill(ctx.tenantId, proposalId);
+          return { ...queued, provider: 'qbd' as const };
+        }
+      }
       const postDeps = deps ?? (await defaultPostDeps(ctx.tenantId));
       return runPostAndMap(ctx.tenantId, proposalId, postDeps);
     },

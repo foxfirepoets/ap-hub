@@ -60,6 +60,8 @@ export class AuthError extends Error {
 }
 
 export interface AuthContext {
+  /** Present for real session-resolved requests; absent on synthetic service RBAC contexts. */
+  sessionId?: number;
   userId: number;
   tenantId: number;
   role: string;
@@ -84,6 +86,7 @@ export async function requireSession(
   if (!result.ok) throw reasonToError(result.reason);
 
   const ctx: AuthContext = {
+    sessionId: result.session.sessionId,
     userId: result.session.userId,
     tenantId: result.session.tenantId,
     role: result.session.role,

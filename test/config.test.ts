@@ -22,9 +22,18 @@ describe('config', () => {
     expect(cfg.GATEKEEPER_ENABLED).toBe(false);
   });
 
-  it('HARD-REFUSES QBO_ENV=production', () => {
+  it('keeps QBO production default-off and requires exact production binding config', () => {
     expect(() => loadConfig({ ...baseEnv, QBO_ENV: 'production' } as any)).toThrow(ConfigError);
-    expect(() => loadConfig({ ...baseEnv, QBO_ENV: 'production' } as any)).toThrow(/refused/i);
+    expect(() => loadConfig({
+      ...baseEnv, QBO_ENV: 'production', QBO_PRODUCTION_WRITE_ENABLED: 'true',
+    } as any)).toThrow(/QBO_PRODUCTION_CLIENT_ID/);
+    const cfg = loadConfig({
+      ...baseEnv, QBO_ENV: 'production', QBO_PRODUCTION_WRITE_ENABLED: 'true',
+      QBO_PRODUCTION_CLIENT_ID: 'client', QBO_PRODUCTION_CLIENT_SECRET: 'secret',
+      QBO_PRODUCTION_REALM_ID: 'realm', QBO_PRODUCTION_COMPANY_NAME: 'Owner Company',
+    } as any);
+    expect(cfg.QBO_ENV).toBe('production');
+    expect(cfg.QBO_PRODUCTION_WRITE_ENABLED).toBe(true);
   });
 
   it('fails fast on a missing required var with the var name', () => {
@@ -69,6 +78,7 @@ describe('config', () => {
     const cfg = loadConfig({ ...baseEnv } as any);
     expect(cfg.GMAIL_DRAFTS_ENABLED).toBe(false);
     expect(cfg.QB_DESKTOP_ENABLED).toBe(false);
+    expect(cfg.QBO_PRODUCTION_WRITE_ENABLED).toBe(false);
     expect(cfg.QB_DESKTOP_WRITE_ENABLED).toBe(false);
     expect(cfg.QB_DESKTOP_COMPANY_ID).toBe('');
     expect(cfg.PROVIDER_JOB_LEASE_SECONDS).toBe(300);
@@ -92,6 +102,8 @@ describe('config', () => {
       QBWC_PASSWORD: 'test-only-password',
       QB_DESKTOP_WRITE_ENABLED: 'true',
       QB_DESKTOP_COMPANY_ID: 'test-company-only',
+      QB_DESKTOP_TENANT_ID: '1',
+      QB_DESKTOP_CONNECTION_ID: '2',
       PROVIDER_JOB_LEASE_SECONDS: '600',
     } as any);
     expect(cfg.QB_DESKTOP_WRITE_ENABLED).toBe(true);

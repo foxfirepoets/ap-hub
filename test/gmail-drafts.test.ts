@@ -4,11 +4,16 @@ import {
   createGmailDraftClient,
   deriveReplyRecipient,
   GmailComposeScopeError,
-  GmailDraftRetryError,
+  GmailDraftResultUnknownError,
   type GmailDraftTransport,
   type SourceConversation,
 } from '../src/gmail/drafts.js';
-import { GMAIL_COMPOSE_SCOPE, GMAIL_READONLY_SCOPE, gmailOAuthScopes } from '../src/auth/gmail-oauth.js';
+import {
+  GMAIL_COMPOSE_SCOPE,
+  GMAIL_READONLY_SCOPE,
+  gmailOAuthScopes,
+  mergeGmailScopes,
+} from '../src/auth/gmail-oauth.js';
 import { GmailAuthError } from '../src/gmail/client.js';
 
 const source: SourceConversation = {
@@ -22,6 +27,7 @@ const source: SourceConversation = {
 function transport(): GmailDraftTransport {
   return {
     create: vi.fn().mockResolvedValue({ id: 'draft-1', message: { id: 'draft-message-1', threadId: 'thread-1' } }),
+    findByMarker: vi.fn().mockResolvedValue(null),
     update: vi.fn().mockResolvedValue({ id: 'draft-1', message: { id: 'draft-message-2', threadId: 'thread-1' } }),
     get: vi.fn().mockResolvedValue({ id: 'draft-1', message: { id: 'draft-message-2', threadId: 'thread-1' } }),
     discard: vi.fn().mockResolvedValue(undefined),
@@ -33,6 +39,13 @@ describe('Gmail compose scope', () => {
     expect(gmailOAuthScopes(true)).toEqual([GMAIL_READONLY_SCOPE, GMAIL_COMPOSE_SCOPE]);
     expect(gmailOAuthScopes(false)).toEqual([GMAIL_READONLY_SCOPE]);
     expect(gmailOAuthScopes(true).join(' ')).not.toMatch(/gmail\.modify|mail\.google\.com/);
+  });
+
+  it('preserves previously granted compose scope on incremental reconnect', () => {
+    expect(mergeGmailScopes(
+      `${GMAIL_READONLY_SCOPE} ${GMAIL_COMPOSE_SCOPE}`,
+      GMAIL_READONLY_SCOPE,
+    ).split(' ')).toEqual([GMAIL_COMPOSE_SCOPE, GMAIL_READONLY_SCOPE].sort());
   });
 
   it('preserves proposed copy by failing before provider access when scope is missing', async () => {
@@ -84,7 +97,7 @@ describe('Gmail source-thread draft adapter', () => {
       .toThrow('no safe reply recipient');
   });
 
-  it('surfaces token rejection without retry and retries transient failure at most three times', async () => {
+  it('surfaces token rejection and never retries an ambiguous create', async () => {
     const unauthorized = transport();
     vi.mocked(unauthorized.create).mockRejectedValue({ code: 401 });
     const unauthorizedClient = createGmailDraftClient(unauthorized, GMAIL_COMPOSE_SCOPE);
@@ -96,8 +109,33 @@ describe('Gmail source-thread draft adapter', () => {
     vi.mocked(unavailable.create).mockRejectedValue({ response: { status: 503 } });
     const unavailableClient = createGmailDraftClient(unavailable, GMAIL_COMPOSE_SCOPE);
     await expect(unavailableClient.createInSourceThread(source, { subject: 'x', bodyText: 'x' }))
-      .rejects.toBeInstanceOf(GmailDraftRetryError);
-    expect(unavailable.create).toHaveBeenCalledTimes(3);
+      .rejects.toBeInstanceOf(GmailDraftResultUnknownError);
+    expect(unavailable.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('adopts an ambiguous create by its deterministic marker before another create', async () => {
+    const api = transport();
+    vi.mocked(api.findByMarker).mockResolvedValue({
+      id: 'adopted-draft',
+      message: { id: 'adopted-message', threadId: source.threadId },
+    });
+    const client = createGmailDraftClient(api, GMAIL_COMPOSE_SCOPE);
+    await expect(client.reconcileCreateInSourceThread(source, { subject: 'x', bodyText: 'x' }))
+      .resolves.toMatchObject({ providerDraftId: 'adopted-draft' });
+    expect(api.findByMarker).toHaveBeenCalledWith(expect.stringMatching(/^ap-hub-/));
+    expect(api.create).not.toHaveBeenCalled();
+  });
+
+  it('never retries an ambiguous update mutation', async () => {
+    const api = transport();
+    vi.mocked(api.update).mockRejectedValue({ response: { status: 503 } });
+    const client = createGmailDraftClient(api, GMAIL_COMPOSE_SCOPE);
+    await expect(client.updateInSourceThread(
+      'draft-1',
+      source,
+      { subject: 'x', bodyText: 'changed' },
+    )).rejects.toBeInstanceOf(GmailDraftResultUnknownError);
+    expect(api.update).toHaveBeenCalledTimes(1);
   });
 
   it('exposes no reply transmission operation', () => {
@@ -106,6 +144,7 @@ describe('Gmail source-thread draft adapter', () => {
       'createInSourceThread',
       'discard',
       'readStatus',
+      'reconcileCreateInSourceThread',
       'updateInSourceThread',
     ]);
     const sourceText = readFileSync(new URL('../src/gmail/drafts.ts', import.meta.url), 'utf8');

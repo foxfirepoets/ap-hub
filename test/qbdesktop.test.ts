@@ -16,6 +16,16 @@ import {
 } from '../src/qbdesktop/session.js';
 import { handleQbwcSoap, detectMethod } from '../src/qbdesktop/soap.js';
 import { generateQwc } from '../src/qbdesktop/qwc.js';
+import { isSafeQbwcXml, QBWC_MAX_BODY_BYTES } from '../src/qbdesktop/index.js';
+
+describe('QBWC hostile input bounds', () => {
+  it('uses an 8 MiB ceiling and rejects DTD/entity declarations', () => {
+    expect(QBWC_MAX_BODY_BYTES).toBe(8 * 1024 * 1024);
+    expect(isSafeQbwcXml('<soap:Envelope><CompanyQueryRq/></soap:Envelope>')).toBe(true);
+    expect(isSafeQbwcXml('<!DOCTYPE x [<!ENTITY bomb "x">]><x>&bomb;</x>')).toBe(false);
+    expect(isSafeQbwcXml('<!ENTITY bomb "x">')).toBe(false);
+  });
+});
 
 describe('qbxml builders + parser', () => {
   it('wraps requests in the qbXML envelope with the version PI', () => {

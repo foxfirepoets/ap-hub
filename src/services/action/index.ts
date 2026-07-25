@@ -131,6 +131,8 @@ function postResultResponse(res: ApproveResult): Response {
         { posting_id: res.postingId, qbo_type: res.qboType, qbo_id: res.qboId, qbo_link: res.qboLink, mode: res.mode },
         201,
       );
+    case 'queued':
+      return jsonResponse({ status: 'queued', provider: res.provider, providerJobId: res.providerJobId }, 202);
     case 'duplicate':
       // Two-layer dedup / replay caught an existing post — never a second write (guarantee 4).
       return errorResponse('ALREADY_POSTED', 'proposal already posted', 409);

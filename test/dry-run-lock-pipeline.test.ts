@@ -2,7 +2,16 @@ import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest';
 import { query } from '../src/db/pool.js';
 import { recordProofRef } from '../src/swarmsync/proof.js';
 import { guardedPostSandboxHandler } from '../src/pipeline/register.js';
-import { resetTables, createTenant, insertMessage, insertAttachment, insertExtraction, countRows, closeAll } from './helpers.js';
+import {
+  resetTables,
+  createTenant,
+  createConnection,
+  insertMessage,
+  insertAttachment,
+  insertExtraction,
+  countRows,
+  closeAll,
+} from './helpers.js';
 
 /**
  * HKO-audit HIGH finding (2026-07-15): the automatic propose->post_sandbox pipeline
@@ -33,6 +42,19 @@ vi.mock('../src/qbo/client.js', () => ({
 }));
 
 async function seedReadyProposal(t: number): Promise<number> {
+  const realm = process.env.QBO_SANDBOX_REALM_ID ?? 'sandbox-realm';
+  const connectionId = await createConnection(t, {
+    provider: 'qbo',
+    connectionClass: 'cloud',
+    externalCompany: realm,
+  });
+  await query('UPDATE connections SET metadata=$1 WHERE tenant_id=$2 AND id=$3', [{
+    ownerWriteGate: {
+      enabled: true,
+      confirmedCompanyId: realm,
+      backupConfirmedAt: new Date().toISOString(),
+    },
+  }, t, connectionId]);
   const m = await insertMessage(t);
   const a = await insertAttachment(t, m, { sha256: `sha-lock-${t}-${Math.floor(performance.now() * 1000)}` });
   const sha = (await query<{ sha256: string }>('SELECT sha256 FROM attachments WHERE id=$1', [a])).rows[0]!.sha256;

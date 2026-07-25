@@ -108,7 +108,8 @@ export default function TodayPage() {
       <div className="split">
         <div className="panel">
           <h2>Recent items ({digest.items.length})</h2>
-          <table>
+          <div className="table-scroll" tabIndex={0} role="region" aria-label="Recent accounting items table">
+            <table>
             <thead>
               <tr>
                 <th>Vendor</th>
@@ -122,10 +123,18 @@ export default function TodayPage() {
                 <tr
                   key={it.proposalId}
                   className={`row${selected === it.proposalId ? ' selected' : ''}`}
-                  onClick={() => setSelected(it.proposalId)}
                   data-testid={`today-item-${it.proposalId}`}
                 >
-                  <td>{it.vendor ?? it.sourceFilename ?? it.emailSubject ?? `#${it.proposalId}`}</td>
+                  <td>
+                    <button
+                      type="button"
+                      className="table-row-action"
+                      aria-pressed={selected === it.proposalId}
+                      onClick={() => setSelected(it.proposalId)}
+                    >
+                      {it.vendor ?? it.sourceFilename ?? it.emailSubject ?? `#${it.proposalId}`}
+                    </button>
+                  </td>
                   <td>{money(it.total)}</td>
                   <td>
                     <span className={`badge ${it.status}`}>{it.status}</span>
@@ -141,7 +150,8 @@ export default function TodayPage() {
                 </tr>
               ) : null}
             </tbody>
-          </table>
+            </table>
+          </div>
           <p style={{ marginTop: 12 }}>
             <Link href="/exceptions">Go to exceptions queue →</Link>
           </p>

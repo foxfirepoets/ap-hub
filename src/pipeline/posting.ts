@@ -31,6 +31,7 @@ export interface PostDeps {
   swarmSyncEnabled?: boolean;
   /** SwarmSync mode; 'off_review' must never post (defense-in-depth). Default 'on'. */
   swarmSyncMode?: SwarmSyncMode;
+  accountingMode?: 'sandbox' | 'production';
 }
 
 export type PostResult =
@@ -54,6 +55,7 @@ const BLOCKING_FLAGS = [
 ];
 
 export async function postOnce(tenantId: number, proposalId: number, deps: PostDeps): Promise<PostResult> {
+  const accountingMode = deps.accountingMode ?? 'sandbox';
   const p = (
     await query<{
       id: number;
@@ -107,12 +109,55 @@ export async function postOnce(tenantId: number, proposalId: number, deps: PostD
 
   // --- Layer 1 dedup: local idempotency key ---
   const existingLocal = (
-    await query<{ id: number; qbo_id: string | null }>(
-      'SELECT id, qbo_id FROM postings WHERE tenant_id=$1 AND idempotency_key=$2',
+    await query<{ id: number; qbo_id: string | null; status: string }>(
+      'SELECT id, qbo_id, status FROM postings WHERE tenant_id=$1 AND idempotency_key=$2',
       [tenantId, p.idempotency_key],
     )
   ).rows[0];
   if (existingLocal) {
+    if (existingLocal.status === 'provider_result_unknown') {
+      if (existingLocal.qbo_id) {
+        try {
+          const verified = await deps.connector.readBackVerify(p.proposed_txn, existingLocal.qbo_id);
+          if (verified.verify === 'match') {
+            const recoveredStatus = accountingMode === 'production' ? 'posted' : 'posted_sandbox';
+            const postingId = await recordPosting(
+              tenantId, p, String(p.proposed_txn?.txnType ?? 'Bill'),
+              existingLocal.qbo_id, verified.revision, deps.connector.companyId,
+              p.proposed_txn, verified.raw, recoveredStatus, accountingMode,
+            );
+            await query('UPDATE proposals SET status=$2 WHERE tenant_id=$1 AND id=$3', [
+              tenantId, recoveredStatus, proposalId,
+            ]);
+            await query(
+              `INSERT INTO reconciliation (tenant_id,kind,left_ref,right_ref,match_status,variance)
+               SELECT $1,'proposal_vs_created',$2,$3,'matched',$4
+               WHERE NOT EXISTS (
+                 SELECT 1 FROM reconciliation WHERE tenant_id=$1 AND left_ref=$2 AND right_ref=$3
+               )`,
+              [tenantId, `proposal:${proposalId}`,
+                `${deps.connector.provider}:${existingLocal.qbo_id}`,
+                JSON.stringify({ diffHash: hashOf(verified.raw), recovered: true })],
+            );
+            await writeAudit({
+              tenantId,
+              action: accountingMode === 'production' ? 'post.production' : 'post.sandbox',
+              entity: `posting:${postingId}`, realm: deps.connector.companyId,
+              afterHash: hashOf(verified.raw),
+              detail: {
+                provider: deps.connector.provider,
+                externalId: existingLocal.qbo_id,
+                recovered: true,
+              },
+            });
+            return { status: 'posted', postingId, qboId: existingLocal.qbo_id };
+          }
+        } catch (err) {
+          logger.warn({ err: String(err), proposalId }, 'authoritative recovery read-back unavailable');
+        }
+      }
+      return { status: 'held', reason: 'provider_result_unknown' };
+    }
     await raiseException({ tenantId, reasonCode: 'duplicate_in_qbo', entityRef: `proposal:${proposalId}`, detail: 'local idempotency hit' });
     return { status: 'duplicate' };
   }
@@ -129,7 +174,8 @@ export async function postOnce(tenantId: number, proposalId: number, deps: PostD
     return { status: 'held', reason: 'dedup_unavailable' };
   }
   if (existing) {
-    await recordPosting(tenantId, p, txnType, existing.externalId, existing.revision, { adopted: true }, existing.raw);
+    await recordPosting(tenantId, p, txnType, existing.externalId, existing.revision,
+      deps.connector.companyId, { adopted: true }, existing.raw, undefined, accountingMode);
     await raiseException({ tenantId, reasonCode: 'duplicate_in_qbo', entityRef: `proposal:${proposalId}`, detail: 'provider existence hit' });
     return { status: 'duplicate' };
   }
@@ -212,15 +258,50 @@ export async function postOnce(tenantId: number, proposalId: number, deps: PostD
     try {
       const adopt = await deps.connector.detectExisting(txn, p.idempotency_key);
       if (adopt) {
-        await recordPosting(tenantId, p, txnType, adopt.externalId, adopt.revision, { adoptedAfterTimeout: true }, adopt.raw);
+        await recordPosting(tenantId, p, txnType, adopt.externalId, adopt.revision,
+          deps.connector.companyId, { adoptedAfterTimeout: true }, adopt.raw, undefined, accountingMode);
         return { status: 'posted', postingId: -1, qboId: adopt.externalId };
       }
     } catch {
       /* fall through to exception */
     }
+    // A create may have reached the provider even when its response was lost. Persist
+    // that ambiguity before allowing the worker to fail/retry; the local idempotency
+    // gate above will hold every subsequent invocation until an explicit resolver
+    // adopts or safely clears this record.
+    await query(
+      `INSERT INTO postings_ap
+        (tenant_id,attachment_id,proposal_id,entity_type,external_id,revision,realm,mode,
+         idempotency_key,status,request,response)
+       VALUES ($1,$2,$3,$4,NULL,NULL,$5,$6,$7,'provider_result_unknown',$8,$9)
+       ON CONFLICT (tenant_id,idempotency_key) DO NOTHING`,
+      [
+        tenantId, p.attachment_id, p.id, txnType, deps.connector.companyId, accountingMode, p.idempotency_key,
+        txn, { error: String(err?.message ?? err) },
+      ],
+    );
     await raiseException({ tenantId, reasonCode: 'qbo_api_error', entityRef: `proposal:${proposalId}`, detail: String(err?.message ?? err) });
     throw err;
   }
+
+  // Persist the returned provider identity before any attachment or read-back.
+  // If this process dies now, recovery reads this exact ID and never replays the
+  // create or guesses from a broad duplicate query.
+  await query(
+    `INSERT INTO postings_ap
+      (tenant_id,attachment_id,proposal_id,entity_type,external_id,revision,realm,mode,
+       idempotency_key,status,request,response)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'provider_result_unknown',$10,$11)
+     ON CONFLICT (tenant_id,idempotency_key) DO UPDATE SET
+       external_id=EXCLUDED.external_id,revision=EXCLUDED.revision,
+       realm=EXCLUDED.realm,mode=EXCLUDED.mode,status='provider_result_unknown',
+       request=EXCLUDED.request,response=EXCLUDED.response`,
+    [
+      tenantId, p.attachment_id, p.id, txnType, created.externalId, created.revision,
+      deps.connector.companyId, accountingMode, p.idempotency_key, txn,
+      { created: true, awaitingAuthoritativeReadBack: true },
+    ],
+  );
 
   // --- Attach PDF (retry attach only on failure; never re-create) ---
   if (p.attachment_id) {
@@ -239,20 +320,24 @@ export async function postOnce(tenantId: number, proposalId: number, deps: PostD
   const readBack = verified.raw;
   // Amount/DocNumber mismatch is fully authoritative — hold, never mark posted.
   if (verified.verify === 'mismatch' && (verified.reason === 'amount' || verified.reason === 'docnumber')) {
-    await recordPosting(tenantId, p, txnType, created.externalId, created.revision, { verifyMismatch: verified.reason }, readBack, 'verify_mismatch');
+    await recordPosting(tenantId, p, txnType, created.externalId, created.revision,
+      deps.connector.companyId, { verifyMismatch: verified.reason }, readBack, 'verify_mismatch', accountingMode);
     await raiseException({ tenantId, reasonCode: 'verify_mismatch', entityRef: `posting:${created.externalId}`, detail: 'read-back mismatch' });
     return { status: 'held', reason: 'verify_mismatch' };
   }
   // F5: an approved+written dimension the provider dropped/altered → unverified + a
   // dedicated dimension_mismatch exception.
   if (verified.verify === 'mismatch' && verified.reason === 'dimension') {
-    await recordPosting(tenantId, p, txnType, created.externalId, created.revision, { dimensionMismatch: verified.detail }, readBack, 'dimension_mismatch');
+    await recordPosting(tenantId, p, txnType, created.externalId, created.revision,
+      deps.connector.companyId, { dimensionMismatch: verified.detail }, readBack, 'dimension_mismatch', accountingMode);
     await raiseException({ tenantId, reasonCode: 'dimension_mismatch', entityRef: `posting:${created.externalId}`, detail: JSON.stringify(verified.detail) });
     return { status: 'held', reason: 'dimension_mismatch' };
   }
 
-  const postingId = await recordPosting(tenantId, p, txnType, created.externalId, created.revision, txn, readBack, 'posted_sandbox');
-  await query('UPDATE proposals SET status=$2 WHERE id=$1', [proposalId, 'posted_sandbox']);
+  const postedStatus = accountingMode === 'production' ? 'posted' : 'posted_sandbox';
+  const postingId = await recordPosting(tenantId, p, txnType, created.externalId, created.revision,
+    deps.connector.companyId, txn, readBack, postedStatus, accountingMode);
+  await query('UPDATE proposals SET status=$2 WHERE tenant_id=$1 AND id=$3', [tenantId, postedStatus, proposalId]);
   await query(
     `INSERT INTO reconciliation (tenant_id, kind, left_ref, right_ref, match_status, variance)
      VALUES ($1,'proposal_vs_created',$2,$3,'matched',$4)`,
@@ -260,7 +345,7 @@ export async function postOnce(tenantId: number, proposalId: number, deps: PostD
   );
   await writeAudit({
     tenantId,
-    action: 'post.sandbox',
+    action: accountingMode === 'production' ? 'post.production' : 'post.sandbox',
     entity: `posting:${postingId}`,
     realm: deps.connector.companyId,
     afterHash: hashOf(readBack),
@@ -309,17 +394,22 @@ async function recordPosting(
   txnType: string,
   qboId: string,
   syncToken: string,
+  realm: string,
   request: unknown,
   response: unknown,
   status = 'posted_sandbox',
+  mode: 'sandbox' | 'production' = 'sandbox',
 ): Promise<number> {
   // Writes go to the base table `postings_ap` (provider-neutral columns). The old
   // `postings(qbo_*)` names remain available via the back-compat view; ON CONFLICT is
   // not supported on views, so the upsert targets the base table directly.
   const res = await query<{ id: number }>(
     `INSERT INTO postings_ap (tenant_id, attachment_id, proposal_id, entity_type, external_id, revision, realm, mode, idempotency_key, status, request, response, posted_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,'sandbox',$8,$9,$10,$11, now())
-     ON CONFLICT (tenant_id, idempotency_key) DO UPDATE SET external_id=EXCLUDED.external_id, revision=EXCLUDED.revision
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, now())
+     ON CONFLICT (tenant_id, idempotency_key) DO UPDATE SET
+       external_id=EXCLUDED.external_id, revision=EXCLUDED.revision,
+       realm=EXCLUDED.realm, mode=EXCLUDED.mode, status=EXCLUDED.status,
+       request=EXCLUDED.request, response=EXCLUDED.response, posted_at=EXCLUDED.posted_at
      RETURNING id`,
     [
       tenantId,
@@ -328,7 +418,8 @@ async function recordPosting(
       txnType,
       qboId,
       syncToken,
-      'sandbox',
+      realm,
+      mode,
       proposal.idempotency_key,
       status,
       JSON.stringify(request),
@@ -346,11 +437,14 @@ export async function postSandboxHandler(job: { data: PostJob }): Promise<void> 
   const { swarmsync } = await import('../services.js');
   const { loadAttachmentBytes } = await import('../ingest/repo.js');
   const cfg = config();
+  if (cfg.QBO_ENV === 'production') {
+    throw new Error('QBO production posting requires an owner_controller approval action');
+  }
 
   // The sole live accounting path: the provider-neutral connector (wraps the QBO clients
   // via the factory — delegation only; the pipeline imports no provider write module).
   const connector = await getQboConnector(job.data.tenantId);
-  const expectedCompanyName = (cfg.QBO_SANDBOX_COMPANY_NAME ?? '').trim() || undefined;
+  const expectedCompanyName = cfg.QBO_SANDBOX_COMPANY_NAME.trim() || undefined;
 
   await postOnce(job.data.tenantId, job.data.proposalId, {
     connector,
@@ -362,6 +456,7 @@ export async function postSandboxHandler(job: { data: PostJob }): Promise<void> 
     amountCeiling: cfg.AMOUNT_CEILING,
     autoThreshold: cfg.AUTO_THRESHOLD,
     expectedCompanyName,
+    accountingMode: cfg.QBO_ENV,
     swarmSyncEnabled: cfg.SWARMSYNC_ENABLED,
     swarmSyncMode: swarmSyncMode(cfg),
   });

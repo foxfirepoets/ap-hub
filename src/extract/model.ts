@@ -71,11 +71,22 @@ export function normalizeExtraction(raw: RawExtraction): ExtractionResult {
 const EXTRACTION_MODEL = 'claude-sonnet-4-5';
 
 /** The instruction shared by every provider — strict JSON, null for unknowns. */
-const EXTRACT_INSTRUCTION =
+const INVOICE_EXTRACT_INSTRUCTION =
   'Extract the invoice/receipt into strict JSON matching this shape: ' +
   '{vendor_name,invoice_number,invoice_date,due_date,total,tax,line_items:[{description,qty,unit_price,amount,account_hint}],' +
   'payment_terms,remit_to,bank_info,job_ref,class_hint,location_hint,account_hint,doc_type,direction,field_confidence:{field:0..1}}. ' +
   'Use null for unknown fields. Respond with ONLY the JSON.';
+const STATEMENT_EXTRACT_INSTRUCTION =
+  'Extract this bank or credit-card statement into strict JSON matching: ' +
+  '{institutionName,accountHint,currency,periodStart,periodEnd,openingBalance,closingBalance,' +
+  'pageCount,lines:[{postedOn,description,amount,balance}]}. Dates must be YYYY-MM-DD; ' +
+  'money must be decimal strings; use null only for optional institutionName, accountHint, currency, and line balance. ' +
+  'Do not infer unreadable values. Respond with ONLY the JSON.';
+function instructionFor(input: ExtractInput): string {
+  return input.docTypeHint === 'bank_statement'
+    ? STATEMENT_EXTRACT_INSTRUCTION
+    : INVOICE_EXTRACT_INSTRUCTION;
+}
 
 /**
  * Build the Anthropic Messages request for an extraction input. Shared by BOTH
@@ -91,7 +102,8 @@ export function buildAnthropicRequest(
   max_tokens: number;
   messages: Array<{ role: 'user'; content: any[] }>;
 } {
-  const content: any[] = [{ type: 'text', text: EXTRACT_INSTRUCTION }];
+  const instruction = instructionFor(input);
+  const content: any[] = [{ type: 'text', text: instruction }];
   if (input.bytes && input.mime?.includes('pdf')) {
     content.push({
       type: 'document',
@@ -140,7 +152,7 @@ export async function getOpenAiCompatibleExtractor(deps: {
   const base = deps.baseUrl.replace(/\/$/, '');
   return {
     async extract(input: ExtractInput): Promise<unknown> {
-      const content: any[] = [{ type: 'text', text: EXTRACT_INSTRUCTION }];
+      const content: any[] = [{ type: 'text', text: instructionFor(input) }];
       const pushImage = (mime: string, b64: string) =>
         content.push({ type: 'image_url', image_url: { url: `data:${mime};base64,${b64}` } });
 
@@ -200,7 +212,7 @@ export async function getCliExtractor(bin: string): Promise<Extractor> {
       if (!text) {
         throw new Error(`${bin} CLI is text-only and cannot read a scanned image/PDF. Use a vision provider (local vision model, OpenAI, or Anthropic) for scanned documents.`);
       }
-      const prompt = `${EXTRACT_INSTRUCTION}\n\nDocument text:\n${text}`;
+      const prompt = `${instructionFor(input)}\n\nDocument text:\n${text}`;
       const stdout = await new Promise<string>((resolve, reject) => {
         const child = spawnPortable(bin, argsFor(bin), { timeout: 120_000 });
         let out = '';

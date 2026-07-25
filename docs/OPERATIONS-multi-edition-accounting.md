@@ -1,8 +1,10 @@
 # AP Hub multi-edition operations
 
-This runbook covers the local Windows topology. QBO automation is sandbox-only.
-QBD is disabled by default and Gmail draft creation is disabled by default. AP Hub
-has no reply-send endpoint; a human sends from Gmail.
+This runbook covers the local Windows topology. QBO sandbox is the default. QBO
+production writes are supported only through the separate, default-off production
+write gate and an exact production realm/company binding. QBD is disabled by
+default and Gmail draft creation is disabled by default. AP Hub has no reply-send
+endpoint; a human sends from Gmail.
 
 ## Safe configuration
 
@@ -10,11 +12,21 @@ Keep these values until disposable certification has passed:
 
 ```dotenv
 QBO_ENV=sandbox
+QBO_PRODUCTION_WRITE_ENABLED=false
 GMAIL_DRAFTS_ENABLED=false
 QB_DESKTOP_ENABLED=false
 QB_DESKTOP_WRITE_ENABLED=false
 PROVIDER_JOB_LEASE_SECONDS=300
 ```
+
+Moving QBO to production is an owner-controlled operational change, not part of
+installation or automated verification. Before changing `QBO_ENV`, verify a
+restorable database backup, use the production OAuth client and redirect URI,
+record the exact production realm and company name, and confirm that the active
+tenant connection matches them. Only then set `QBO_ENV=production` and
+`QBO_PRODUCTION_WRITE_ENABLED=true` together during a controlled restart. To
+disable production writes, restore the gate to `false` and restart; do not remove
+the audit or reconciliation rows.
 
 To test QBD, use a disposable QuickBooks company. Set `QB_DESKTOP_ENABLED=true`,
 the expected `QB_DESKTOP_COMPANY_ID`, a unique `QBWC_PASSWORD`, and import the

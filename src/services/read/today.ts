@@ -45,7 +45,7 @@ export async function getTodayCounts(tenantId: number): Promise<TodayCounts> {
     tenantId,
     `SELECT
        (SELECT count(*)::int FROM exceptions WHERE tenant_id = $1 AND status = 'open')            AS exceptions,
-       (SELECT count(*)::int FROM postings   WHERE tenant_id = $1 AND status = 'posted_sandbox')  AS posted,
+       (SELECT count(*)::int FROM postings   WHERE tenant_id = $1 AND status IN ('posted_sandbox','posted'))  AS posted,
        (SELECT count(*)::int FROM proposals  WHERE tenant_id = $1 AND status = 'review')          AS held,
        (SELECT count(*)::int FROM proposals  WHERE tenant_id = $1 AND status = 'exception')       AS failed`,
   );

@@ -12,7 +12,8 @@ export function TaxMappingTable({ mappings }: { mappings: TaxMapping[] }) {
     return <p className="muted">No tax mappings match this filter.</p>;
   }
   return (
-    <table data-testid="tax-mapping-table">
+    <div className="table-scroll" tabIndex={0} role="region" aria-label="Tax mappings table">
+      <table data-testid="tax-mapping-table">
       <thead>
         <tr>
           <th>Provider code</th>
@@ -41,6 +42,7 @@ export function TaxMappingTable({ mappings }: { mappings: TaxMapping[] }) {
           </tr>
         ))}
       </tbody>
-    </table>
+      </table>
+    </div>
   );
 }

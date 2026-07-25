@@ -1,7 +1,11 @@
 import type { AuthContext } from '../auth/guard.js';
 import { AuthError } from '../auth/guard.js';
 import { GmailAuthError } from '../gmail/client.js';
-import { GmailComposeScopeError, GmailDraftRetryError } from '../gmail/drafts.js';
+import {
+  GmailComposeScopeError,
+  GmailDraftResultUnknownError,
+  GmailDraftRetryError,
+} from '../gmail/drafts.js';
 import { ServiceError, toActorContext } from '../services/index.js';
 import { errorResponse, jsonResponse, readContext } from '../services/read/http.js';
 import {
@@ -20,7 +24,7 @@ function error(error: unknown): Response {
   if (error instanceof GmailAuthError) {
     return errorResponse('GMAIL_RECONNECT_REQUIRED', error.message, 401);
   }
-  if (error instanceof GmailDraftRetryError) {
+  if (error instanceof GmailDraftRetryError || error instanceof GmailDraftResultUnknownError) {
     return errorResponse(error.code, error.message, 503);
   }
   if (error instanceof ServiceError) {

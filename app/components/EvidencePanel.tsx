@@ -134,7 +134,8 @@ export function EvidencePanel({
 
       <h3>Proof references</h3>
       {ev.proofs.length > 0 ? (
-        <table>
+        <div className="table-scroll" tabIndex={0} role="region" aria-label="Evidence fields table">
+          <table>
           <thead>
             <tr>
               <th>Product</th>
@@ -153,7 +154,8 @@ export function EvidencePanel({
               </tr>
             ))}
           </tbody>
-        </table>
+          </table>
+        </div>
       ) : (
         <div className="muted">No proof references recorded.</div>
       )}

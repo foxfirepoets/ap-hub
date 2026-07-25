@@ -35,7 +35,8 @@ export function AuditTrailPanel({ mapping }: { mapping: TaxMapping }) {
       ) : rows.length === 0 ? (
         <p className="muted">No matching audit entries found.</p>
       ) : (
-        <table>
+        <div className="table-scroll" tabIndex={0} role="region" aria-label="Tax mapping audit trail table">
+          <table>
           <thead>
             <tr>
               <th>When</th>
@@ -54,7 +55,8 @@ export function AuditTrailPanel({ mapping }: { mapping: TaxMapping }) {
               </tr>
             ))}
           </tbody>
-        </table>
+          </table>
+        </div>
       )}
     </div>
   );

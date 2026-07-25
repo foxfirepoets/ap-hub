@@ -45,6 +45,7 @@ function qboDedupWhere(txn: any): string | null {
   const parts: string[] = [];
   if (doc) parts.push(`DocNumber = '${String(doc).replace(/'/g, '')}'`);
   if (txn?.TxnDate) parts.push(`TxnDate = '${String(txn.TxnDate).replace(/'/g, '')}'`);
+  if (vendor) parts.push(`VendorRef = '${String(vendor).replace(/'/g, '')}'`);
   return parts.join(' AND ') || null;
 }
 
@@ -80,7 +81,7 @@ function qboAmountDocMatches(txn: any, readBack: any): boolean {
   const amtA = Number(txn?.TotalAmt ?? 0);
   const amtB = Number(readBack?.TotalAmt ?? 0);
   if (Math.abs(amtA - amtB) > 0.01) return false;
-  if (txn?.DocNumber && readBack?.DocNumber && String(txn.DocNumber) !== String(readBack.DocNumber)) return false;
+  if (txn?.DocNumber && String(txn.DocNumber) !== String(readBack?.DocNumber ?? '')) return false;
   return true;
 }
 
@@ -258,8 +259,18 @@ export function createQboConnector(deps: QboConnectorDeps): AccountingConnector 
       if (!where) return null;
       // Propagates on error → the pipeline holds fail-closed (dedup_unavailable).
       const rows = await writeClient.queryExisting(txnType, where);
-      if (rows.length === 0) return null;
-      const raw = rows[0] as Record<string, unknown>;
+      const expectedVendor = String((txn as any)?.vendorRef?.value ?? '');
+      const expectedAmount = Number((txn as any)?.TotalAmt);
+      const exact = rows.filter((row: any) => {
+        const vendor = String(row?.VendorRef?.value ?? '');
+        const amount = Number(row?.TotalAmt);
+        return (!expectedVendor || vendor === expectedVendor) &&
+          Number.isFinite(expectedAmount) && Number.isFinite(amount) &&
+          Math.abs(expectedAmount - amount) <= 0.01;
+      });
+      if (exact.length === 0) return null;
+      if (exact.length > 1) throw new Error('QBO_AMBIGUOUS_DUPLICATE_MATCH');
+      const raw = exact[0] as Record<string, unknown>;
       return { externalId: String((raw as any).Id ?? ''), revision: String((raw as any).SyncToken ?? '0'), raw };
     },
 

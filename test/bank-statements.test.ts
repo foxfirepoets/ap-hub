@@ -15,7 +15,7 @@ import {
   type StatementSource,
 } from '../src/statements/ingest.js';
 import { query } from '../src/db/pool.js';
-import { classifyOnce } from '../src/pipeline/extract.js';
+import { classifyOnce, extractStatementOnce, statementExtractHandler } from '../src/pipeline/extract.js';
 import {
   closeAll,
   countRows,
@@ -184,7 +184,7 @@ describe('CHUNK_3 bank statement ingestion', () => {
       filename: 'invoice-200.pdf',
     });
     const statementMessage = await insertMessage(tenantId, { subject: 'June Bank Statement' });
-    await insertAttachment(tenantId, statementMessage, {
+    const statementAttachment = await insertAttachment(tenantId, statementMessage, {
       sha256: 'statement-route-sha',
       filename: 'statement.pdf',
     });
@@ -199,11 +199,16 @@ describe('CHUNK_3 bank statement ingestion', () => {
     await classifyOnce({ data: { tenantId, messageId: statementMessage } }, enqueue);
     await classifyOnce({ data: { tenantId, messageId: unknownMessage } }, enqueue);
 
-    expect(enqueue).toHaveBeenCalledTimes(1);
+    expect(enqueue).toHaveBeenCalledTimes(2);
     expect(enqueue).toHaveBeenCalledWith('extract', {
       tenantId,
       messageId: invoiceMessage,
       attachmentId: invoiceAttachment,
+    });
+    expect(enqueue).toHaveBeenCalledWith('extract_statement', {
+      tenantId,
+      messageId: statementMessage,
+      attachmentId: statementAttachment,
     });
     expect((await query<{ kind: string; status: string }>(
       'SELECT kind,status FROM accounting_documents WHERE tenant_id=$1 ORDER BY id',
@@ -213,6 +218,67 @@ describe('CHUNK_3 bank statement ingestion', () => {
       { kind: 'bank_statement', status: 'received' },
       { kind: 'unknown', status: 'held' },
     ]);
+  });
+
+  it('moves an emailed statement attachment through classification into the review queue', async () => {
+    const tenantId = await createTenant();
+    const messageId = await insertMessage(tenantId, { subject: 'July Bank Statement' });
+    const attachmentId = await insertAttachment(tenantId, messageId, {
+      sha256: 'email-statement-live-path',
+      filename: 'july-statement.pdf',
+    });
+    const jobs: Array<{ name: string; data: any }> = [];
+    await classifyOnce(
+      { data: { tenantId, messageId } },
+      async (name, data) => { jobs.push({ name, data }); },
+    );
+    const statementJob = jobs.find((job) => job.name === 'extract_statement');
+    expect(statementJob?.data).toEqual({ tenantId, messageId, attachmentId });
+
+    await extractStatementOnce(statementJob!.data, {
+      extract: vi.fn().mockResolvedValue(balanced),
+    });
+
+    expect((await query<{ status: string }>(
+      'SELECT status FROM bank_statements WHERE tenant_id=$1',
+      [tenantId],
+    )).rows).toEqual([{ status: 'review' }]);
+    expect(await countRows('bank_statement_lines')).toBeGreaterThan(0);
+  });
+
+  it.each([
+    null,
+    {},
+    { ...balanced, lines: 'not-an-array' },
+    { ...balanced, periodStart: 20260701 },
+    { ...balanced, lines: [{ postedOn: '2026-07-01', description: 'x', amount: 12 }] },
+  ])('holds malformed statement model output instead of stranding received input', async (output) => {
+    const src = await source(`malformed-${Math.random()}`);
+    await extractStatementOnce(src, { extract: vi.fn().mockResolvedValue(output) });
+    expect((await query<{ status: string; hold_reason: string }>(
+      'SELECT status,hold_reason FROM accounting_documents WHERE tenant_id=$1 AND sha256=$2',
+      [src.tenantId, src.sha256],
+    )).rows[0]).toMatchObject({ status: 'held' });
+    expect((await query<{ reason_code: string }>(
+      `SELECT reason_code FROM exceptions WHERE tenant_id=$1 AND entity_ref=$2`,
+      [src.tenantId, `attachment:${src.attachmentId}`],
+    )).rows[0]).toEqual({ reason_code: 'statement_unreadable' });
+  });
+
+  it('holds the statement and raises a visible exception when no extractor is configured', async () => {
+    const src = await source('statement-no-extractor');
+    await statementExtractHandler(
+      { data: src },
+      async () => { throw new Error('No LLM backend configured'); },
+    );
+    expect((await query<{ status: string; hold_reason: string }>(
+      'SELECT status,hold_reason FROM accounting_documents WHERE tenant_id=$1 AND sha256=$2',
+      [src.tenantId, src.sha256],
+    )).rows[0]).toEqual({ status: 'held', hold_reason: 'EXTRACTOR_NOT_CONFIGURED' });
+    expect((await query<{ reason_code: string }>(
+      `SELECT reason_code FROM exceptions WHERE tenant_id=$1 AND entity_ref=$2`,
+      [src.tenantId, `attachment:${src.attachmentId}`],
+    )).rows[0]).toEqual({ reason_code: 'extractor_not_configured' });
   });
 
   it('adopts a canonical statement document created by routing before normalization', async () => {

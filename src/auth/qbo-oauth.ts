@@ -4,7 +4,7 @@ import { createQboReadClient } from '../qbo/client.js';
 import { writeAudit } from '../audit.js';
 import { raiseException } from '../exceptions.js';
 import { logger } from '../logger.js';
-import { verifyConnectState } from './connect-state.js';
+import { consumeConnectState } from './connect-state.js';
 
 /**
  * QBO OAuth callback (CHUNK_2). Exchanges the code, then performs a confirm-realm
@@ -31,7 +31,10 @@ export async function exchangeQboCode(
   fetchImpl: typeof fetch = globalThis.fetch,
 ): Promise<{ access_token: string; refresh_token: string; expires_in: number }> {
   const cfg = config();
-  const basic = Buffer.from(`${cfg.QBO_SANDBOX_CLIENT_ID}:${cfg.QBO_SANDBOX_CLIENT_SECRET}`).toString(
+  const clientId = cfg.QBO_ENV === 'production' ? cfg.QBO_PRODUCTION_CLIENT_ID : cfg.QBO_SANDBOX_CLIENT_ID;
+  const clientSecret = cfg.QBO_ENV === 'production'
+    ? cfg.QBO_PRODUCTION_CLIENT_SECRET : cfg.QBO_SANDBOX_CLIENT_SECRET;
+  const basic = Buffer.from(`${clientId}:${clientSecret}`).toString(
     'base64',
   );
   const body = new URLSearchParams({
@@ -56,9 +59,14 @@ export async function handleQboCallback(
   url: URL,
   respond: (status: number, body: unknown) => void,
   redirect: (location: string) => void,
+  expectedSessionId: number,
 ): Promise<void> {
   const cfg = config();
-  const verified = verifyConnectState(url.searchParams.get('state') ?? '');
+  const verified = await consumeConnectState(
+    url.searchParams.get('state') ?? '',
+    'qbo',
+    expectedSessionId,
+  );
   if (!verified) {
     respond(400, { error: 'invalid_state' });
     return;
@@ -67,7 +75,12 @@ export async function handleQboCallback(
 
   const errorParam = url.searchParams.get('error');
   const code = url.searchParams.get('code');
-  const realmId = url.searchParams.get('realmId') ?? cfg.QBO_SANDBOX_REALM_ID;
+  const configuredRealm = cfg.QBO_ENV === 'production' ? cfg.QBO_PRODUCTION_REALM_ID : cfg.QBO_SANDBOX_REALM_ID;
+  const expectedCompany = cfg.QBO_ENV === 'production'
+    ? cfg.QBO_PRODUCTION_COMPANY_NAME : cfg.QBO_SANDBOX_COMPANY_NAME;
+  const redirectUri = cfg.QBO_ENV === 'production'
+    ? cfg.QBO_PRODUCTION_REDIRECT_URI : cfg.QBO_SANDBOX_REDIRECT_URI;
+  const realmId = url.searchParams.get('realmId') ?? configuredRealm;
   if (errorParam) {
     redirect(`${config().WEB_BASE_URL}/onboarding?connect_error=qbo&reason=denied`);
     return;
@@ -77,14 +90,18 @@ export async function handleQboCallback(
     return;
   }
   try {
-    const tok = await exchangeQboCode(code, cfg.QBO_SANDBOX_REDIRECT_URI);
+    const tok = await exchangeQboCode(code, redirectUri);
     const client = createQboReadClient({
       accessToken: tok.access_token,
       realmId,
       minorVersion: cfg.QBO_MINOR_VERSION,
+      qboEnv: cfg.QBO_ENV,
     });
     const info = await client.getCompanyInfo();
-    assertExpectedCompany(info.CompanyName, cfg.QBO_SANDBOX_COMPANY_NAME);
+    if (cfg.QBO_ENV === 'production' && realmId !== configuredRealm) {
+      throw new Error('confirm-realm failed: unexpected realm id');
+    }
+    assertExpectedCompany(info.CompanyName, expectedCompany);
 
     await saveToken(tenantId, 'qbo', {
       accessToken: tok.access_token,
@@ -98,6 +115,7 @@ export async function handleQboCallback(
     await upsertConnection(tenantId, 'qbo', realmId);
     await writeAudit({
       tenantId,
+      actor: verified.email ?? `user:${verified.userId}`,
       action: 'qbo.connect',
       entity: `realm:${realmId}`,
       realm: realmId,

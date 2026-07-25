@@ -207,7 +207,7 @@ test('owner prepares, edits, opens, and discards a source-thread Gmail draft', a
   await expect(page.getByTestId('reply-draft-notice')).toContainText('prepared in Gmail');
 
   const gmail = page.getByTestId('draft-open-gmail');
-  await expect(gmail).toHaveAttribute('href', 'https://mail.google.com/mail/u/0/#all/thread-source-abc');
+  await expect(gmail).toHaveAttribute('href', 'https://mail.google.com/mail/#all/thread-source-abc');
   await page.getByLabel('Message').fill('Please confirm the PO number and due date.');
   await page.getByTestId('draft-save').click();
   await expect(page.getByTestId('reply-draft-notice')).toContainText('changes saved');
@@ -533,7 +533,7 @@ test('settings presents QBO capability truth and actionable offline QBD health',
 
 test('owner reviews, matches, excludes, and files statement evidence', async ({ page }) => {
   await stubMe(page, OWNER);
-  let current = structuredClone(STATEMENT_DETAIL);
+  const current = structuredClone(STATEMENT_DETAIL);
   await page.route('**/api/statements', (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: STATEMENT_LIST }) }),
   );
@@ -610,4 +610,104 @@ test('statement navigation fails closed for anonymous and foreign-tenant records
   await page.goto('/statements/999');
   await expect(page.getByTestId('statement-not-found')).toContainText('not found or unavailable in this company');
   await expect(page.getByTestId('statement-not-found')).not.toContainText('tenant');
+});
+
+test('statement mutation network failure recovers controls and gives a retryable message', async ({ page }) => {
+  await stubMe(page, OWNER);
+  await stubStatementReads(page);
+  await page.route('**/api/statements/71/lines/801/match', (route) => route.abort('connectionfailed'));
+  await page.goto('/statements/71');
+  await page.getByLabel('Reason for line 1').fill('Matched after review');
+  await page.getByLabel('Provider reference for line 1').fill('bill-500');
+  const match = page.getByTestId('statement-line-801').getByRole('button', { name: 'Match' });
+  await match.click();
+  await expect(page.getByTestId('statement-notice')).toContainText('try again', { ignoreCase: true });
+  await expect(match).toBeEnabled();
+});
+
+test('draft mutation network failure remains unsent, recovers controls, and supports status refresh', async ({ page }) => {
+  await stubMe(page, OWNER);
+  await stubReads(page);
+  await page.route('**/api/reply-drafts**', async (route) => {
+    if (route.request().method() === 'PATCH') return route.abort('connectionfailed');
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: REPLY_DRAFT }) });
+  });
+  await page.goto('/exceptions');
+  await expect(page.getByTestId('reply-draft-panel')).toContainText('AP Hub cannot send');
+  await expect(page.getByTestId('draft-timestamps')).toContainText('last synced');
+  await page.getByLabel('Message').fill('Updated but still unsent.');
+  await page.getByTestId('draft-save').click();
+  await expect(page.getByTestId('reply-draft-notice')).toContainText('try again', { ignoreCase: true });
+  await expect(page.getByTestId('draft-save')).toBeEnabled();
+  await page.getByTestId('draft-refresh').click();
+  await expect(page.getByTestId('reply-draft-notice')).toContainText('refreshed from Gmail');
+});
+
+test('keyboard users can skip navigation and see a visible main-content focus target', async ({ page }) => {
+  await stubMe(page, OWNER);
+  await stubReads(page);
+  await page.goto('/today');
+  await page.keyboard.press('Tab');
+  const skip = page.getByRole('link', { name: 'Skip to main content' });
+  await expect(skip).toBeFocused();
+  await skip.press('Enter');
+  await expect(page.locator('#main-content')).toBeFocused();
+  await expect(page.getByRole('navigation', { name: 'Primary navigation' })).toBeVisible();
+});
+
+test('Gmail links do not force account zero and show the observed recipient', async ({ page }) => {
+  await stubMe(page, OWNER);
+  await stubReads(page);
+  await page.route('**/api/reply-drafts**', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: REPLY_DRAFT }) }),
+  );
+  await page.goto('/exceptions');
+  await expect(page.getByLabel('Recipient from source conversation')).toHaveValue('billing@acme.example');
+  const link = page.getByTestId('draft-open-gmail');
+  await expect(link).toHaveAttribute('href', 'https://mail.google.com/mail/#all/thread-source-abc');
+  await expect(link).toHaveText('Open conversation in Gmail');
+});
+
+test('dimension modal traps keyboard focus, closes with Escape, and fits a phone viewport', async ({ page }) => {
+  await stubMe(page, OWNER);
+  const now = new Date().toISOString();
+  await page.route('**/api/dimension-mappings**', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: { mappings: [{
+        id: 5, connection_id: 11, provider: 'qbo', proposal_id: 501,
+        dimension_type: 'class', raw_value: 'Operations', normalized_value: 'Operations',
+        source_evidence: {}, extraction_confidence: 0.91, proposed_provider_id: '7',
+        proposed_match_label: 'Operations', provider_id: null, mapping_method: null,
+        review_status: 'pending', resolution_state: 'not_mapped', active: true,
+        mapping_version: 1, revalidated_at: null, created_at: now, updated_at: now,
+      }] } }),
+    }),
+  );
+  await page.setViewportSize({ width: 390, height: 700 });
+  await page.goto('/exceptions/dimensions');
+  await page.getByTestId('correct-btn').click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByTestId('correct-normalized-value')).toBeFocused();
+  const box = await dialog.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(390);
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(page.getByTestId('correct-btn')).toBeFocused();
+});
+
+test('wide tables use a focusable horizontal-scroll region on mobile', async ({ page }) => {
+  await stubMe(page, OWNER);
+  await stubReads(page);
+  await page.setViewportSize({ width: 390, height: 700 });
+  await page.goto('/today');
+  const region = page.getByRole('region', { name: 'Recent accounting items table' });
+  await expect(region).toBeVisible();
+  await expect(region).toHaveAttribute('tabindex', '0');
+  await region.focus();
+  await expect(region).toBeFocused();
 });

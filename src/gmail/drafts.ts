@@ -32,6 +32,10 @@ export interface GmailDraftProjection {
  */
 export interface GmailDraftClient {
   createInSourceThread(source: SourceConversation, copy: DraftCopy): Promise<GmailDraftProjection>;
+  reconcileCreateInSourceThread(
+    source: SourceConversation,
+    copy: DraftCopy,
+  ): Promise<GmailDraftProjection | null>;
   updateInSourceThread(
     providerDraftId: string,
     source: SourceConversation,
@@ -57,6 +61,15 @@ export class GmailDraftRetryError extends Error {
   }
 }
 
+/** The provider may have committed a create whose response was lost. Never retry blindly. */
+export class GmailDraftResultUnknownError extends Error {
+  readonly code = 'DRAFT_RESULT_UNKNOWN';
+  constructor(message: string) {
+    super(message);
+    this.name = 'GmailDraftResultUnknownError';
+  }
+}
+
 type DraftResource = {
   id?: string | null;
   message?: { id?: string | null; threadId?: string | null } | null;
@@ -64,6 +77,7 @@ type DraftResource = {
 
 export interface GmailDraftTransport {
   create(raw: string, threadId: string): Promise<DraftResource>;
+  findByMarker(marker: string): Promise<DraftResource | null>;
   update(id: string, raw: string, threadId: string): Promise<DraftResource>;
   get(id: string): Promise<DraftResource>;
   discard(id: string): Promise<void>;
@@ -81,17 +95,59 @@ export function createGmailDraftClient(
     async createInSourceThread(source, copy) {
       requireCompose();
       const to = deriveReplyRecipient(source);
-      const draft = await retryDraftOperation(() =>
-        transport.create(buildReplyRaw(to, source.subject, copy.bodyText), source.threadId),
-      );
+      const marker = draftMarker(source);
+      let draft: DraftResource;
+      try {
+        // Create is intentionally single-shot. A timeout/5xx can mean Gmail committed it.
+        draft = await transport.create(
+          buildReplyRaw(to, source.subject, copy.bodyText, marker),
+          source.threadId,
+        );
+      } catch (error: any) {
+        const status = errorStatus(error);
+        if (status === 401 || status === 403) {
+          throw new GmailAuthError(`Gmail token or scope rejected (${status})`);
+        }
+        if (isAmbiguousProviderFailure(status)) {
+          throw new GmailDraftResultUnknownError(
+            `Gmail draft create result is unknown: ${String(error)}`,
+          );
+        }
+        throw error;
+      }
       return projectDraft(draft, source.threadId, to, 'created');
+    },
+    async reconcileCreateInSourceThread(source, _copy) {
+      requireCompose();
+      const found = await retryDraftOperation(() => transport.findByMarker(draftMarker(source)));
+      return found
+        ? projectDraft(found, source.threadId, deriveReplyRecipient(source), 'created')
+        : null;
     },
     async updateInSourceThread(providerDraftId, source, copy) {
       requireCompose();
       const to = deriveReplyRecipient(source);
-      const draft = await retryDraftOperation(() =>
-        transport.update(providerDraftId, buildReplyRaw(to, source.subject, copy.bodyText), source.threadId),
-      );
+      let draft: DraftResource;
+      try {
+        // Like create, update is a remote mutation: a lost response may follow a commit.
+        // The service persists result_unknown and requires read-back before another update.
+        draft = await transport.update(
+          providerDraftId,
+          buildReplyRaw(to, source.subject, copy.bodyText, draftMarker(source)),
+          source.threadId,
+        );
+      } catch (error: any) {
+        const status = errorStatus(error);
+        if (status === 401 || status === 403) {
+          throw new GmailAuthError(`Gmail token or scope rejected (${status})`);
+        }
+        if (isAmbiguousProviderFailure(status)) {
+          throw new GmailDraftResultUnknownError(
+            `Gmail draft update result is unknown: ${String(error)}`,
+          );
+        }
+        throw error;
+      }
       return projectDraft(draft, source.threadId, to, 'created', providerDraftId);
     },
     async readStatus(providerDraftId, sourceThreadId) {
@@ -145,6 +201,17 @@ export async function getGmailDraftClient(tenantId: number): Promise<GmailDraftC
         });
         return data;
       },
+      async findByMarker(marker) {
+        const listed = await gmail.users.drafts.list({
+          userId: 'me',
+          q: `rfc822msgid:${marker}`,
+          maxResults: 2,
+        });
+        const id = listed.data.drafts?.[0]?.id;
+        if (!id) return null;
+        const { data } = await gmail.users.drafts.get({ userId: 'me', id, format: 'minimal' });
+        return data;
+      },
       async update(id, raw, threadId) {
         const { data } = await gmail.users.drafts.update({
           userId: 'me',
@@ -175,16 +242,32 @@ export function deriveReplyRecipient(source: SourceConversation): string {
   return address;
 }
 
-function buildReplyRaw(to: string, subject: string, bodyText: string): string {
+function buildReplyRaw(to: string, subject: string, bodyText: string, marker?: string): string {
   if (/[\r\n]/.test(subject)) throw new Error('Unsafe source subject');
   const replySubject = /^re:/i.test(subject.trim()) ? subject.trim() : `Re: ${subject.trim()}`;
   const mime =
     `To: ${to}\r\n` +
     `Subject: ${replySubject}\r\n` +
+    (marker ? `Message-ID: <${marker}>\r\nX-AP-Hub-Draft-Key: ${marker}\r\n` : '') +
     'Content-Type: text/plain; charset="UTF-8"\r\n' +
     'MIME-Version: 1.0\r\n\r\n' +
     bodyText;
   return Buffer.from(mime, 'utf8').toString('base64url');
+}
+
+function draftMarker(source: SourceConversation): string {
+  const safe = Buffer.from(`${source.threadId}\0${source.messageId}`, 'utf8')
+    .toString('base64url')
+    .slice(0, 96);
+  return `ap-hub-${safe}@draft.local`;
+}
+
+function errorStatus(error: any): number {
+  return Number(error?.code ?? error?.response?.status ?? 0);
+}
+
+function isAmbiguousProviderFailure(status: number): boolean {
+  return status === 0 || status === 408 || status === 429 || status >= 500;
 }
 
 function projectDraft(
@@ -213,7 +296,7 @@ async function retryDraftOperation<T>(operation: () => Promise<T>): Promise<T> {
     try {
       return await operation();
     } catch (error: any) {
-      const status = Number(error?.code ?? error?.response?.status ?? 0);
+      const status = errorStatus(error);
       if (status === 401 || status === 403) {
         throw new GmailAuthError(`Gmail token or scope rejected (${status})`);
       }

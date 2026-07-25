@@ -115,3 +115,56 @@ R4 was selected as the approximately 10% re-audit item. The critical rerun re-ex
 ## Gate conclusion
 
 `CHUNK_6_RELEASE_PROOF` is complete and GREEN within the explicitly local, non-mutating boundary. Product launch remains **CANNOT CERTIFY (code-only)** until RP-1 through RP-3 are executed and their residual risks are accepted or closed. No live proof is claimed.
+
+## Infinite-improvement convergence addendum
+
+The original fresh-context audit above was followed by five hostile improvement
+iterations using the expanded SMB-owner integration spec as the authority. The
+iterations found and repaired defects that were not represented in the original
+local evidence, including:
+
+- QBO production support behind an explicit, default-off master switch; exact
+  configured/connection/token realm binding; safe duplicate adoption; durable
+  ambiguous-result recovery; and authoritative read-back.
+- QBD durable QBWC work, observed-company binding, pre-create queries,
+  non-replayable uncertain writes, atomic finalization, and owner write gates.
+- Owner-operable, tenant-scoped write gates for both QBO sandbox and production
+  and for QBD. Production/QBD process switches remain additional safeguards.
+- Durable OAuth connection state and SSO login state, both expiring and
+  single-use, with exact provider/session/user/tenant binding where applicable.
+- Gmail draft create/update ambiguity holds that never create again after one
+  negative reconciliation lookup. The application still exposes no reply-send
+  operation; a human sends from Gmail.
+- Ambiguous invoice/statement classification review for owners and bookkeepers,
+  with CPA read-only behavior, audit evidence, a durable dispatch outbox,
+  recovery, body-only support, and effective-once extraction completion.
+- Provider-authoritative statement matching, atomic statement mutation/audit
+  behavior, malformed-output holds, and evidence-only filing with zero
+  accounting/provider writes.
+- Installer, backup/recovery, health redaction, responsive/accessibility, and
+  network-recovery truth fixes.
+
+Final hostile convergence score: **9.4/10 local**, with **no P0 or P1 findings
+remaining**. This score excludes unsupplied external systems and credentials.
+
+Final clean repository gate:
+
+- `npm run verify`: exit 0
+- ESLint: PASS
+- provider/OS boundary leak scan: PASS
+- TypeScript: PASS
+- Vitest: **62 files / 477 tests PASS**
+- Next.js production build: PASS
+- Playwright: **24/24 PASS**
+- `git diff --check`: PASS (line-ending conversion warnings only)
+
+The launch verdict remains **CANNOT CERTIFY (code-only)**. No deployment, live
+Gmail mailbox operation, live QBO sandbox/production write, live QBD
+Pro/Premier/Enterprise write, backup restoration on the target environment, or
+real-company mutation occurred. Those owner-gated checks remain governed by
+`docs/LIVE-VALIDATION-SETUP.md`.
+
+Upgrade note: migration 012 creates source-identity uniqueness for extraction
+replay safety. The current unlaunched/local database passes UP/DOWN/UP. Before a
+future installed-base upgrade, preflight for historical duplicate extraction
+rows and resolve them before applying that migration.

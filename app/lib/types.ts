@@ -304,6 +304,10 @@ export interface ProviderCapabilityConnection {
   externalCompany: string | null;
   status: string;
   lastVerifiedAt: string | null;
+  writeGateEnabled: boolean | null;
+  expectedCompanyId: string | null;
+  observedCompanyId: string | null;
+  lastContactAt: string | null;
   edition: string;
   supported: boolean;
   capabilities: ProviderCapability[];
@@ -353,4 +357,14 @@ export interface StatementDetail extends StatementListItem {
   closingBalance: string | null;
   validationDetail: Record<string, unknown>;
   lines: StatementLine[];
+}
+
+export interface ClassificationReviewItem {
+  id: number;
+  messageId: number;
+  attachmentId: number | null;
+  filename: string | null;
+  subject: string | null;
+  holdReason: string | null;
+  createdAt: string;
 }

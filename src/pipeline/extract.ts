@@ -1,4 +1,4 @@
-import { query } from '../db/pool.js';
+import { query, withTransaction } from '../db/pool.js';
 import { JOBS } from '../queue.js';
 import { classifyDeterministic } from '../extract/classify.js';
 import {
@@ -13,7 +13,14 @@ import { recordProofRef, hasProofRef } from '../swarmsync/proof.js';
 import { writeAudit } from '../audit.js';
 import { logger } from '../logger.js';
 import type { VerifyResult } from '../swarmsync/client.js';
-import { classifyAccountingAttachment } from '../statements/ingest.js';
+import {
+  classifyAccountingAttachment,
+  holdUnreadableStatement,
+  importBankStatement,
+  StatementInputError,
+  validateRawBankStatement,
+} from '../statements/ingest.js';
+import { dispatchPendingClassifications, stageClassifiedDocument } from '../accounting/document-review.js';
 
 export interface ClassifyJob {
   tenantId: number;
@@ -61,7 +68,13 @@ export async function classifyOnce(
   ]);
 
   if (atts.length === 0) {
-    await enqueue(JOBS.extract, { tenantId, messageId, attachmentId: null });
+    await stageClassifiedDocument({
+      tenantId, messageId, attachmentId: null, sha256: `body-message:${messageId}`,
+      kind: 'invoice', confidence: result.confident ? '0.9900' : '0.6000',
+    });
+    await dispatchPendingClassifications(
+      async (name, data) => enqueue(name, data as unknown as ExtractJob),
+    );
   } else {
     for (const a of atts) {
       const route = classifyAccountingAttachment({
@@ -69,26 +82,28 @@ export async function classifyOnce(
         filename: a.filename ?? '',
         mime: a.mime ?? '',
       });
-      await query(
-        `INSERT INTO accounting_documents
-           (tenant_id,message_id,attachment_id,kind,sha256,status,classification_confidence,hold_reason)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-         ON CONFLICT (tenant_id,sha256,kind) DO NOTHING`,
-        [
-          tenantId,
-          messageId,
-          a.id,
-          route.kind,
-          a.sha256,
-          route.status,
-          route.confidence,
-          route.holdReason,
-        ],
-      );
       if (route.kind === 'invoice') {
-        await enqueue(JOBS.extract, { tenantId, messageId, attachmentId: a.id });
+        await stageClassifiedDocument({
+          tenantId, messageId, attachmentId: a.id, sha256: a.sha256,
+          kind: 'invoice', confidence: route.confidence,
+        });
+      } else if (route.kind === 'bank_statement') {
+        await stageClassifiedDocument({
+          tenantId, messageId, attachmentId: a.id, sha256: a.sha256,
+          kind: 'bank_statement', confidence: route.confidence,
+        });
+      } else {
+        await query(
+          `INSERT INTO accounting_documents
+             (tenant_id,message_id,attachment_id,kind,sha256,status,classification_confidence,hold_reason)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+           ON CONFLICT (tenant_id,sha256,kind) DO NOTHING`,
+          [tenantId, messageId, a.id, route.kind, a.sha256, route.status,
+            route.confidence, route.holdReason],
+        );
       }
     }
+    await dispatchPendingClassifications(async (name, data) => enqueue(name, data as unknown as ExtractJob));
   }
 }
 
@@ -176,10 +191,12 @@ export async function extractOnce(
     }
   }
 
-  const extractionId = (
+  const insertedExtraction = (
     await query<{ id: number }>(
       `INSERT INTO extractions (tenant_id, attachment_id, message_id, fields, confidence, missing_fields, flags, model)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       ON CONFLICT DO NOTHING
+       RETURNING id`,
       [
         tenantId,
         attachmentId,
@@ -191,7 +208,23 @@ export async function extractOnce(
         deps.model ?? 'claude',
       ],
     )
-  ).rows[0]!.id;
+  ).rows[0];
+  const extractionId = insertedExtraction?.id ?? (
+    await query<{ id: number }>(
+      `SELECT id FROM extractions
+        WHERE tenant_id=$1 AND message_id=$2 AND attachment_id IS NOT DISTINCT FROM $3
+        ORDER BY id LIMIT 1`,
+      [tenantId, messageId, attachmentId],
+    )
+  ).rows[0]?.id;
+  if (!extractionId) throw new Error('EXTRACTION_IDEMPOTENCY_CLAIM_FAILED');
+  if (!insertedExtraction) {
+    const completed = (await query<{ processing_completed_at: Date | null }>(
+      'SELECT processing_completed_at FROM extractions WHERE tenant_id=$1 AND id=$2',
+      [tenantId, extractionId],
+    )).rows[0]?.processing_completed_at;
+    if (completed) return { extractionId, status: 'ok' };
+  }
 
   if (normalized.flags.includes('total_mismatch')) {
     await raiseException({ tenantId, reasonCode: 'total_mismatch', entityRef: `extraction:${extractionId}` });
@@ -236,8 +269,22 @@ export async function extractOnce(
     }
   }
 
-  await writeAudit({ tenantId, action: 'extract.done', entity: `extraction:${extractionId}` });
   await deps.enqueueMap(extractionId, attachmentId, messageId);
+  await withTransaction(async (client) => {
+    const claim = (await client.query<{ processing_completed_at: Date | null }>(
+      'SELECT processing_completed_at FROM extractions WHERE tenant_id=$1 AND id=$2 FOR UPDATE',
+      [tenantId, extractionId],
+    )).rows[0];
+    if (!claim?.processing_completed_at) {
+      await writeAudit({
+        tenantId, action: 'extract.done', entity: `extraction:${extractionId}`,
+      }, client);
+      await client.query(
+        'UPDATE extractions SET processing_completed_at=now() WHERE tenant_id=$1 AND id=$2',
+        [tenantId, extractionId],
+      );
+    }
+  });
   return { extractionId, status: 'ok' };
 }
 
@@ -245,6 +292,78 @@ export async function extractOnce(
 // process, not on every job. The provider is config-driven and stable for the
 // process lifetime; a newly-started local runtime is picked up on next restart.
 let cachedExtractor: Extractor | null = null;
+
+export async function extractStatementOnce(job: ExtractJob, extractor: Extractor): Promise<void> {
+  if (!job.attachmentId) throw new StatementInputError('DOCUMENT_UNREADABLE', 'Statement attachment is missing');
+  const attachment = (await query<{ sha256: string; mime: string | null }>(
+    'SELECT sha256,mime FROM attachments WHERE tenant_id=$1 AND id=$2',
+    [job.tenantId, job.attachmentId],
+  )).rows[0];
+  if (!attachment) return;
+  const source = {
+    tenantId: job.tenantId,
+    messageId: job.messageId,
+    attachmentId: job.attachmentId,
+    sha256: attachment.sha256,
+  };
+  const bytes = await loadAttachmentBytes(attachment.sha256);
+  if (!bytes) {
+    await holdUnreadableStatement(source, 'DOCUMENT_BYTES_MISSING');
+    return;
+  }
+  try {
+    const extracted = await extractor.extract({
+      bytes,
+      mime: attachment.mime ?? undefined,
+      docTypeHint: 'bank_statement',
+    });
+    await importBankStatement(source, validateRawBankStatement(extracted));
+  } catch (error) {
+    await holdUnreadableStatement(source, error instanceof StatementInputError ? error.code : 'DOCUMENT_UNREADABLE');
+    await raiseException({
+      tenantId: job.tenantId,
+      reasonCode: 'statement_unreadable',
+      entityRef: `attachment:${job.attachmentId}`,
+      detail: error instanceof Error ? error.message : 'Statement extraction failed',
+    });
+  }
+}
+
+export async function statementExtractHandler(
+  job: { data: ExtractJob },
+  resolveExtractor?: () => Promise<Extractor>,
+): Promise<void> {
+  const { config } = await import('../config.js');
+  const { getExtractor } = await import('../extract/model.js');
+  if (!cachedExtractor) {
+    try {
+      cachedExtractor = await (resolveExtractor ? resolveExtractor() : getExtractor(config()));
+    } catch (error) {
+      const attachment = job.data.attachmentId
+        ? (await query<{ sha256: string }>(
+            'SELECT sha256 FROM attachments WHERE tenant_id=$1 AND id=$2',
+            [job.data.tenantId, job.data.attachmentId],
+          )).rows[0]
+        : null;
+      if (attachment && job.data.attachmentId) {
+        await holdUnreadableStatement({
+          tenantId: job.data.tenantId,
+          messageId: job.data.messageId,
+          attachmentId: job.data.attachmentId,
+          sha256: attachment.sha256,
+        }, 'EXTRACTOR_NOT_CONFIGURED');
+      }
+      await raiseException({
+        tenantId: job.data.tenantId,
+        reasonCode: 'extractor_not_configured',
+        entityRef: job.data.attachmentId ? `attachment:${job.data.attachmentId}` : `message:${job.data.messageId}`,
+        detail: error instanceof Error ? error.message : 'Statement extractor is not configured',
+      });
+      return;
+    }
+  }
+  await extractStatementOnce(job.data, cachedExtractor);
+}
 
 export async function extractHandler(job: { data: ExtractJob }): Promise<void> {
   const { config } = await import('../config.js');

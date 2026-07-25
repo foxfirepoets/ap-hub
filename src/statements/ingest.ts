@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type pg from 'pg';
+import { z } from 'zod';
 import { withTransaction } from '../db/pool.js';
 import type {
   AccountingDocumentKind,
@@ -23,6 +24,36 @@ export interface RawBankStatement {
   closingBalance: string;
   lines: RawStatementLine[];
   pageCount?: number;
+}
+
+const RawStatementLineSchema = z.object({
+  postedOn: z.string(),
+  description: z.string(),
+  amount: z.string(),
+  balance: z.string().nullable().optional(),
+}).strict();
+
+export const RawBankStatementSchema = z.object({
+  institutionName: z.string().nullable().optional(),
+  accountHint: z.string().nullable().optional(),
+  currency: z.string().nullable().optional(),
+  periodStart: z.string(),
+  periodEnd: z.string(),
+  openingBalance: z.string(),
+  closingBalance: z.string(),
+  lines: z.array(RawStatementLineSchema).min(1),
+  pageCount: z.number().int().positive().optional(),
+}).strict();
+
+export function validateRawBankStatement(value: unknown): RawBankStatement {
+  const parsed = RawBankStatementSchema.safeParse(value);
+  if (!parsed.success) {
+    throw new StatementInputError(
+      'DOCUMENT_UNREADABLE',
+      `Statement model output failed schema validation: ${parsed.error.issues.map((issue) => issue.path.join('.') || 'root').join(', ')}`,
+    );
+  }
+  return parsed.data;
 }
 
 export interface StatementSource {

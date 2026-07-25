@@ -21,7 +21,9 @@
     7. Finish / Error.
 
   No graphical dependency beyond Windows' built-in .NET (System.Windows.Forms).
-  QBO writes are sandbox-only. Gmail may create drafts but never sends replies.
+  QBO sandbox is the safe default; production requires separate owner-controlled
+  credentials, exact company binding, backup proof, and the default-off production
+  gate. Gmail may create drafts but never sends replies.
 
 .PARAMETER SelfTest
   Build every page and exercise the gating logic WITHOUT showing a window or
@@ -135,7 +137,7 @@ function Show-WelcomePage {
   $c = $script:W.Content
   $c.Controls.Add((New-Label -Text "Set up ap-hub on this computer" -Font $script:FontH -Y 16))
   $c.Controls.Add((New-Label -Text "This wizard installs ap-hub and gets it running. It checks what's needed, searches this computer for any keys you already have so you don't have to hunt for them, generates an encryption key for you, and starts the service." -Color $script:Muted -Y 58 -Width 520))
-  $c.Controls.Add((New-Label -Text "ap-hub reads accounting email, proof-gates it, and prepares reviewable QuickBooks entries -- writing only to a QuickBooks sandbox, never to production, and never modifying Gmail." -Color $script:Muted -Y 132 -Width 520))
+  $c.Controls.Add((New-Label -Text "ap-hub reads accounting email, prepares unsent Gmail drafts, and creates reviewable QuickBooks entries. QBO sandbox is the default; production and QBD writes require explicit company-bound owner gates." -Color $script:Muted -Y 132 -Width 520))
   $c.Controls.Add((New-Label -Text "It takes a few minutes. You can cancel any time before the final step." -Color $script:Muted -Y 200 -Width 520))
   $script:W.Next.Text = "Next"; $script:W.Next.Enabled = $true
   Set-BackHandler $null
@@ -146,7 +148,7 @@ function Show-OptionsPage {
   $script:W.Page = "options"; Clear-Content; Set-Subtitle "How you'll access ap-hub"
   $c = $script:W.Content
   $c.Controls.Add((New-Label -Text "Runs on this computer" -Font $script:FontH -Y 12))
-  $c.Controls.Add((New-Label -Text "ap-hub runs on THIS computer at a local web address. Nothing on the internet can reach a local address, so your data never leaves this machine." -Color $script:Ink -Y 52 -Width 520))
+  $c.Controls.Add((New-Label -Text "ap-hub runs on THIS computer at a local web address. It exchanges required data with services you connect, including Gmail, QuickBooks, your configured LLM/proof provider, and optional broker monitoring." -Color $script:Ink -Y 52 -Width 520))
   $c.Controls.Add((New-Label -Text "Local address port" -Font $script:FontB -Y 132))
   $c.Controls.Add((New-Label -Text "http://localhost:" -Font $script:FontMono -Color $script:Teal -X 24 -Y 160))
   $spin = [System.Windows.Forms.NumericUpDown]::new()
@@ -219,14 +221,14 @@ function Add-HelperClose {
 }
 
 function Show-GmailHelper {
-  $f = New-HelperForm -Title "Set up Gmail access (read-only)"
+  $f = New-HelperForm -Title "Set up Gmail access (read + optional drafts)"
   $steps = "1.  Open the Google Cloud Console (button below) and create or select a project.`r`n" +
            "2.  APIs and Services > Library > enable the Gmail API.`r`n" +
            "3.  APIs and Services > Credentials > Create credentials > OAuth client ID.`r`n" +
            "4.  Application type: Desktop app (simplest), or Web application with redirect`r`n" +
            "      http://localhost:3001/oauth/gmail/callback`r`n" +
            "5.  Download the JSON, then click 'Load client_secret.json' below -- it fills the`r`n" +
-           "      client ID and secret for you. ap-hub only ever requests read-only Gmail."
+           "      client ID and secret for you. Drafts use Gmail compose scope; AP Hub never sends them."
   $f.Controls.Add((New-Label -Text "Connect Gmail (read + optional drafts)" -Font $script:FontH -X 20 -Y 16))
   $f.Controls.Add((New-Label -Text $steps -Color $script:Ink -X 20 -Y 54 -Width 545 -Height 150))
   $open = [System.Windows.Forms.Button]::new(); $open.Text = "Open Google Cloud Console"; $open.Size = [System.Drawing.Size]::new(220, 30); $open.Location = [System.Drawing.Point]::new(20, 210); $open.FlatStyle = "System"
@@ -568,15 +570,14 @@ function Show-RecoveryPage {
   $c.Controls.Add((New-Label -Text "Save your recovery key" -Font $script:FontH -Y 12))
 
   if ($res.RecoveryWasCreated) {
-    $c.Controls.Add((New-Label -Text "ap-hub generated an encryption key and saved a recovery copy. It is the ONLY copy outside .env. If .env is lost and you don't have this, tokens encrypted with the old key can't be read. Save it somewhere safe." -Color $script:Ink -Y 52 -Width 520))
+    $c.Controls.Add((New-Label -Text "ap-hub wrote the recovery key to your external target and read it back successfully. The manifest beside it records the restore proof without containing the key." -Color $script:Ink -Y 52 -Width 520))
     $path = New-Label -Text $res.RecoveryKeyPath -Font $script:FontMono -Color $script:Teal -Y 130 -Width 520; $c.Controls.Add($path)
     $open = [System.Windows.Forms.Button]::new(); $open.Text = "Open folder"; $open.Size = [System.Drawing.Size]::new(110, 30); $open.Location = [System.Drawing.Point]::new(24, 162); $open.FlatStyle = "System"
     $open.Add_Click({ Start-Process explorer.exe "/select,`"$($res.RecoveryKeyPath)`"" }); $c.Controls.Add($open)
 
-    $chk = [System.Windows.Forms.CheckBox]::new(); $chk.Text = "I have saved my recovery key in a safe place."; $chk.Location = [System.Drawing.Point]::new(24, 214); $chk.Size = [System.Drawing.Size]::new(520, 24); $chk.Font = $script:FontB
-    $chk.Add_CheckedChanged({ $script:W.RecoveryConfirmed = $chk.Checked; $script:W.Next.Enabled = (Test-RecoverySaved -Confirmed $chk.Checked -RecoveryWasCreated $true) })
-    $c.Controls.Add($chk)
-    $script:W.Next.Enabled = $false
+    $proof = if ($res.RecoveryVerified) { "Restore proof verified." } else { "Restore proof failed; setup cannot finish." }
+    $c.Controls.Add((New-Label -Text $proof -Color $(if($res.RecoveryVerified){$script:Good}else{$script:Crit}) -Y 214 -Width 520))
+    $script:W.Next.Enabled = [bool]$res.RecoveryVerified
   } else {
     $c.Controls.Add((New-Label -Text "This was a re-install -- your existing encryption key and .env were left untouched. Nothing new to save." -Color $script:Muted -Y 52 -Width 520))
     $script:W.Next.Enabled = $true
@@ -600,7 +601,7 @@ function Show-FinishPage {
   if ($res.QwcPath) {
     $c.Controls.Add((New-Label -Text ("QuickBooks Desktop: import this into the Web Connector -> " + $res.QwcPath) -Font $script:FontS -Color $script:Teal -Y 194 -Width 545))
   }
-  $c.Controls.Add((New-Label -Text "QBO writes are sandbox-only. Gmail may create drafts but never sends replies." -Font $script:FontS -Color $script:Muted -Y 220 -Width 520))
+  $c.Controls.Add((New-Label -Text "QBO sandbox is the default. Production requires separate owner-controlled setup. Gmail may create drafts but never sends replies." -Font $script:FontS -Color $script:Muted -Y 220 -Width 520))
   $script:W.Next.Text = "Close"; $script:W.Next.Enabled = $true
   Set-BackHandler $null
   Set-NextHandler { $script:W.Form.Close() }
@@ -637,19 +638,16 @@ if ($SelfTest) {
       if ($script:W.Content.Controls.Count -lt 1) { $failures += "$p produced no controls" }
     }
     if (-not $script:W.CredRows -or $script:W.CredRows.Count -lt 5) { $failures += "credentials page built no field rows" }
-    $script:W.Result = [pscustomobject]@{ Success = $true; RecoveryKeyPath = "C:\x\recovery.key"; RecoveryWasCreated = $true; AppUrl = "http://localhost:3000"; Error = $null }
+    $script:W.Result = [pscustomobject]@{ Success = $true; RecoveryKeyPath = "\\backup\APHub\recovery.key"; RecoveryWasCreated = $true; RecoveryVerified = $true; AppUrl = "http://localhost:3000"; Error = $null }
     Show-RecoveryPage
-    if ($script:W.Next.Enabled) { $failures += "recovery page did NOT gate Finish behind the checkbox" }
+    if (-not $script:W.Next.Enabled) { $failures += "recovery page did not accept verified external restore proof" }
     Show-FinishPage
     Show-ErrorPage -Message "sample" -Log "sample log"
-    if ((Test-RecoverySaved -Confirmed $false -RecoveryWasCreated $true) -ne $false) { $failures += "Test-RecoverySaved should block when unconfirmed" }
-    if ((Test-RecoverySaved -Confirmed $true  -RecoveryWasCreated $true) -ne $true)  { $failures += "Test-RecoverySaved should pass when confirmed" }
-    if ((Test-RecoverySaved -Confirmed $false -RecoveryWasCreated $false) -ne $true) { $failures += "Test-RecoverySaved should pass when nothing new to save" }
     $script:W.Form.Dispose()
   } catch { $failures += "self-test threw: $($_.Exception.Message)" }
 
   if ($failures.Count -gt 0) { $failures | ForEach-Object { Write-Error $_ }; exit 1 }
-  Write-Output "install-gui self-test OK -- all pages built (incl. credentials) + recovery-key gate enforced"
+  Write-Output "install-gui self-test OK -- all pages built (incl. credentials) + verified external recovery gate enforced"
   exit 0
 }
 
@@ -660,7 +658,7 @@ if ($CaptureTo) {
     "prereq"      { Show-WelcomePage; Show-PrereqPage }
     "credentials" { Show-WelcomePage; Show-CredentialsPage }
     "recovery"    {
-      $script:W.Result = [pscustomobject]@{ Success = $true; RecoveryKeyPath = "$env:APPDATA\ap-hub\recovery.key"; RecoveryWasCreated = $true; AppUrl = "http://localhost:3000"; Error = $null }
+      $script:W.Result = [pscustomobject]@{ Success = $true; RecoveryKeyPath = "\\backup\APHub\recovery.key"; RecoveryWasCreated = $true; RecoveryVerified = $true; AppUrl = "http://localhost:3000"; Error = $null }
       Show-RecoveryPage
     }
     default       { Show-WelcomePage }

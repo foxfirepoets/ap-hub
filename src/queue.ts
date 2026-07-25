@@ -39,10 +39,12 @@ export const JOBS = {
   gatekeep: 'gatekeep',
   classify: 'classify',
   extract: 'extract',
+  extract_statement: 'extract_statement',
   map: 'map',
   propose: 'propose',
   post_sandbox: 'post_sandbox',
   audit_anchor: 'audit_anchor',
   digest: 'digest',
+  dispatch_classifications: 'dispatch_classifications',
   noop: 'noop',
 } as const;

@@ -1,7 +1,7 @@
 import { AuthError } from '../../auth/guard.js';
 import { errorResponse, readContext } from '../read/http.js';
 import { config } from '../../config.js';
-import { signConnectState } from '../../auth/connect-state.js';
+import { createConnectState, type ConnectProvider } from '../../auth/connect-state.js';
 import { buildGmailAuthorizeUrl, buildQboAuthorizeUrl } from '../../auth/connect-urls.js';
 
 /**
@@ -13,10 +13,18 @@ import { buildGmailAuthorizeUrl, buildQboAuthorizeUrl } from '../../auth/connect
  * files only wire a path to one `run*` function.
  */
 
-async function runConnectStart(request: Request, buildUrl: (state: string) => string): Promise<Response> {
+async function runConnectStart(
+  request: Request,
+  provider: ConnectProvider,
+  buildUrl: (state: string) => string,
+): Promise<Response> {
   try {
     const ctx = await readContext(request, 'owner_controller');
-    const state = signConnectState(ctx.tenantId);
+    if (!ctx.sessionId) throw new AuthError(401, 'UNAUTHENTICATED');
+    const state = await createConnectState(
+      { tenantId: ctx.tenantId, userId: ctx.userId, sessionId: ctx.sessionId },
+      provider,
+    );
     return new Response(null, { status: 302, headers: { location: buildUrl(state) } });
   } catch (err) {
     if (err instanceof AuthError) return errorResponse(err.code, err.message, err.status);
@@ -26,10 +34,10 @@ async function runConnectStart(request: Request, buildUrl: (state: string) => st
 
 /** GET /api/connections/gmail/start — 302 to the real Google OAuth consent URL. */
 export async function runGmailConnectStart(request: Request): Promise<Response> {
-  return runConnectStart(request, (state) => buildGmailAuthorizeUrl(config(), state));
+  return runConnectStart(request, 'gmail', (state) => buildGmailAuthorizeUrl(config(), state));
 }
 
 /** GET /api/connections/qbo/start — 302 to the real Intuit OAuth consent URL. */
 export async function runQboConnectStart(request: Request): Promise<Response> {
-  return runConnectStart(request, (state) => buildQboAuthorizeUrl(config(), state));
+  return runConnectStart(request, 'qbo', (state) => buildQboAuthorizeUrl(config(), state));
 }

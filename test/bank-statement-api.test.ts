@@ -80,6 +80,16 @@ async function json(response: Response): Promise<Record<string, any>> {
   return response.json() as Promise<Record<string, any>>;
 }
 
+async function verifiedProviderTransaction(tenantId: number, externalId = '42'): Promise<void> {
+  await query(
+    `INSERT INTO postings_ap
+      (tenant_id,entity_type,external_id,revision,realm,mode,idempotency_key,status,response,posted_at)
+     VALUES ($1,'Expense',$2,'0','sandbox-realm','sandbox',$3,'posted_sandbox',$4,now())`,
+    [tenantId, externalId, `statement-match-${tenantId}-${externalId}`,
+      { Id: externalId, TotalAmt: 25, providerReadBack: true }],
+  );
+}
+
 describe('CHUNK_3 statement review API', () => {
   beforeEach(resetTables);
   afterAll(closeAll);
@@ -112,6 +122,7 @@ describe('CHUNK_3 statement review API', () => {
     const tenantId = await createTenant();
     const fixture = await statementFixture(tenantId, { secondLine: true });
     const bearer = await token(tenantId, 'bookkeeper');
+    await verifiedProviderTransaction(tenantId);
 
     expect((await runMatchStatementLine(
       request(bearer, { providerRef: { provider: 'qbo', type: 'Expense', id: '42' }, reason: 'Bank feed match' }),
@@ -128,10 +139,43 @@ describe('CHUNK_3 statement review API', () => {
       match_status: string; review_reason: string; matched_provider_ref: Record<string, unknown>;
     }>('SELECT match_status,review_reason,matched_provider_ref FROM bank_statement_lines ORDER BY line_no');
     expect(lines.rows).toMatchObject([
-      { match_status: 'matched', review_reason: 'Bank feed match', matched_provider_ref: { id: '42' } },
+      {
+        match_status: 'matched',
+        review_reason: 'Bank feed match',
+        matched_provider_ref: {
+          transactionId: '42', entityType: 'Expense', realm: 'sandbox-realm',
+          evidence: { source: 'provider_readback' },
+        },
+      },
       { match_status: 'excluded', review_reason: 'Internal transfer duplicate', matched_provider_ref: null },
     ]);
     expect(await countRows('audit_log', "tenant_id=$1 AND action LIKE 'statement.line_%'", [tenantId])).toBe(2);
+  });
+
+  it('rolls back a line match when its audit insert fails', async () => {
+    const tenantId = await createTenant();
+    const fixture = await statementFixture(tenantId);
+    const bearer = await token(tenantId, 'bookkeeper');
+    await verifiedProviderTransaction(tenantId);
+    await query(`CREATE OR REPLACE FUNCTION aphub_test_fail_statement_audit() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN IF NEW.action='statement.line_matched' THEN RAISE EXCEPTION 'injected statement audit failure'; END IF;
+      RETURN NEW; END $$`);
+    await query(`CREATE TRIGGER aphub_test_fail_statement_audit BEFORE INSERT ON audit_log
+      FOR EACH ROW EXECUTE FUNCTION aphub_test_fail_statement_audit()`);
+    try {
+      const response = await runMatchStatementLine(
+        request(bearer, { providerRef: { provider: 'qbo', id: '42' }, reason: 'Injected rollback' }),
+        fixture.statementId, fixture.lineIds[0]!,
+      );
+      expect(response.status).toBe(500);
+    } finally {
+      await query('DROP TRIGGER IF EXISTS aphub_test_fail_statement_audit ON audit_log');
+      await query('DROP FUNCTION IF EXISTS aphub_test_fail_statement_audit()');
+    }
+    expect((await query<{ match_status: string; review_reason: string | null }>(
+      'SELECT match_status,review_reason FROM bank_statement_lines WHERE id=$1', [fixture.lineIds[0]],
+    )).rows[0]).toEqual({ match_status: 'unmatched', review_reason: null });
+    expect(await countRows('audit_log', "action='statement.line_matched'")).toBe(0);
   });
 
   it('corrects only allowlisted facts and records old/new/reason evidence', async () => {
@@ -191,6 +235,29 @@ describe('CHUNK_3 statement review API', () => {
       reconciliation: await countRows('reconciliation'),
     }).toEqual(before);
     expect(await countRows('audit_log', "action='statement.filed'")).toBe(1);
+  });
+
+  it('revalidates corrected balances and refuses to file stale-valid arithmetic', async () => {
+    const tenantId = await createTenant();
+    const fixture = await statementFixture(tenantId);
+    const bearer = await token(tenantId, 'bookkeeper');
+    expect((await runCorrectStatement(
+      request(bearer, { field: 'closingBalance', value: '999.00', reason: 'hostile correction' }),
+      fixture.statementId,
+    )).status).toBe(200);
+    expect((await query<{ status: string; validation_detail: { code: string } }>(
+      'SELECT status,validation_detail FROM bank_statements WHERE id=$1',
+      [fixture.statementId],
+    )).rows[0]).toMatchObject({
+      status: 'unbalanced',
+      validation_detail: { code: 'STATEMENT_UNBALANCED' },
+    });
+    await runExcludeStatementLine(
+      request(bearer, { reason: 'Reviewed but arithmetic remains invalid' }),
+      fixture.statementId,
+      fixture.lineIds[0]!,
+    );
+    expect((await runFileStatement(request(bearer, {}), fixture.statementId)).status).toBe(400);
   });
 
   it('fails closed on unresolved/held filing, missing reasons, malformed matches, and foreign ids', async () => {

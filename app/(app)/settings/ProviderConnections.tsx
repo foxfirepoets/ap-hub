@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ApiError, apiGet } from '../../lib/api';
+import { ApiError, apiGet, apiPost } from '../../lib/api';
 import type { ProviderCapabilityConnection, ProviderJob } from '../../lib/types';
 
 export function ProviderConnections({ owner }: { owner: boolean }) {
@@ -84,6 +84,19 @@ export function ProviderConnections({ owner }: { owner: boolean }) {
             ) : (
               <p className="muted">Company verification has not been observed yet.</p>
             )}
+            <p className="muted">
+              {connection.provider === 'qbd'
+                ? `Desktop bill write gate: ${connection.writeGateEnabled ? 'enabled for this connection' : 'disabled'}.`
+                : `QuickBooks Online write gate: ${connection.writeGateEnabled ? 'enabled for the configured company' : 'disabled'}.`}
+            </p>
+            {owner ? <WriteGateControls connection={connection} reload={load} /> : null}
+            {connection.provider === 'qbd' ? (
+              <dl className="provider-identity" data-testid={`provider-${connection.id}-identity`}>
+                <div><dt>Expected company</dt><dd>{connection.expectedCompanyId ?? 'Not configured'}</dd></div>
+                <div><dt>Observed company</dt><dd>{connection.observedCompanyId ?? 'Not observed'}</dd></div>
+                <div><dt>Last Desktop contact</dt><dd>{connection.lastContactAt ? new Date(connection.lastContactAt).toLocaleString() : 'Not observed'}</dd></div>
+              </dl>
+            ) : null}
             {connection.gaps.map((gap) => <div className="notice warn" key={gap}>{gap}</div>)}
             <div className="capability-grid">
               {connection.capabilities.map((capability) => (
@@ -105,6 +118,59 @@ export function ProviderConnections({ owner }: { owner: boolean }) {
           </section>
         );
       })}
+    </div>
+  );
+}
+
+function WriteGateControls({
+  connection,
+  reload,
+}: {
+  connection: ProviderCapabilityConnection;
+  reload: () => Promise<void>;
+}) {
+  const expected = connection.expectedCompanyId ?? connection.externalCompany ?? '';
+  const [companyId, setCompanyId] = useState('');
+  const [backup, setBackup] = useState(false);
+  const [confirmation, setConfirmation] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  async function change(enabled: boolean) {
+    setBusy(true);
+    setMessage(null);
+    const result = await apiPost(`/api/provider-connections/${connection.id}/write-gate`, {
+      enabled, confirmedCompanyId: enabled ? companyId.trim() : expected,
+      backupConfirmed: enabled ? backup : false, confirmation: enabled ? confirmation : '',
+    });
+    setBusy(false);
+    if (!result.ok) setMessage(result.error?.message ?? 'Write gate was not changed.');
+    else {
+      setMessage(enabled ? 'Owner write gate enabled for this exact company.' : 'Owner write gate disabled immediately.');
+      await reload();
+    }
+  }
+  return (
+    <div className="panel">
+      <strong>Owner write control</strong>
+      {connection.writeGateEnabled ? (
+        <div className="btn-row">
+          <span className="notice warn">Writes are enabled for {expected}.</span>
+          <button className="danger" disabled={busy} onClick={() => void change(false)}>Disable writes</button>
+        </div>
+      ) : (
+        <>
+          <p className="muted">The process-level master switch, active connection, exact company identity, and a verified backup must already be in place.</p>
+          <label className="field-row"><span>Type exact company/realm ID: {expected || 'not configured'}</span>
+            <input type="text" value={companyId} onChange={(event) => setCompanyId(event.target.value)} />
+          </label>
+          <label><input type="checkbox" checked={backup} onChange={(event) => setBackup(event.target.checked)} /> I verified a restorable backup for this company.</label>
+          <label className="field-row"><span>Type ENABLE WRITES</span>
+            <input type="text" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} />
+          </label>
+          <button className="primary" disabled={busy || !backup || companyId !== expected || confirmation !== 'ENABLE WRITES'} onClick={() => void change(true)}>Enable writes for this company</button>
+        </>
+      )}
+      {message ? <div className="notice warn" role="status">{message}</div> : null}
     </div>
   );
 }

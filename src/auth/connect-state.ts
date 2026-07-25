@@ -1,64 +1,79 @@
-import { randomBytes, createHmac, timingSafeEqual } from 'node:crypto';
-import { config } from '../config.js';
+import { randomBytes } from 'node:crypto';
+import { sha256Hex } from '../crypto.js';
+import { query } from '../db/pool.js';
 
-/**
- * Signed, time-boxed CSRF `state` token for the Gmail/QBO OAuth connect flow
- * (CHUNK_1_STATETOKEN). Stateless — never persisted — so it works across the two
- * separate processes (Next.js "start" route, plain HTTP server callback) that
- * cannot share an HttpOnly cookie.
- *
- * Token shape: base64url(tenantId + '.' + timestamp + '.' + nonce) + '.' + hmacSignature.
- * The HMAC is computed over the base64url payload string itself (the exact bytes
- * carried in the token), keyed by the existing SESSION_COOKIE_SECRET — no new secret.
- */
-
+export type ConnectProvider = 'gmail' | 'qbo';
 const MAX_AGE_MS = 5 * 60 * 1000;
 
-function sign(payloadB64: string): string {
-  return createHmac('sha256', config().SESSION_COOKIE_SECRET).update(payloadB64).digest('base64url');
+export interface ConnectStateActor {
+  tenantId: number;
+  userId: number;
+  sessionId: number;
+  email?: string;
 }
 
-/** Mint a signed state token for a tenant. `now` is injectable for deterministic tests. */
-export function signConnectState(tenantId: number, now: () => number = Date.now): string {
-  const nonce = randomBytes(16).toString('base64url');
-  const payload = `${tenantId}.${now()}.${nonce}`;
-  const payloadB64 = Buffer.from(payload, 'utf8').toString('base64url');
-  return `${payloadB64}.${sign(payloadB64)}`;
+/** Mint an opaque, persistent OAuth state bound to the initiating authenticated session. */
+export async function createConnectState(
+  actor: ConnectStateActor,
+  provider: ConnectProvider,
+  now: () => number = Date.now,
+): Promise<string> {
+  const token = randomBytes(32).toString('base64url');
+  const expiresAt = new Date(now() + MAX_AGE_MS);
+  await query(
+    `DELETE FROM oauth_connect_states
+      WHERE expires_at < now() - interval '1 day'
+         OR consumed_at < now() - interval '1 day'`,
+  );
+  await query(
+    `INSERT INTO oauth_connect_states
+       (token_hash, tenant_id, user_id, session_id, provider, expires_at)
+     VALUES ($1,$2,$3,$4,$5,$6)`,
+    [sha256Hex(token), actor.tenantId, actor.userId, actor.sessionId, provider, expiresAt],
+  );
+  return token;
 }
 
 /**
- * Verify a state token: recompute the HMAC with a constant-time comparison, then
- * check the embedded timestamp is within 5 minutes of `now()`. Returns `null` on
- * ANY failure (malformed input, bad signature, expired) — never throws.
+ * Atomically consume a state exactly once. The join revalidates the initiating
+ * session and user at callback time, so logout, expiry, disablement, or deletion
+ * invalidates an otherwise unexpired state.
  */
-export function verifyConnectState(
+export async function consumeConnectState(
   token: string,
-  now: () => number = Date.now,
-): { tenantId: number } | null {
-  try {
-    if (!token) return null;
-    const idx = token.lastIndexOf('.');
-    if (idx <= 0 || idx === token.length - 1) return null;
-    const payloadB64 = token.slice(0, idx);
-    const sig = token.slice(idx + 1);
-
-    const expected = sign(payloadB64);
-    const a = Buffer.from(sig, 'utf8');
-    const b = Buffer.from(expected, 'utf8');
-    if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
-
-    const payload = Buffer.from(payloadB64, 'base64url').toString('utf8');
-    const parts = payload.split('.');
-    if (parts.length !== 3) return null;
-    const [tenantIdStr, timestampStr] = parts;
-    const tenantId = Number(tenantIdStr);
-    const timestamp = Number(timestampStr);
-    if (!Number.isInteger(tenantId) || !Number.isFinite(timestamp)) return null;
-
-    if (Math.abs(now() - timestamp) > MAX_AGE_MS) return null;
-
-    return { tenantId };
-  } catch {
-    return null;
-  }
+  provider: ConnectProvider,
+  expectedSessionId: number,
+): Promise<ConnectStateActor | null> {
+  if (!token || !Number.isInteger(expectedSessionId) || expectedSessionId <= 0) return null;
+  const { rows } = await query<ConnectStateActor>(
+    `UPDATE oauth_connect_states cs
+        SET consumed_at=now()
+       FROM sessions s, users u
+      WHERE cs.token_hash=$1
+        AND cs.provider=$2
+        AND cs.session_id=$3
+        AND cs.consumed_at IS NULL
+        AND cs.expires_at > now()
+        AND s.id=cs.session_id
+        AND s.user_id=cs.user_id
+        AND s.revoked=false
+        AND s.expires_at > now()
+        AND u.id=cs.user_id
+        AND u.tenant_id=cs.tenant_id
+        AND u.status='active'
+      RETURNING cs.tenant_id AS "tenantId",
+                cs.user_id AS "userId",
+                cs.session_id AS "sessionId",
+                u.email`,
+    [sha256Hex(token), provider, expectedSessionId],
+  );
+  const row = rows[0];
+  return row
+    ? {
+        tenantId: Number(row.tenantId),
+        userId: Number(row.userId),
+        sessionId: Number(row.sessionId),
+        email: row.email,
+      }
+    : null;
 }

@@ -2,8 +2,6 @@ import { Command } from 'commander';
 import { config } from './config.js';
 import { query, closePool } from './db/pool.js';
 import { logger } from './logger.js';
-import { signConnectState } from './auth/connect-state.js';
-import { buildGmailAuthorizeUrl, buildQboAuthorizeUrl } from './auth/connect-urls.js';
 
 /**
  * ap-hub CLI (CHUNK_3/5/6/7/8). Operator surface: no web UI. Commands cover the
@@ -21,7 +19,9 @@ program
   .description('print the active QBO realm/environment (guardrail command)')
   .action(() => {
     const cfg = config();
-    console.log(`QBO_ENV=${cfg.QBO_ENV} (sandbox-only; production is refused)`);
+    console.log(
+      `QBO_ENV=${cfg.QBO_ENV} (production write gate=${cfg.QBO_PRODUCTION_WRITE_ENABLED})`,
+    );
     console.log(`SWARMSYNC_API_BASE=${cfg.SWARMSYNC_API_BASE}`);
     console.log(`GATEKEEPER_ENABLED=${cfg.GATEKEEPER_ENABLED}`);
   });
@@ -250,16 +250,9 @@ tenantOpt(
     .description('print the OAuth authorization URL for gmail|qbo')
     .argument('<provider>', 'gmail | qbo')
     .option('--env <env>', 'sandbox', 'sandbox'),
-).action((provider, o) => {
-  const cfg = config();
-  const state = signConnectState(Number(o.tenant));
-  if (provider === 'gmail') {
-    console.log(buildGmailAuthorizeUrl(cfg, state));
-  } else if (provider === 'qbo') {
-    console.log(buildQboAuthorizeUrl(cfg, state));
-  } else {
-    console.error('provider must be gmail or qbo');
-  }
+).action(() => {
+  console.error('OAuth connections must be started from the authenticated web UI.');
+  process.exitCode = 1;
 });
 
 // --- QuickBooks Desktop (Web Connector) ---

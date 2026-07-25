@@ -43,7 +43,7 @@ interface TxnDbRow {
 
 /** UX status: `reconciled` overrides `posted`; otherwise map the proposal status. */
 function uxStatus(rawStatus: string, reconciled: boolean): UxStatus {
-  if (rawStatus === 'posted_sandbox') return reconciled ? 'reconciled' : 'posted';
+  if (rawStatus === 'posted_sandbox' || rawStatus === 'posted') return reconciled ? 'reconciled' : 'posted';
   if (rawStatus === 'ready') return 'prepared';
   if (rawStatus === 'review') return 'held';
   if (rawStatus === 'rejected') return 'rejected';
@@ -95,7 +95,7 @@ const BASE_SELECT = `
   LEFT JOIN LATERAL (
     SELECT id, qbo_type, qbo_id, realm
       FROM postings
-     WHERE tenant_id = p.tenant_id AND proposal_id = p.id AND status = 'posted_sandbox'
+     WHERE tenant_id = p.tenant_id AND proposal_id = p.id AND status IN ('posted_sandbox','posted')
      ORDER BY id DESC LIMIT 1
   ) po ON true`;
 

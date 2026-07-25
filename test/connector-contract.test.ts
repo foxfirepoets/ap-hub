@@ -107,6 +107,37 @@ describe('QBO connector — capability gaps are surfaced, never silently dropped
     expect(w.createEntity).toHaveBeenCalledTimes(1);
     expect(w.createEntity).toHaveBeenCalledWith('Bill', expect.any(Object), 'idem-key-3');
   });
+
+  it('holds ambiguous duplicate candidates and requires exact vendor and amount evidence', async () => {
+    const queryExisting = vi.fn().mockResolvedValue([
+      { Id: '1', VendorRef: { value: 'V1' }, TotalAmt: 100, SyncToken: '0' },
+      { Id: '2', VendorRef: { value: 'V1' }, TotalAmt: 100, SyncToken: '0' },
+    ]);
+    const c = createQboConnector({
+      writeClient: mockWrite({ queryExisting }),
+      readClient: mockRead(),
+    });
+    const txn = {
+      txnType: 'Bill', vendorRef: { value: 'V1' }, DocNumber: 'INV-1',
+      TxnDate: '2026-07-01', TotalAmt: 100,
+    };
+    await expect(c.detectExisting(txn, 'key')).rejects.toThrow('QBO_AMBIGUOUS_DUPLICATE_MATCH');
+    expect(queryExisting).toHaveBeenCalledWith(
+      'Bill', expect.stringContaining("VendorRef = 'V1'"),
+    );
+  });
+
+  it('treats a missing expected DocNumber in provider readback as a mismatch', async () => {
+    const c = createQboConnector({
+      writeClient: mockWrite({
+        readEntity: vi.fn().mockResolvedValue({ Id: '1', TotalAmt: 100, SyncToken: '0' }),
+      }),
+      readClient: mockRead(),
+    });
+    await expect(c.readBackVerify({
+      txnType: 'Bill', DocNumber: 'INV-1', TotalAmt: 100,
+    }, '1')).resolves.toMatchObject({ verify: 'mismatch', reason: 'docnumber' });
+  });
 });
 
 describe('provider stubs are capability-declaring but throw NotImplementedInPhase', () => {

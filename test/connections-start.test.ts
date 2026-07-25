@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest';
 import { config } from '../src/config.js';
-import { createSession } from '../src/auth/session.js';
-import { verifyConnectState } from '../src/auth/connect-state.js';
+import { createSession, validateSession } from '../src/auth/session.js';
+import { sha256Hex } from '../src/crypto.js';
+import { query } from '../src/db/pool.js';
 import { runGmailConnectStart, runQboConnectStart } from '../src/services/action/index.js';
 import { resetTables, createTenant, createUser, closeAll } from './helpers.js';
 
@@ -15,6 +16,14 @@ import { resetTables, createTenant, createUser, closeAll } from './helpers.js';
 async function tokenFor(t: number, role: string, email: string): Promise<string> {
   const uid = await createUser(t, { role, email });
   return (await createSession(uid)).token;
+}
+
+async function storedState(state: string) {
+  const { rows } = await query<{ tenant_id: number; session_id: number }>(
+    'SELECT tenant_id,session_id FROM oauth_connect_states WHERE token_hash=$1',
+    [sha256Hex(state)],
+  );
+  return rows[0];
 }
 
 function get(token: string | null): Request {
@@ -61,8 +70,11 @@ describe('CHUNK_4_STARTROUTES', () => {
       expect(url.searchParams.get('redirect_uri')).toBe(config().GMAIL_REDIRECT_URI);
       expect(url.searchParams.get('scope')).toBe('https://www.googleapis.com/auth/gmail.readonly');
 
-      const verified = verifyConnectState(url.searchParams.get('state')!);
-      expect(verified?.tenantId).toBe(Number(t));
+      const session = await validateSession(token);
+      if (!session.ok) throw new Error('test session invalid');
+      const verified = await storedState(url.searchParams.get('state')!);
+      expect(Number(verified?.tenant_id)).toBe(Number(t));
+      expect(Number(verified?.session_id)).toBe(Number(session.session.sessionId));
     });
   });
 
@@ -91,8 +103,11 @@ describe('CHUNK_4_STARTROUTES', () => {
       expect(url.searchParams.get('redirect_uri')).toBe(config().QBO_SANDBOX_REDIRECT_URI);
       expect(url.searchParams.get('scope')).toBe('com.intuit.quickbooks.accounting');
 
-      const verified = verifyConnectState(url.searchParams.get('state')!);
-      expect(verified?.tenantId).toBe(Number(t));
+      const session = await validateSession(token);
+      if (!session.ok) throw new Error('test session invalid');
+      const verified = await storedState(url.searchParams.get('state')!);
+      expect(Number(verified?.tenant_id)).toBe(Number(t));
+      expect(Number(verified?.session_id)).toBe(Number(session.session.sessionId));
     });
 
     it('a forged tenant id cannot be smuggled in — state is always the session tenant', async () => {
@@ -106,9 +121,12 @@ describe('CHUNK_4_STARTROUTES', () => {
       });
       const res = await runQboConnectStart(req);
       const url = new URL(res.headers.get('location')!);
-      const verified = verifyConnectState(url.searchParams.get('state')!);
-      expect(verified?.tenantId).toBe(Number(t1));
-      expect(verified?.tenantId).not.toBe(Number(t2));
+      const session = await validateSession(token);
+      if (!session.ok) throw new Error('test session invalid');
+      const verified = await storedState(url.searchParams.get('state')!);
+      expect(Number(verified?.tenant_id)).toBe(Number(t1));
+      expect(Number(verified?.tenant_id)).not.toBe(Number(t2));
+      expect(Number(verified?.session_id)).toBe(Number(session.session.sessionId));
     });
   });
 });

@@ -14,7 +14,10 @@ const okVerify = vi.fn().mockResolvedValue({ proof_id: 'p1', chain_hash: 'h1', v
 const enqueueMap = vi.fn().mockResolvedValue(undefined);
 
 describe('CHUNK_5 extract pipeline', () => {
-  beforeEach(resetTables);
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    await resetTables();
+  });
   afterAll(closeAll);
 
   it('persists extraction and records the Verify-API proof', async () => {
@@ -71,5 +74,19 @@ describe('CHUNK_5 extract pipeline', () => {
     expect(out.status).toBe('ok');
     expect(flaky.extract).toHaveBeenCalledTimes(3);
     expect(await countRows('extractions')).toBe(1);
+  });
+
+  it('makes a committed classification replay effective-once at the extraction consumer', async () => {
+    const t = await createTenant();
+    const m = await insertMessage(t);
+    const a = await insertAttachment(t, m);
+    const deps = { extractor: extractor(goodRaw), verify: okVerify, enqueueMap };
+    const first = await extractOnce(t, { tenantId: t, messageId: m, attachmentId: a }, deps);
+    const replay = await extractOnce(t, { tenantId: t, messageId: m, attachmentId: a }, deps);
+    expect(replay.extractionId).toBe(first.extractionId);
+    expect(await countRows('extractions', 'tenant_id=$1 AND attachment_id=$2', [t, a])).toBe(1);
+    expect(await countRows('audit_log', "tenant_id=$1 AND action='extract.done'", [t])).toBe(1);
+    expect(enqueueMap).toHaveBeenCalledTimes(1);
+    expect(okVerify).toHaveBeenCalledTimes(1);
   });
 });

@@ -33,11 +33,23 @@ describe('send_lockdown (Phase 0.5 HARD REQUIREMENT)', () => {
   });
 });
 
-describe('no_prod_write (CHUNK_7 environment isolation)', () => {
-  it('refuses to construct a writer unless QBO_ENV=sandbox', () => {
+describe('production_write_gate environment isolation', () => {
+  it('refuses production unless its explicit write gate is enabled', () => {
     expect(() =>
       createQboWriteClient({ qboEnv: 'production', accessToken: 't', realmId: 'r', minorVersion: '73' }),
     ).toThrow(ProductionWriteRefused);
+  });
+  it('constructs production only with the explicit gate and selects the production API', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true, json: async () => ({ Bill: { Id: '1', SyncToken: '0' } }),
+    });
+    const w = createQboWriteClient({
+      qboEnv: 'production', productionWriteEnabled: true,
+      accessToken: 't', realmId: 'production-realm', minorVersion: '73',
+      fetchImpl: fetchImpl as any,
+    });
+    await w.createEntity('Bill', {}, 'request-1');
+    expect(fetchImpl.mock.calls[0]![0]).toContain('https://quickbooks.api.intuit.com/');
   });
   it('constructs for sandbox', () => {
     const w = createQboWriteClient({ qboEnv: 'sandbox', accessToken: 't', realmId: 'r', minorVersion: '73' });

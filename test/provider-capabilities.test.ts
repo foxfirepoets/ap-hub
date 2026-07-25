@@ -48,6 +48,11 @@ describe('CHUNK_2_CAPABILITIES — executable matrix', () => {
       });
       expect(result.supported).toBe(true);
       expect(result.capabilities.map((capability) => capability.operation)).toContain('post_bill');
+      expect(result.capabilities.find((capability) => capability.operation === 'post_bill')?.supported).toBe(true);
+      expect(result.capabilities.find((capability) => capability.operation === 'attach')).toMatchObject({
+        supported: false,
+        reason: expect.stringContaining('not certified'),
+      });
     }
 
     const mac = assessProviderCapabilities({

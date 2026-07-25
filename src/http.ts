@@ -12,7 +12,7 @@ export interface OperationalHealth {
     held: number;
   };
   statements: { held: number; unbalanced: number };
-  drafts: { failed: number };
+  drafts: { failed: number; resultUnknown: number };
 }
 
 type HealthQuery = <T extends Record<string, unknown>>(
@@ -45,7 +45,8 @@ export async function collectOperationalHealth(
        FROM bank_statements`,
   );
   const drafts = await runQuery<Record<string, unknown>>(
-    `SELECT count(*) FILTER (WHERE status='proposed' AND reason IS NOT NULL)::int AS failed
+    `SELECT count(*) FILTER (WHERE status='proposed' AND reason IS NOT NULL)::int AS failed,
+            count(*) FILTER (WHERE status='result_unknown')::int AS result_unknown
        FROM reply_drafts`,
   );
   const p = provider.rows[0] ?? {};
@@ -61,7 +62,7 @@ export async function collectOperationalHealth(
       held: numeric(p.held),
     },
     statements: { held: numeric(s.held), unbalanced: numeric(s.unbalanced) },
-    drafts: { failed: numeric(d.failed) },
+    drafts: { failed: numeric(d.failed), resultUnknown: numeric(d.result_unknown) },
   };
 }
 
@@ -75,6 +76,7 @@ export type Route = (
   url: URL,
   respond: (status: number, body: unknown) => void,
   redirect: (location: string) => void,
+  req: IncomingMessage,
 ) => boolean | Promise<boolean>;
 
 const routes: Route[] = [];
@@ -100,22 +102,46 @@ export function registerRawRoute(route: RawRoute): void {
   rawRoutes.push(route);
 }
 
-/** Read a request body to a string (bounded), for raw routes. */
-export function readBody(req: IncomingMessage, maxBytes = 8 * 1024 * 1024): Promise<string> {
+export class RequestBodyError extends Error {
+  constructor(
+    readonly status: 408 | 413,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'RequestBodyError';
+  }
+}
+
+/** Read a request body to a string with byte and slow-client bounds. */
+export function readBody(
+  req: IncomingMessage,
+  maxBytes = 8 * 1024 * 1024,
+  timeoutMs = 15_000,
+): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let size = 0;
+    let settled = false;
+    const finish = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      fn();
+    };
+    const timer = setTimeout(
+      () => finish(() => reject(new RequestBodyError(408, 'request body timed out'))),
+      timeoutMs,
+    );
     req.on('data', (c: Buffer) => {
       size += c.length;
       if (size > maxBytes) {
-        reject(new Error('request body too large'));
-        req.destroy();
+        finish(() => reject(new RequestBodyError(413, 'request body too large')));
         return;
       }
-      chunks.push(c);
+      if (!settled) chunks.push(c);
     });
-    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
-    req.on('error', reject);
+    req.on('end', () => finish(() => resolve(Buffer.concat(chunks).toString('utf8'))));
+    req.on('error', (err) => finish(() => reject(err)));
   });
 }
 
@@ -153,27 +179,17 @@ export function createHttpServer(): Server {
       } catch {
         db = false;
       }
-      let operations: OperationalHealth | null = null;
-      if (db) {
-        try {
-          operations = await collectOperationalHealth();
-          logger.info({ operations }, 'operational health snapshot');
-        } catch (err) {
-          logger.warn({ err: String(err) }, 'operational health metrics unavailable');
-        }
-      }
       respond(db ? 200 : 503, {
         status: db ? 'ok' : 'degraded',
         db,
         queue: true,
-        operations,
       });
       return;
     }
 
     for (const route of routes) {
       try {
-        if (await route(req.method ?? 'GET', url, respond, redirect)) return;
+        if (await route(req.method ?? 'GET', url, respond, redirect, req)) return;
       } catch (err) {
         logger.error({ err: String(err) }, 'route handler error');
         respond(500, { error: 'internal_error' });

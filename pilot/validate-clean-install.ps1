@@ -9,7 +9,9 @@
   USAGE (two phases, run as the STANDARD (non-admin) user, NOT elevated):
     # Phase 1 - before reboot: install + local recovery checks, then register autostart.
     powershell -ExecutionPolicy Bypass -File validate-clean-install.ps1 -Phase pre `
-        -BrokerBaseUrl https://aphub-broker.onrender.com -InstallToken <token> `
+        -BrokerBaseUrl <url> -CredentialBundlePath <dpapi-file> `
+        -GmailClientId <id> -GoogleSsoClientId <id> -QboSandboxClientId <id> `
+        -QboSandboxCompanyName <name> -TenantName <name> -OwnerEmail <email> `
         -NodeZip <node20.zip> -PostgresZip <pg16.zip>
     #   -> writes %LOCALAPPDATA%\APHub\f9-report.json ; then REBOOT the machine.
 
@@ -23,21 +25,51 @@
 param(
   [ValidateSet('pre','post')][string]$Phase = 'pre',
   [string]$BrokerBaseUrl,
-  [string]$InstallToken,
+  [string]$CredentialBundlePath,
+  [string]$GmailClientId,
+  [string]$GoogleSsoClientId,
+  [string]$QboSandboxClientId,
+  [string]$QboSandboxCompanyName,
+  [string]$TenantName,
+  [string]$OwnerEmail,
   [string]$NodeZip = $env:APHUB_NODE_ZIP,
   [string]$PostgresZip = $env:APHUB_PG_ZIP,
+  [string]$RecoveryTarget,
   [string]$AppSource = (Split-Path -Parent $PSScriptRoot)
 )
 $ErrorActionPreference = 'Continue'
 $AppDir = Join-Path $env:LOCALAPPDATA 'APHub'
 $Report = Join-Path $AppDir 'f9-report.json'
-$results = @()
+$script:results = @()
 function Check([string]$name, [scriptblock]$test) {
-  try { $r = & $test; $results += ,@{ name=$name; pass=[bool]$r.pass; evidence=$r.evidence } ; Write-Host ("[{0}] {1} - {2}" -f ($(if($r.pass){'PASS'}else{'FAIL'}), $name, $r.evidence)) }
-  catch { $results += ,@{ name=$name; pass=$false; evidence=("error: "+$_.Exception.Message) }; Write-Host "[FAIL] $name - $($_.Exception.Message)" }
+  try { $r = & $test; $script:results += ,@{ name=$name; pass=[bool]$r.pass; evidence=$r.evidence } ; Write-Host ("[{0}] {1} - {2}" -f ($(if($r.pass){'PASS'}else{'FAIL'}), $name, $r.evidence)) }
+  catch { $script:results += ,@{ name=$name; pass=$false; evidence=("error: "+$_.Exception.Message) }; Write-Host "[FAIL] $name - $($_.Exception.Message)" }
 }
 function Ports() { Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object { $_.LocalPort -in 3000,3001,55432 } }
-function Save() { New-Item -ItemType Directory -Force -Path $AppDir | Out-Null; @{ phase=$Phase; at=(Get-Date).ToString('o'); checks=$results } | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8 $Report }
+function Save() {
+  New-Item -ItemType Directory -Force -Path $AppDir | Out-Null
+  $priorChecks = @()
+  if ($Phase -eq 'post' -and (Test-Path $Report)) {
+    try {
+      $prior = Get-Content -Raw $Report | ConvertFrom-Json
+      if ($prior.phase -ne 'pre' -or @($prior.checks).Count -eq 0) {
+        $priorChecks = @(@{ name='pre_report_present'; pass=$false; evidence='report did not contain a completed pre phase' })
+      } else {
+        $priorChecks = @($prior.checks)
+        $priorChecks += @{ name='pre_report_present'; pass=$true; evidence='readable pre phase evidence loaded' }
+      }
+    } catch {
+      $priorChecks = @(@{ name='pre_report_readable'; pass=$false; evidence=("error: "+$_.Exception.Message) })
+    }
+  } elseif ($Phase -eq 'post') {
+    $priorChecks = @(@{ name='pre_report_present'; pass=$false; evidence='f9-report.json was missing before post phase' })
+  }
+  @{
+    phase=$Phase
+    at=(Get-Date).ToString('o')
+    checks=@($priorChecks) + @($script:results)
+  } | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8 $Report
+}
 
 if ($Phase -eq 'pre') {
   Check 'standard_user_not_admin' { $p=New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent()); $isAdmin=$p.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator); @{ pass=(-not $isAdmin); evidence=("user="+$env:USERNAME+" elevated="+$isAdmin) } }
@@ -46,7 +78,12 @@ if ($Phase -eq 'pre') {
   # Run the real installer, capturing whether any elevation is requested (UAC).
   $installLog = Join-Path $env:TEMP 'f9-install.log'
   & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'install-pilot.ps1') -NonInteractive `
-      -BrokerBaseUrl $BrokerBaseUrl -InstallToken $InstallToken -NodeZip $NodeZip -PostgresZip $PostgresZip -AppSource $AppSource *> $installLog
+      -BrokerBaseUrl $BrokerBaseUrl -CredentialBundlePath $CredentialBundlePath -NodeZip $NodeZip -PostgresZip $PostgresZip -AppSource $AppSource `
+      -GmailClientId $GmailClientId `
+      -GoogleSsoClientId $GoogleSsoClientId `
+      -QboSandboxClientId $QboSandboxClientId `
+      -QboSandboxCompanyName $QboSandboxCompanyName -TenantName $TenantName -OwnerEmail $OwnerEmail `
+      -RecoveryTarget $RecoveryTarget *> $installLog
   $installExit = $LASTEXITCODE
   Check 'install_completes' { @{ pass=($installExit -eq 0); evidence=("install-pilot exit="+$installExit+"; log="+$installLog) } }
   Check 'no_uac_elevation' { $needElev = Select-String -Path $installLog -Pattern 'RunAs|elevat|UAC|requires administrator' -ErrorAction SilentlyContinue; @{ pass=($null -eq $needElev); evidence=("elevation markers in log: "+(($needElev|Measure-Object).Count)) } }
@@ -72,8 +109,20 @@ else {
   Check 'post_reboot_ports_loopback' { $bad=Ports | Where-Object { $_.LocalAddress -notin '127.0.0.1','::1' }; @{ pass=($null -eq $bad); evidence=("non-loopback: "+(($bad|ForEach-Object{ "$($_.LocalAddress):$($_.LocalPort)" }) -join ',')) } }
   Check 'post_reboot_health_true' { $h=$null; try { $h=Invoke-RestMethod -Uri 'http://127.0.0.1:3001/health' -TimeoutSec 5 } catch {}; @{ pass=($h.status -eq 'ok'); evidence=("backend /health="+($h.status)) } }
   Check 'no_false_healthy' { $be=[bool](Get-NetTCPConnection -LocalPort 3001 -State Listen -EA SilentlyContinue); $h=$null; try { $h=Invoke-RestMethod -Uri 'http://127.0.0.1:3001/health' -TimeoutSec 5 } catch {}; @{ pass=($be -eq ($h.status -eq 'ok')); evidence=("listening=$be health="+($h.status)+" (must agree - no green while down)") } }
-  Check 'uninstall_preserves_data' { @{ pass=$true; evidence='manual: run uninstall-pilot.ps1 (no -PurgeData) and confirm data\\pg still present' } }
+  $dataBeforeUninstall = Test-Path (Join-Path $AppDir 'data\pg')
+  & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'uninstall-pilot.ps1') -AppDir $AppDir -NonInteractive
+  $uninstallExit = $LASTEXITCODE
+  Check 'uninstall_completes' { @{ pass=($uninstallExit -eq 0); evidence=("uninstall-pilot exit="+$uninstallExit) } }
+  Check 'uninstall_removes_watchdog' {
+    $task = Get-ScheduledTask -TaskName 'APHubWatchdog' -EA SilentlyContinue
+    @{ pass=($null -eq $task); evidence=("watchdog task present after uninstall="+($null -ne $task)) }
+  }
+  Check 'uninstall_preserves_data' {
+    $dataAfterUninstall = Test-Path (Join-Path $AppDir 'data\pg')
+    @{ pass=($dataBeforeUninstall -and $dataAfterUninstall); evidence=("data present before="+$dataBeforeUninstall+" after="+$dataAfterUninstall) }
+  }
   Save
-  $allPass = ($results | Where-Object { -not $_.pass }).Count -eq 0
+  $saved = Get-Content -Raw $Report | ConvertFrom-Json
+  $allPass = (@($saved.checks) | Where-Object { -not $_.pass }).Count -eq 0
   Write-Host ("`nF9 FINAL: " + ($(if($allPass){'PASS'}else{'FAIL'})) + " (pre+post). Full evidence: " + $Report) -ForegroundColor ($(if($allPass){'Green'}else{'Red'}))
 }

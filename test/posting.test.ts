@@ -115,6 +115,60 @@ describe('CHUNK_7 posting', () => {
     expect(await countRows('postings')).toBe(1);
   });
 
+  it('records explicitly owner-gated production posts as production with authoritative realm and audit', async () => {
+    const t = await createTenant();
+    const { proposalId } = await seedReadyProposal(t);
+    const connector = mockWriter({ companyId: 'production-realm' } as any);
+    const out = await postOnce(t, proposalId, {
+      ...deps(connector), accountingMode: 'production',
+    });
+    expect(out.status).toBe('posted');
+    expect((await query<{ mode: string; realm: string; status: string }>(
+      'SELECT mode,realm,status FROM postings_ap WHERE tenant_id=$1', [t],
+    )).rows[0]).toEqual({
+      mode: 'production', realm: 'production-realm', status: 'posted',
+    });
+    expect(await countRows('proposals', "tenant_id=$1 AND status='posted'", [t])).toBe(1);
+    expect(await countRows('audit_log', "tenant_id=$1 AND action='post.production'", [t])).toBe(1);
+  });
+
+  it('holds an ambiguous create durably when the immediate provider probe cannot find it', async () => {
+    const t = await createTenant();
+    const { proposalId } = await seedReadyProposal(t);
+    const w = mockWriter({
+      postBill: vi.fn().mockRejectedValue(new Error('network timeout')),
+      detectExisting: vi.fn().mockResolvedValue(null),
+    });
+    await expect(postOnce(t, proposalId, deps(w))).rejects.toThrow('network timeout');
+    const second = await postOnce(t, proposalId, deps(w));
+    expect(second).toEqual({ status: 'held', reason: 'provider_result_unknown' });
+    expect(w.postBill).toHaveBeenCalledTimes(1);
+    expect(await countRows('postings_ap', "status='provider_result_unknown'")).toBe(1);
+  });
+
+  it('recovers an interrupted post by exact provider id without replaying create', async () => {
+    const t = await createTenant();
+    const { proposalId, sha, attachmentId } = await seedReadyProposal(t);
+    await query(
+      `INSERT INTO postings_ap
+        (tenant_id,attachment_id,proposal_id,entity_type,external_id,revision,realm,mode,
+         idempotency_key,status,response)
+       VALUES ($1,$2,$3,'Bill','q-created','0','realm','sandbox',$4,
+         'provider_result_unknown',$5)`,
+      [t, attachmentId, proposalId, sha, { created: true }],
+    );
+    const w = mockWriter({
+      readBackVerify: vi.fn().mockResolvedValue({
+        verify: 'match', revision: '1', raw: { Id: 'q-created', TotalAmt: 100, DocNumber: 'INV-1' },
+      }),
+    });
+    const out = await postOnce(t, proposalId, deps(w));
+    expect(out).toMatchObject({ status: 'posted', qboId: 'q-created' });
+    expect(w.postBill).not.toHaveBeenCalled();
+    expect(await countRows('postings_ap', "status='posted_sandbox' AND external_id='q-created'")).toBe(1);
+    expect(await countRows('reconciliation')).toBe(1);
+  });
+
   it('gate_holds: a review proposal and an over-ceiling proposal are never created', async () => {
     const t = await createTenant();
     const review = await seedReadyProposal(t, { status: 'review' });

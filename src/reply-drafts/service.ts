@@ -5,6 +5,7 @@ import { withTransaction } from '../db/pool.js';
 import {
   deriveReplyRecipient,
   getGmailDraftClient,
+  GmailDraftResultUnknownError,
   type GmailDraftClient,
   type GmailDraftProjection,
   type SourceConversation,
@@ -17,7 +18,7 @@ import {
   type ActorContext,
 } from '../services/index.js';
 
-type DraftStatus = 'proposed' | 'created' | 'updated' | 'discarded' | 'sent_external';
+type DraftStatus = 'proposed' | 'result_unknown' | 'created' | 'updated' | 'discarded' | 'sent_external';
 
 interface DraftRow {
   id: number;
@@ -163,6 +164,15 @@ async function persistProviderProjection(
   return mapDraft(row);
 }
 
+async function markResultUnknown(tenantId: number, draftId: number): Promise<void> {
+  await scopedQuery(
+    tenantId,
+    `UPDATE reply_drafts SET status='result_unknown',updated_at=now()
+      WHERE tenant_id=$1 AND id=$2 AND status='proposed'`,
+    [draftId],
+  );
+}
+
 export async function readReplyDraft(
   tenantId: number,
   messageId: number,
@@ -178,7 +188,23 @@ export async function readReplyDraft(
   );
   const row = rows[0];
   if (!row) return null;
-  if (row.gmail_draft_id && ['created', 'updated'].includes(row.status)) {
+  if (row.status === 'result_unknown') {
+    const client = await deps.getClient(tenantId);
+    const adopted = row.gmail_draft_id
+      ? await client.readStatus(row.gmail_draft_id, row.thread_id)
+      : await client.reconcileCreateInSourceThread(
+        await sourceMessage(tenantId, Number(row.message_id)),
+        { subject: row.subject, bodyText: row.body_text },
+      );
+    if (adopted) {
+      return persistProviderProjection(
+        tenantId,
+        Number(row.id),
+        adopted,
+        row.gmail_draft_id ? 'updated' : 'created',
+      );
+    }
+  } else if (row.gmail_draft_id && ['created', 'updated'].includes(row.status)) {
     const client = await deps.getClient(tenantId);
     const projection = await client.readStatus(row.gmail_draft_id, row.thread_id);
     if (projection.status === 'sent_external') {
@@ -200,29 +226,43 @@ export async function createReplyDraft(
   const reason = input.reason?.trim() || null;
   const toAddress = deriveReplyRecipient(source);
 
-  const prepared = await withTransaction(async (client) => {
-    const existing = await client.query<DraftRow>(
-      `SELECT * FROM reply_drafts
-        WHERE tenant_id=$1 AND message_id=$2
-          AND status IN ('proposed','created','updated')
-        FOR UPDATE`,
-      [ctx.tenantId, input.messageId],
-    );
-    if (existing.rows[0]) throw new ServiceError('reply_draft_exists');
-    const { rows } = await client.query<DraftRow>(
-      `INSERT INTO reply_drafts
-         (tenant_id,message_id,thread_id,to_addr,subject,body_text,status,reason,created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,'proposed',$7,$8) RETURNING *`,
-      [ctx.tenantId, input.messageId, source.threadId, toAddress, subject, bodyText, reason, ctx.userId],
-    );
-    const row = rows[0]!;
-    await auditMutation(client, ctx, 'reply_draft.prepared', row, null);
-    return row;
-  });
+  let prepared: DraftRow;
+  try {
+    prepared = await withTransaction(async (client) => {
+      const existing = await client.query<DraftRow>(
+        `SELECT * FROM reply_drafts
+          WHERE tenant_id=$1 AND message_id=$2
+            AND status IN ('proposed','result_unknown','created','updated')
+          FOR UPDATE`,
+        [ctx.tenantId, input.messageId],
+      );
+      if (existing.rows[0]) throw new ServiceError('reply_draft_exists');
+      const { rows } = await client.query<DraftRow>(
+        `INSERT INTO reply_drafts
+           (tenant_id,message_id,thread_id,to_addr,subject,body_text,status,reason,created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,'proposed',$7,$8) RETURNING *`,
+        [ctx.tenantId, input.messageId, source.threadId, toAddress, subject, bodyText, reason, ctx.userId],
+      );
+      const row = rows[0]!;
+      await auditMutation(client, ctx, 'reply_draft.prepared', row, null);
+      return row;
+    });
+  } catch (error: any) {
+    if (error instanceof ServiceError) throw error;
+    if (error?.code === '23505') throw new ServiceError('reply_draft_exists');
+    throw error;
+  }
 
   const gmail = await deps.getClient(ctx.tenantId);
-  const projection = await gmail.createInSourceThread(source, { subject, bodyText });
-  return persistProviderProjection(ctx.tenantId, Number(prepared.id), projection, 'created');
+  try {
+    const projection = await gmail.createInSourceThread(source, { subject, bodyText });
+    return persistProviderProjection(ctx.tenantId, Number(prepared.id), projection, 'created');
+  } catch (error) {
+    if (error instanceof GmailDraftResultUnknownError) {
+      await markResultUnknown(ctx.tenantId, Number(prepared.id));
+    }
+    throw error;
+  }
 }
 
 export async function updateReplyDraft(
@@ -240,13 +280,29 @@ export async function updateReplyDraft(
   const subject = requireCopy(input.subject, 'subject', 998);
   const bodyText = requireCopy(input.bodyText, 'bodyText', 100_000);
   const reason = input.reason?.trim() || null;
+  const gmail = await deps.getClient(ctx.tenantId);
+  let resolvedProviderDraftId = existing.gmail_draft_id;
+  if (existing.status === 'result_unknown') {
+    const adopted = resolvedProviderDraftId
+      ? await gmail.readStatus(resolvedProviderDraftId, existing.thread_id)
+      : await gmail.reconcileCreateInSourceThread(source, {
+        subject: existing.subject,
+        bodyText: existing.body_text,
+      });
+    resolvedProviderDraftId = adopted?.providerDraftId ?? null;
+    if (!resolvedProviderDraftId) {
+      throw new GmailDraftResultUnknownError(
+        'Gmail draft result remains unknown; no further remote mutation was attempted.',
+      );
+    }
+  }
 
   const prepared = await withTransaction(async (client) => {
     const { rows } = await client.query<DraftRow>(
       `UPDATE reply_drafts
           SET subject=$3,body_text=$4,reason=$5,status='proposed',updated_at=now()
         WHERE tenant_id=$1 AND id=$2
-          AND status IN ('proposed','created','updated')
+          AND status IN ('proposed','result_unknown','created','updated')
         RETURNING *`,
       [ctx.tenantId, draftId, subject, bodyText, reason],
     );
@@ -256,11 +312,18 @@ export async function updateReplyDraft(
     return row;
   });
 
-  const gmail = await deps.getClient(ctx.tenantId);
-  const projection = prepared.gmail_draft_id
-    ? await gmail.updateInSourceThread(prepared.gmail_draft_id, source, { subject, bodyText })
-    : await gmail.createInSourceThread(source, { subject, bodyText });
-  return persistProviderProjection(ctx.tenantId, draftId, projection, 'updated');
+  const providerDraftId = resolvedProviderDraftId ?? prepared.gmail_draft_id;
+  try {
+    const projection = providerDraftId
+      ? await gmail.updateInSourceThread(providerDraftId, source, { subject, bodyText })
+      : await gmail.createInSourceThread(source, { subject, bodyText });
+    return persistProviderProjection(ctx.tenantId, draftId, projection, 'updated');
+  } catch (error) {
+    if (error instanceof GmailDraftResultUnknownError) {
+      await markResultUnknown(ctx.tenantId, draftId);
+    }
+    throw error;
+  }
 }
 
 export async function discardReplyDraft(
@@ -274,15 +337,30 @@ export async function discardReplyDraft(
   if (existing.status === 'sent_external') throw new ServiceError('reply_draft_already_sent');
   if (existing.status === 'discarded') return mapDraft(existing);
 
-  if (existing.gmail_draft_id) {
+  let providerDraftId = existing.gmail_draft_id;
+  if (existing.status === 'result_unknown' && !providerDraftId) {
+    const source = await sourceMessage(ctx.tenantId, Number(existing.message_id));
     const gmail = await deps.getClient(ctx.tenantId);
-    await gmail.discard(existing.gmail_draft_id, existing.thread_id);
+    const adopted = await gmail.reconcileCreateInSourceThread(source, {
+      subject: existing.subject,
+      bodyText: existing.body_text,
+    });
+    providerDraftId = adopted?.providerDraftId ?? null;
+    if (!providerDraftId) {
+      throw new GmailDraftResultUnknownError(
+        'Gmail draft result remains unknown; discard was not attempted.',
+      );
+    }
+  }
+  if (providerDraftId) {
+    const gmail = await deps.getClient(ctx.tenantId);
+    await gmail.discard(providerDraftId, existing.thread_id);
   }
   return withTransaction(async (client) => {
     const { rows } = await client.query<DraftRow>(
       `UPDATE reply_drafts SET status='discarded',updated_at=now()
         WHERE tenant_id=$1 AND id=$2
-          AND status IN ('proposed','created','updated')
+          AND status IN ('proposed','result_unknown','created','updated')
         RETURNING *`,
       [ctx.tenantId, draftId],
     );

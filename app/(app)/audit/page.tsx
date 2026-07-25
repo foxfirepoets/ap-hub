@@ -33,7 +33,8 @@ export default function AuditPage() {
       <p className="page-sub">Read-only record of every human action.</p>
 
       <div className="panel">
-        <table>
+        <div className="table-scroll" tabIndex={0} role="region" aria-label="Audit log table">
+          <table>
           <thead>
             <tr>
               <th>When</th>
@@ -61,7 +62,8 @@ export default function AuditPage() {
               </tr>
             ) : null}
           </tbody>
-        </table>
+          </table>
+        </div>
       </div>
     </div>
   );

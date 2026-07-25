@@ -66,16 +66,25 @@ function supported(
   provider: 'qbo' | 'qbd',
   edition: string,
   unsupportedFields: string[],
+  unsupportedOperations: Partial<Record<ProviderOperation, string>> = {},
 ): CapabilityAssessment {
-  const capabilities = PROVIDER_OPERATIONS.map((operation): ProviderCapability => ({
-    provider,
+  const capabilities = PROVIDER_OPERATIONS.map((operation): ProviderCapability => {
+    const reason = unsupportedOperations[operation] ?? null;
+    return {
+      provider,
+      edition,
+      operation,
+      supported: reason === null,
+      reason,
+      unsupportedFields,
+    };
+  });
+  return {
     edition,
-    operation,
-    supported: true,
-    reason: null,
-    unsupportedFields,
-  }));
-  return { edition, supported: true, capabilities, gaps: [] };
+    supported: capabilities.some((capability) => capability.supported),
+    capabilities,
+    gaps: capabilities.flatMap((capability) => capability.reason ? [capability.reason] : []),
+  };
 }
 
 /**
@@ -128,7 +137,9 @@ export function assessProviderCapabilities(input: ConnectionCapabilityInput): Ca
         `QuickBooks Desktop edition "${edition}" is unsupported; use a supported Windows Pro, Premier, or Enterprise edition with Web Connector.`,
       );
     }
-    return supported('qbd', edition, QBD_UNSUPPORTED_FIELDS);
+    return supported('qbd', edition, QBD_UNSUPPORTED_FIELDS, {
+      attach: 'QuickBooks Desktop bill attachment is not certified; retain the source evidence in AP Hub.',
+    });
   }
 
   const product = provider || 'unknown';

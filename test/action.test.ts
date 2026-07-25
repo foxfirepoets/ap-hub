@@ -129,7 +129,7 @@ describe('CHUNK_4 action — approve', () => {
     expect(statuses.every((s) => s === 201 || s === 409 || s === 202)).toBe(true);
   });
 
-  it('QBO API failure → 202 QBO_RETRY, exception recorded, no posting', async () => {
+  it('QBO API ambiguity → 202, durable unknown evidence, and replay never creates again', async () => {
     const t = await createTenant();
     const token = await ownerToken(t);
     const pid = await seedReadyProposal(t);
@@ -137,8 +137,12 @@ describe('CHUNK_4 action — approve', () => {
     const res = await runApprove(post(token), pid, postDeps(w));
     expect(res.status).toBe(202);
     expect(((await res.json()) as { error: { code: string } }).error.code).toBe('QBO_RETRY');
-    expect(await countRows('postings', 'tenant_id=$1', [t])).toBe(0);
+    expect(await countRows('postings', "tenant_id=$1 AND status='provider_result_unknown'", [t])).toBe(1);
     expect(await countRows('exceptions', "tenant_id=$1 AND reason_code='qbo_api_error'", [t])).toBe(1);
+    const replay = await runApprove(post(token), pid, postDeps(w));
+    expect(replay.status).toBe(202);
+    expect(w.postBill).toHaveBeenCalledTimes(1);
+    expect(await countRows('postings', "tenant_id=$1 AND status='provider_result_unknown'", [t])).toBe(1);
   });
 });
 

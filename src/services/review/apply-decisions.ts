@@ -58,7 +58,7 @@ export interface ApplyDecisionsResult {
 
 /** True when a proposal is already posted — postOnce's own idempotency gate. */
 function isAlreadyPostedHold(reason: string): boolean {
-  return reason === 'status=posted_sandbox';
+  return reason === 'status=posted_sandbox' || reason === 'status=posted';
 }
 
 export async function applyDecisions(
@@ -114,7 +114,7 @@ export async function applyDecisions(
           result.errors.push({ id: decision.id, reason: res.reason });
         }
       } else {
-        result.errors.push({ id: decision.id, reason: res.reason });
+        result.errors.push({ id: decision.id, reason: res.status === 'skipped' ? res.reason : res.status });
       }
     } else if (decision.decision === 'rejected') {
       await rejectProposal(ctx, proposalId, { reason: decision.finding ?? 'reviewer rejected' });

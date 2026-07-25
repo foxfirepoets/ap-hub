@@ -1,9 +1,12 @@
 import { scopedQuery } from '../db/scoped.js';
+import { withTransaction } from '../db/pool.js';
+import { writeAudit } from '../audit.js';
+import { parseMoneyToCents, type StatementValidation } from './ingest.js';
 import {
+  actorLabel,
   assertEntityId,
   ensurePermission,
   ServiceError,
-  withAudit,
   type ActorContext,
 } from '../services/index.js';
 
@@ -159,6 +162,7 @@ function requireReason(reason: string): string {
 }
 
 async function updateLine(
+  client: import('pg').PoolClient,
   ctx: ActorContext,
   statementId: number,
   lineId: number,
@@ -173,13 +177,40 @@ async function updateLine(
   if (status === 'matched' && (!providerRef || Object.keys(providerRef).length === 0)) {
     throw new ServiceError('VALIDATION', 'providerRef is required');
   }
-  const { rows } = await scopedQuery<LineRow>(
-    ctx.tenantId,
+  if (status === 'matched') {
+    const externalId = String(providerRef?.transactionId ?? providerRef?.id ?? '').trim();
+    if (!externalId) throw new ServiceError('VALIDATION', 'provider transaction id is required');
+    const authoritative = (await client.query<{
+      external_id: string; entity_type: string; realm: string; mode: string;
+      response: Record<string, unknown>;
+    }>(
+      `SELECT external_id,entity_type,realm,mode,response FROM postings_ap
+        WHERE tenant_id=$1 AND external_id=$2
+          AND status IN ('posted','posted_sandbox')
+        ORDER BY posted_at DESC,id DESC LIMIT 1`,
+      [ctx.tenantId, externalId],
+    )).rows[0];
+    if (!authoritative) {
+      throw new ServiceError('VALIDATION', 'provider transaction was not authoritatively verified');
+    }
+    providerRef = {
+      provider: providerRef?.provider ?? 'accounting',
+      transactionId: authoritative.external_id,
+      entityType: authoritative.entity_type,
+      realm: authoritative.realm,
+      mode: authoritative.mode,
+      evidence: {
+        source: 'provider_readback',
+        responseHash: (await import('../audit.js')).hashOf(authoritative.response),
+      },
+    };
+  }
+  const { rows } = await client.query<LineRow>(
     `UPDATE bank_statement_lines
         SET match_status=$4, matched_provider_ref=$5, review_reason=$6
       WHERE tenant_id=$1 AND statement_id=$2 AND id=$3
       RETURNING *`,
-    [statementId, lineId, status, providerRef, normalizedReason],
+    [ctx.tenantId, statementId, lineId, status, providerRef, normalizedReason],
   );
   const row = rows[0];
   if (!row) throw new ServiceError('statement_line_not_found');
@@ -192,13 +223,14 @@ export async function matchStatementLine(
   lineId: number,
   input: { providerRef: Record<string, unknown>; reason: string },
 ): Promise<void> {
-  await withAudit(
-    ctx,
-    'statement.line_matched',
-    `statement_line:${lineId}`,
-    () => updateLine(ctx, statementId, lineId, 'matched', input.providerRef, input.reason),
-    (row) => ({ statementId, lineId, reason: row.review_reason, providerRef: row.matched_provider_ref }),
-  );
+  await withTransaction(async (client) => {
+    const row = await updateLine(client, ctx, statementId, lineId, 'matched', input.providerRef, input.reason);
+    await writeAudit({
+      tenantId: ctx.tenantId, actor: actorLabel(ctx), action: 'statement.line_matched',
+      entity: `statement_line:${lineId}`,
+      detail: { role: ctx.role, statementId, lineId, reason: row.review_reason, providerRef: row.matched_provider_ref },
+    }, client);
+  });
 }
 
 export async function excludeStatementLine(
@@ -207,13 +239,14 @@ export async function excludeStatementLine(
   lineId: number,
   reason: string,
 ): Promise<void> {
-  await withAudit(
-    ctx,
-    'statement.line_excluded',
-    `statement_line:${lineId}`,
-    () => updateLine(ctx, statementId, lineId, 'excluded', null, reason),
-    (row) => ({ statementId, lineId, reason: row.review_reason }),
-  );
+  await withTransaction(async (client) => {
+    const row = await updateLine(client, ctx, statementId, lineId, 'excluded', null, reason);
+    await writeAudit({
+      tenantId: ctx.tenantId, actor: actorLabel(ctx), action: 'statement.line_excluded',
+      entity: `statement_line:${lineId}`,
+      detail: { role: ctx.role, statementId, lineId, reason: row.review_reason },
+    }, client);
+  });
 }
 
 const CORRECTABLE_FIELDS = {
@@ -225,6 +258,62 @@ const CORRECTABLE_FIELDS = {
   openingBalance: 'opening_balance',
   closingBalance: 'closing_balance',
 } as const;
+
+async function revalidateStatement(
+  client: import('pg').PoolClient,
+  tenantId: number,
+  statementId: number,
+): Promise<{ valid: boolean; validation: StatementValidation; documentId: number }> {
+  const statement = (await client.query<{
+    document_id: number; period_start: string | null; period_end: string | null;
+    opening_balance: string | null; closing_balance: string | null;
+    extracted_fields: Record<string, unknown>;
+  }>(
+    `SELECT document_id,period_start,period_end,opening_balance,closing_balance,extracted_fields
+       FROM bank_statements WHERE tenant_id=$1 AND id=$2 FOR UPDATE`,
+    [tenantId, statementId],
+  )).rows[0];
+  if (!statement) throw new ServiceError('statement_not_found');
+  const lineRows = (await client.query<{ amount: string; balance: string | null }>(
+    `SELECT amount,balance FROM bank_statement_lines
+      WHERE tenant_id=$1 AND statement_id=$2 ORDER BY line_no FOR SHARE`,
+    [tenantId, statementId],
+  )).rows;
+  if (!statement.period_start || !statement.period_end || statement.period_end < statement.period_start) {
+    throw new ServiceError('VALIDATION', 'statement period is invalid');
+  }
+  if (statement.opening_balance == null || statement.closing_balance == null) {
+    throw new ServiceError('VALIDATION', 'statement balances are required');
+  }
+  const openingCents = parseMoneyToCents(statement.opening_balance);
+  const closingCents = parseMoneyToCents(statement.closing_balance);
+  const activityCents = lineRows.reduce((sum, line) => sum + parseMoneyToCents(line.amount), 0);
+  const expectedClosingCents = openingCents + activityCents;
+  const decimal = (cents: number) => `${cents < 0 ? '-' : ''}${Math.floor(Math.abs(cents) / 100)}.${String(Math.abs(cents) % 100).padStart(2, '0')}`;
+  const valid = expectedClosingCents === closingCents;
+  const validation: StatementValidation = {
+    valid,
+    code: valid ? 'BALANCED' : 'STATEMENT_UNBALANCED',
+    equation: `${decimal(openingCents)} + ${decimal(activityCents)} = ${decimal(expectedClosingCents)}; reported ${decimal(closingCents)}`,
+    openingCents,
+    activityCents,
+    closingCents,
+    expectedClosingCents,
+    missingRunningBalances: lineRows.filter((line) => line.balance == null).length,
+    pageCount: Math.max(1, Number(statement.extracted_fields?.pageCount ?? 1)),
+  };
+  await client.query(
+    `UPDATE bank_statements SET status=$3,validation_detail=$4,updated_at=now()
+      WHERE tenant_id=$1 AND id=$2`,
+    [tenantId, statementId, valid ? 'review' : 'unbalanced', validation],
+  );
+  await client.query(
+    `UPDATE accounting_documents SET status=$3,hold_reason=$4,updated_at=now()
+      WHERE tenant_id=$1 AND id=$2`,
+    [tenantId, statement.document_id, valid ? 'review' : 'held', valid ? null : 'STATEMENT_UNBALANCED'],
+  );
+  return { valid, validation, documentId: Number(statement.document_id) };
+}
 
 export async function correctStatementFact(
   ctx: ActorContext,
@@ -239,59 +328,64 @@ export async function correctStatementFact(
   if (input.value !== null && typeof input.value !== 'string') {
     throw new ServiceError('VALIDATION', 'value must be a string or null');
   }
-  await withAudit(
-    ctx,
-    'statement.fact_corrected',
-    `bank_statement:${statementId}`,
-    async () => {
-      const before = await getStatement(ctx.tenantId, statementId);
-      if (!before) throw new ServiceError('statement_not_found');
-      const oldValue = before[input.field as keyof StatementDetail];
-      const { rows } = await scopedQuery<{ id: number }>(
-        ctx.tenantId,
+  await withTransaction(async (client) => {
+      const before = await client.query<Record<string, unknown>>(
+        'SELECT * FROM bank_statements WHERE tenant_id=$1 AND id=$2 FOR UPDATE',
+        [ctx.tenantId, statementId],
+      );
+      if (!before.rows[0]) throw new ServiceError('statement_not_found');
+      const oldValue = before.rows[0][column];
+      const { rows } = await client.query<{ id: number }>(
         `UPDATE bank_statements SET ${column}=$3, updated_at=now()
           WHERE tenant_id=$1 AND id=$2 RETURNING id`,
-        [statementId, input.value],
+        [ctx.tenantId, statementId, input.value],
       );
       if (!rows[0]) throw new ServiceError('statement_not_found');
-      return { oldValue: oldValue ?? null };
-    },
-    (result) => ({ field: input.field, oldValue: result.oldValue, newValue: input.value, reason }),
-  );
+      const result = await revalidateStatement(client, ctx.tenantId, statementId);
+      await writeAudit({
+        tenantId: ctx.tenantId,
+        actor: actorLabel(ctx),
+        action: 'statement.fact_corrected',
+        entity: `bank_statement:${statementId}`,
+        detail: { role: ctx.role, field: input.field, oldValue: oldValue ?? null, newValue: input.value, reason,
+          validation: result.validation },
+      }, client);
+  });
 }
 
 export async function fileStatement(ctx: ActorContext, statementId: number): Promise<void> {
   ensurePermission(ctx, 'remap');
   assertEntityId(statementId);
-  await withAudit(
-    ctx,
-    'statement.filed',
-    `bank_statement:${statementId}`,
-    async () => {
-      const detail = await getStatement(ctx.tenantId, statementId);
-      if (!detail) throw new ServiceError('statement_not_found');
-      if (['unbalanced', 'held'].includes(detail.status)) {
+  await withTransaction(async (client) => {
+      const validation = await revalidateStatement(client, ctx.tenantId, statementId);
+      if (!validation.valid) {
         throw new ServiceError('VALIDATION', 'held or unbalanced statements cannot be filed');
       }
-      if (detail.lineCount === 0 || detail.unresolvedCount > 0) {
+      const counts = (await client.query<{ line_count: string; unresolved_count: string }>(
+        `SELECT count(*)::text line_count,
+          count(*) FILTER (WHERE match_status NOT IN ('matched','excluded'))::text unresolved_count
+          FROM bank_statement_lines WHERE tenant_id=$1 AND statement_id=$2`,
+        [ctx.tenantId, statementId],
+      )).rows[0]!;
+      if (Number(counts.line_count) === 0 || Number(counts.unresolved_count) > 0) {
         throw new ServiceError('VALIDATION', 'every line must be matched or excluded before filing');
       }
-      await scopedQuery(
-        ctx.tenantId,
+      await client.query(
         `UPDATE bank_statements
             SET status='filed', filed_at=now(), updated_at=now()
           WHERE tenant_id=$1 AND id=$2`,
-        [statementId],
+        [ctx.tenantId, statementId],
       );
-      await scopedQuery(
-        ctx.tenantId,
+      await client.query(
         `UPDATE accounting_documents
             SET status='filed', updated_at=now()
           WHERE tenant_id=$1 AND id=$2`,
-        [detail.documentId],
+        [ctx.tenantId, validation.documentId],
       );
-      return detail;
-    },
-    (detail) => ({ documentId: detail.documentId, lineCount: detail.lineCount }),
-  );
+      await writeAudit({
+        tenantId: ctx.tenantId, actor: actorLabel(ctx), action: 'statement.filed',
+        entity: `bank_statement:${statementId}`,
+        detail: { role: ctx.role, documentId: validation.documentId, lineCount: Number(counts.line_count) },
+      }, client);
+  });
 }

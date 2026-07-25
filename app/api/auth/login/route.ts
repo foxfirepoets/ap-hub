@@ -1,11 +1,9 @@
-import { randomBytes } from 'node:crypto';
 import { buildGoogleLoginUrl } from '../../../../src/auth/google-sso.js';
+import { createSsoLoginState } from '../../../../src/auth/sso-state.js';
 
 // GET /api/auth/login — redirect the browser to Google's consent screen.
-// `state` = "<nonce>.<tenant>"; the nonce is also set as an HttpOnly cookie and
-// re-checked on callback (OAuth CSRF / login-fixation defence). The tenant is
-// only a routing hint — the callback still requires a pre-invited user in it,
-// so `state` is never a trusted authorization input.
+// State is opaque and single-use. Its tenant is retained server-side and the same
+// token is bound to this browser in an HttpOnly cookie.
 export async function GET(request: Request): Promise<Response> {
   const url = new URL(request.url);
   const tenant = url.searchParams.get('tenant') ?? '1';
@@ -15,13 +13,13 @@ export async function GET(request: Request): Promise<Response> {
       headers: { 'content-type': 'application/json' },
     });
   }
-  const nonce = randomBytes(16).toString('base64url');
-  const location = await buildGoogleLoginUrl(`${nonce}.${tenant}`);
+  const state = await createSsoLoginState(Number(tenant));
+  const location = await buildGoogleLoginUrl(state);
   return new Response(null, {
     status: 302,
     headers: {
       location,
-      'set-cookie': `sso_state=${nonce}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=600`,
+      'set-cookie': `sso_state=${state}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=600`,
     },
   });
 }
