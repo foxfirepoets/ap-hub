@@ -78,6 +78,20 @@ export async function migrateDown(connectionString: string): Promise<string | nu
     const name = rows[0]?.name;
     if (!name) return null;
 
+    if (name === '013_local_runtime_credentials.sql') {
+      const retained = await pool.query<{ rollback_blocked: boolean }>(
+        `SELECT EXISTS (SELECT 1 FROM credential_refs)
+             OR EXISTS (SELECT 1 FROM connections WHERE transport_mode IS NOT NULL)
+             AS rollback_blocked`,
+      );
+      if (retained.rows[0]?.rollback_blocked) {
+        throw new Error(
+          'DOWN migration 013_local_runtime_credentials.sql failed: ' +
+          'refusing DOWN for 013_local_runtime_credentials: retained rows exist',
+        );
+      }
+    }
+
     const downFile = name.replace(/\.sql$/, '.down.sql');
     const downPath = join(MIGRATIONS_DIR, downFile);
     if (!readdirSync(MIGRATIONS_DIR).includes(downFile)) {

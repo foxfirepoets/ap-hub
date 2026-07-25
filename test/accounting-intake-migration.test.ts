@@ -81,6 +81,215 @@ describe.sequential('008 accounting intake migration', () => {
        VALUES ($1, 'qbo', 'cloud', 'sandbox-1') RETURNING id`,
       [tenant1],
     )).rows[0]!.id;
+
+    const { rows: credentialSchema } = await pool.query<{ table_name: string }>(`
+      SELECT table_name FROM information_schema.tables
+       WHERE table_schema='public' AND table_name='credential_refs'
+    `);
+    expect(credentialSchema.map((row) => row.table_name)).toEqual(['credential_refs']);
+    const { rows: transportColumns } = await pool.query<{ column_name: string }>(`
+      SELECT column_name FROM information_schema.columns
+       WHERE table_schema='public' AND table_name='connections'
+         AND column_name IN ('transport_mode','transport_config')
+       ORDER BY column_name
+    `);
+    expect(transportColumns.map((row) => row.column_name)).toEqual([
+      'transport_config', 'transport_mode',
+    ]);
+    await expect(pool.query(
+      `INSERT INTO credential_refs
+        (tenant_id,provider,purpose,credential_target)
+       VALUES ($1,'gmail','oauth_refresh','not-a-valid-target')`,
+      [tenant1],
+    )).rejects.toMatchObject({ code: '23514' });
+    await pool.query(
+      `UPDATE connections SET transport_mode='mcp_adapter',transport_config='{}' WHERE id=$1`,
+      [connection1],
+    );
+    const hostileWords = [
+      'bearer', 'authorization', 'oauth', 'clientKey', 'signingKey', 'passphrase',
+      'pwd', 'auth', 'key', 'refresh', 'session', 'certificate',
+      'refreshToken', 'clientSecret', 'apiKey', 'accessToken', 'privateKey',
+    ];
+    const punctuate = (word: string) => word
+      .split('')
+      .map((char, index) => `${index % 2 ? char.toUpperCase() : char.toLowerCase()}${index % 3 === 1 ? '.-_' : ''}`)
+      .join('');
+    const hostileKeys = [...hostileWords, ...hostileWords.map(punctuate)];
+    let hostileIndex = 0;
+    for (const hostileKey of hostileKeys) {
+      const payloads = [
+        { [hostileKey]: 'plaintext' },
+        { last_refresh_status: { [hostileKey]: 'plaintext' } },
+        { scope: [{ [hostileKey]: 'plaintext' }] },
+      ];
+      for (const hostilePayload of payloads) {
+        await expect(pool.query(
+          `INSERT INTO credential_refs
+            (tenant_id,provider,purpose,credential_target,metadata)
+           VALUES ($1,'gmail',$2,$3,$4)`,
+          [tenant1, `hostile-${hostileIndex}`, `APHub/INSTALL_1/hostile-${hostileIndex}`,
+            hostilePayload],
+        )).rejects.toMatchObject({ code: '23514' });
+        await expect(pool.query(
+          `UPDATE connections SET transport_config=$2 WHERE id=$1`,
+          [connection1, hostilePayload],
+        )).rejects.toMatchObject({ code: '23514' });
+        hostileIndex += 1;
+      }
+    }
+    const secretValues = [
+      'Bearer eyJhbGciOiJIUzI1NiJ9.payload.signature',
+      'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.sflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c',
+      'sk-live_51AbCdEf0123456789abcdefghijklmnopqrstuv',
+      'Sk-LiVe_51AbCdEf0123456789abcdefghijklmnopqrstuv',
+      'aIzA0123456789AbCdEfGhIjKlMnOpQrStUvWxYz',
+      'GhP_0123456789AbCdEfGhIjKlMnOpQrStUvWxYz',
+      '-----BEGIN PRIVATE KEY-----MIIEvQIBADANBgkqhkiG9w0BAQ',
+      'AbCDefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUV',
+      '  Bearer eyJhbGciOiJIUzI1NiJ9.payload.signature  ',
+      '\tSk-LiVe_51AbCdEf0123456789abcdefghijklmnopqrstuv\n',
+    ];
+    let secretValueIndex = 0;
+    for (const secretValue of secretValues) {
+      const metadataPayloads = [
+        { scope: [secretValue] },
+        { expires_at: secretValue },
+        { provider_account_id: secretValue },
+        { last_refresh_status: { state: secretValue } },
+        { last_refresh_status: { checked_at: secretValue } },
+      ];
+      for (const metadataPayload of metadataPayloads) {
+        await expect(pool.query(
+          `INSERT INTO credential_refs
+            (tenant_id,provider,purpose,credential_target,metadata)
+           VALUES ($1,'gmail',$2,$3,$4)`,
+          [tenant1, `secret-value-${secretValueIndex}`,
+            `APHub/INSTALL_1/secret-value-${secretValueIndex}`, metadataPayload],
+        )).rejects.toMatchObject({ code: '23514' });
+        secretValueIndex += 1;
+      }
+
+      const transportPayloads = [
+        ['api_adapter', { endpoint_id: secretValue }],
+        ['mcp_adapter', { command_id: secretValue }],
+        ['mcp_adapter', { allowed_tools: [secretValue] }],
+        ['direct_local_oauth', { expected_company_id: secretValue }],
+        ['qb_desktop', { company_file_id: secretValue }],
+        ['mcp_adapter', { transport: secretValue }],
+      ] as const;
+      for (const [mode, transportPayload] of transportPayloads) {
+        await expect(pool.query(
+          `UPDATE connections SET transport_mode=$2,transport_config=$3 WHERE id=$1`,
+          [connection1, mode, transportPayload],
+        )).rejects.toMatchObject({ code: '23514' });
+      }
+    }
+    const whitespaceMetadataPayloads = [
+      { scope: [' gmail.readonly'] },
+      { scope: ['gmail.compose\t'] },
+      { expires_at: '2026-07-25T20:00:00Z ' },
+      { provider_account_id: '\towner@example.com' },
+      { provider_account_id: '1234567890\n' },
+      { last_refresh_status: { state: 'healthy ' } },
+      { last_refresh_status: { checked_at: '\n2026-07-25T20:00:00Z' } },
+    ];
+    for (const [index, metadataPayload] of whitespaceMetadataPayloads.entries()) {
+      await expect(pool.query(
+        `INSERT INTO credential_refs
+          (tenant_id,provider,purpose,credential_target,metadata)
+         VALUES ($1,'gmail',$2,$3,$4)`,
+        [tenant1, `whitespace-${index}`, `APHub/INSTALL_1/whitespace-${index}`,
+          metadataPayload],
+      )).rejects.toMatchObject({ code: '23514' });
+    }
+    await expect(pool.query(
+      `INSERT INTO credential_refs
+        (tenant_id,provider,purpose,credential_target,metadata)
+       VALUES ($1,'gmail','allowed_metadata','APHub/INSTALL_1/gmail-metadata',$2)`,
+      [tenant1, {
+        scope: ['gmail.readonly', 'gmail.compose'],
+        expires_at: '2026-07-25T20:00:00Z',
+        provider_account_id: 'account-1',
+        last_refresh_status: {
+          state: 'healthy', attempts: 2,
+          checked_at: '2026-07-25T20:00:00Z',
+        },
+      }],
+    )).resolves.toMatchObject({ rowCount: 1 });
+    await expect(pool.query(
+      `INSERT INTO credential_refs
+        (tenant_id,provider,purpose,credential_target,metadata)
+       VALUES ($1,'qbo','allowed_numeric_realm','APHub/INSTALL_1/qbo-realm',$2)`,
+      [tenant1, { provider_account_id: '1234567890123456789' }],
+    )).resolves.toMatchObject({ rowCount: 1 });
+    await expect(pool.query(
+      `INSERT INTO credential_refs
+        (tenant_id,provider,purpose,credential_target,metadata)
+       VALUES ($1,'gmail','allowed_email_account','APHub/INSTALL_1/gmail-account',$2)`,
+      [tenant1, { provider_account_id: 'owner+ap@example.com' }],
+    )).resolves.toMatchObject({ rowCount: 1 });
+    const allowedTransportConfigs = [
+      ['direct_local_oauth', { expected_company_id: 'realm-1', timeout_ms: 30000 }],
+      ['api_adapter', {
+        endpoint_id: 'registered-qbo-api', expected_company_id: 'realm-1', timeout_ms: 30000,
+      }],
+      ['mcp_adapter', {
+        transport: 'stdio', command_id: 'registered-qbo-mcp',
+        allowed_tools: ['company_info', 'find_bill'], expected_company_id: 'realm-1',
+        timeout_ms: 30000,
+      }],
+      ['qb_desktop', {
+        expected_company_id: 'desktop-company', company_file_id: 'company-file-1',
+        timeout_ms: 30000,
+      }],
+    ] as const;
+    for (const [mode, transportConfig] of allowedTransportConfigs) {
+      await expect(pool.query(
+        `UPDATE connections SET transport_mode=$2,transport_config=$3 WHERE id=$1`,
+        [connection1, mode, transportConfig],
+      )).resolves.toMatchObject({ rowCount: 1 });
+    }
+    await expect(pool.query(
+      `UPDATE connections SET transport_mode='web_scrape' WHERE id=$1`,
+      [connection1],
+    )).rejects.toMatchObject({ code: '23514' });
+    await pool.query(
+      `INSERT INTO credential_refs
+        (tenant_id,provider,purpose,credential_target,metadata)
+       VALUES ($1,'gmail','oauth_refresh','APHub/INSTALL_1/gmail-refresh',
+         '{"scope":["gmail.readonly","gmail.compose"]}')`,
+      [tenant1],
+    );
+    await expect(migrateDown(disposableUrl.toString())).rejects.toThrow(
+      'refusing DOWN for 013_local_runtime_credentials: retained rows exist',
+    );
+    expect((await pool.query(
+      `SELECT count(*)::int AS count FROM _migrations
+        WHERE name='013_local_runtime_credentials.sql'`,
+    )).rows[0].count).toBe(1);
+    await pool.query('DELETE FROM credential_refs');
+    await pool.query(
+      `UPDATE connections SET transport_mode='direct_local_oauth',
+        transport_config='{"timeout_ms":30000}' WHERE id=$1`,
+      [connection1],
+    );
+    await expect(migrateDown(disposableUrl.toString())).rejects.toThrow(
+      'refusing DOWN for 013_local_runtime_credentials: retained rows exist',
+    );
+    await pool.query(
+      `UPDATE connections SET transport_mode=NULL,transport_config='{}' WHERE id=$1`,
+      [connection1],
+    );
+    await expect(migrateDown(disposableUrl.toString())).resolves.toBe(
+      '013_local_runtime_credentials.sql',
+    );
+    expect((await pool.query(
+      `SELECT to_regclass('public.credential_refs') AS relation`,
+    )).rows[0].relation).toBeNull();
+    await expect(migrateUp(disposableUrl.toString())).resolves.toEqual([
+      '013_local_runtime_credentials.sql',
+    ]);
     const document1 = (await pool.query<{ id: string }>(
       `INSERT INTO accounting_documents
          (tenant_id, message_id, kind, sha256, status, classification_confidence)
@@ -141,6 +350,9 @@ describe.sequential('008 accounting intake migration', () => {
     // Later additive migrations are layered above 008. Revert them first so
     // this test can exercise 008's retained-accounting-data refusal.
     await expect(migrateDown(disposableUrl.toString())).resolves.toBe(
+      '013_local_runtime_credentials.sql',
+    );
+    await expect(migrateDown(disposableUrl.toString())).resolves.toBe(
       '012_classification_dispatches.sql',
     );
     await expect(migrateDown(disposableUrl.toString())).resolves.toBe(
@@ -174,6 +386,7 @@ describe.sequential('008 accounting intake migration', () => {
       '010_reply_draft_result_unknown.sql',
       '011_sso_login_states.sql',
       '012_classification_dispatches.sql',
+      '013_local_runtime_credentials.sql',
     ]);
     expect((await pool.query(
       `SELECT to_regclass('public.accounting_documents') AS relation`,
