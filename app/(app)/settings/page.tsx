@@ -12,12 +12,10 @@ import { ProviderConnections } from './ProviderConnections';
 
 type Notice = { kind: 'good' | 'bad'; text: string };
 
-// Settings: connections + automation level + thresholds. Connections stay a read-only view
-// in v1 (no QBO-write/Gmail-send path may be added here). Automation level is the one real
-// mutation this page owns — it POSTs the existing gated /api/onboarding/step endpoint
-// (owner_controller only, enforced server-side) to move onboarding_state.automation_level,
-// the same field the DRY_RUN_LOCKED guard reads (src/services/onboarding.ts). No
-// tenant-specific value is hard-coded; labels are product-level facts.
+// Settings: provider status, owner-only QuickBooks write gates, and automation level.
+// The write-gate component and automation mutation both call server-authorized APIs;
+// Gmail remains draft-only and exposes no reply-send action. No tenant-specific value
+// is hard-coded; labels are product-level facts.
 export default function SettingsPage() {
   const me = useSession();
   const owner = canApprovePost(me.role);

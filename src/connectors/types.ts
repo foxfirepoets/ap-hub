@@ -1,6 +1,6 @@
 /**
  * Provider-neutral AccountingConnector contract (CHUNK_5). Every provider adapter
- * (QBO reference impl + QBD/Xero/Sage stubs) implements this interface; the connector
+ * (QBO and QBD implementations plus Xero/Sage capability stubs) implements this interface; the connector
  * contract-test suite (test/connector-contract.test.ts) is what "supported" means.
  *
  * Provider-specific naming is permitted here and under src/connectors/** ONLY. Core

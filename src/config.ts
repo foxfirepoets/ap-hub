@@ -48,7 +48,7 @@ const RawSchema = z.object({
   // fetched/stored. Default matches Gmail's own per-message attachment ceiling (25MB).
   MAX_ATTACHMENT_BYTES: z.coerce.number().int().positive().default(25 * 1024 * 1024),
 
-  // --- QBO (read-only lists in P1; SANDBOX writes in P2) ---
+  // --- QBO (sandbox default; production writes require the complete fail-closed gate) ---
   QBO_ENV: z.enum(['sandbox', 'production']).default('sandbox'),
   QBO_PRODUCTION_WRITE_ENABLED: boolish(false),
   QBO_MINOR_VERSION: z.string().default('73'),

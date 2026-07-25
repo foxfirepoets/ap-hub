@@ -4,8 +4,8 @@ import { ensurePermission, withAudit, assertEntityId, type ActorContext } from '
 import { assertNotDryRunLocked } from './onboarding.js';
 
 /**
- * approveProposal — the human "approve → post to QBO sandbox" action. It routes through
- * the EXISTING propose/post_sandbox path (`postOnce` → `src/qbo/write.ts`); no new
+ * approveProposal — the human "approve → post to configured QBO" action. It routes through
+ * the existing queue/posting path (`postOnce` → `src/qbo/write.ts`); no new
  * QBO-write code exists here. `postOnce` is idempotent and fail-safe: a SwarmSync outage
  * (missing/unavailable proof coverage) makes it return `held`, never fail-open.
  */
@@ -60,7 +60,7 @@ function qboLink(mode: 'sandbox' | 'production', realm: string, qboType: string,
 }
 
 /**
- * Run the single posting path and shape the result (adds the sandbox QBO link). Shared
+ * Run the single posting path and shape the result (adds the environment-correct QBO link). Shared
  * by `approveProposal` and `retryProposal` so retry re-posts via the same idempotency key.
  */
 export async function runPostAndMap(

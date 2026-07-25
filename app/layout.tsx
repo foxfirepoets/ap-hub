@@ -3,7 +3,7 @@ import './globals.css';
 
 export const metadata = {
   title: 'AP Hub',
-  description: 'Human review UX over the ap-hub Gmail → proof-gated → QBO sandbox pipeline.',
+  description: 'Human-supervised Gmail and bank-statement intake with proof-gated QuickBooks posting.',
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

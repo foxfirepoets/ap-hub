@@ -1,6 +1,6 @@
 import { scopedQuery } from '../../db/scoped.js';
 import { isValidId } from '../index.js';
-import { sandboxLink } from './http.js';
+import { qboLink as buildQboLink } from './http.js';
 
 /**
  * CHUNK_3_READ — the Evidence chain for one item (a proposal). Assembles: the source
@@ -233,7 +233,12 @@ export async function getEvidence(tenantId: number, proposalId: number): Promise
     : null;
   const qboLink =
     posting && posting.qbo_type && posting.qbo_id && posting.realm
-      ? sandboxLink(posting.realm, posting.qbo_type, posting.qbo_id)
+      ? buildQboLink(
+          posting.realm,
+          posting.qbo_type,
+          posting.qbo_id,
+          posting.status === 'posted' ? 'production' : 'sandbox',
+        )
       : null;
 
   // --- Proof references across the chain (extraction / proposal / posting) ---

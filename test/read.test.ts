@@ -197,6 +197,13 @@ describe('CHUNK_3 read — transactions', () => {
     const held = await insertProposal(t, { status: 'review' });
     const posted = await insertProposal(t, { status: 'posted_sandbox' });
     await insertPosting(t, posted, null, { qboType: 'Bill', qboId: 'q42', realm: 'realm-x' });
+    const productionPosted = await insertProposal(t, { status: 'posted' });
+    await insertPosting(t, productionPosted, null, {
+      qboType: 'Bill',
+      qboId: 'q-production',
+      realm: 'realm-production',
+      status: 'posted',
+    });
     const reconciled = await insertProposal(t, { status: 'posted_sandbox' });
     await insertPosting(t, reconciled, null, { qboId: 'q43' });
     await insertReconMatched(t, reconciled);
@@ -208,9 +215,14 @@ describe('CHUNK_3 read — transactions', () => {
     expect(byId.get(posted)!.status).toBe('posted');
     expect(byId.get(posted)!.qboLink).toContain('sandbox');
     expect(byId.get(posted)!.qboLink).toContain('q42');
+    expect(byId.get(productionPosted)!.qboLink).toContain('https://app.qbo.intuit.com/');
+    expect(byId.get(productionPosted)!.qboLink).not.toContain('sandbox');
     expect(byId.get(reconciled)!.status).toBe('reconciled');
 
-    expect((await listTransactions(t, { status: 'posted' })).map((r) => r.proposalId)).toEqual([posted]);
+    expect((await listTransactions(t, { status: 'posted' })).map((r) => r.proposalId)).toEqual([
+      productionPosted,
+      posted,
+    ]);
   });
 
   it('cross-tenant getTransactionById returns null', async () => {
@@ -252,6 +264,21 @@ describe('CHUNK_3 read — evidence', () => {
     expect(ev!.posting!.qboId).toBe('q7');
     expect(ev!.qboLink).toContain('q7');
     expect(ev!.qboLink).toContain('sandbox');
+  });
+
+  it('uses the production QBO host for a production posting', async () => {
+    const t = await createTenant();
+    const p = await insertProposal(t, { status: 'posted' });
+    await insertPosting(t, p, null, {
+      qboType: 'Bill',
+      qboId: 'q-production',
+      realm: 'realm-production',
+      status: 'posted',
+    });
+
+    const ev = await getEvidence(t, p);
+    expect(ev!.qboLink).toContain('https://app.qbo.intuit.com/');
+    expect(ev!.qboLink).not.toContain('sandbox');
   });
 
   it('missing attachment → "attachment" marker, other fields still returned', async () => {

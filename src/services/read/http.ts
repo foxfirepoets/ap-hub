@@ -69,7 +69,13 @@ export async function runRead<T>(
   }
 }
 
-/** Sandbox QBO deep-link built from posting data (realm is data-driven, never hard-coded). */
-export function sandboxLink(realm: string, qboType: string, qboId: string): string {
-  return `https://app.sandbox.qbo.intuit.com/app/${qboType.toLowerCase()}?txnId=${qboId}&realm=${realm}`;
+/** QBO deep-link built from posting data and its persisted environment status. */
+export function qboLink(
+  realm: string,
+  qboType: string,
+  qboId: string,
+  mode: 'sandbox' | 'production' = 'sandbox',
+): string {
+  const host = mode === 'production' ? 'https://app.qbo.intuit.com' : 'https://app.sandbox.qbo.intuit.com';
+  return `${host}/app/${qboType.toLowerCase()}?txnId=${qboId}&realm=${realm}`;
 }

@@ -1,6 +1,8 @@
 /**
- * Gmail access is READ-ONLY everywhere except the CHUNK_4 gatekeeper relay, whose
- * `sendForward` can address ONLY the tenant's configured QBO capture address.
+ * Gmail message intake is read-only. The optional draft client uses compose scope
+ * for unsent drafts, while this interface's `sendForward` is reserved for the
+ * separately owner-released gatekeeper and can address ONLY the configured QBO
+ * capture address.
  *
  * The pipeline depends on this interface, not googleapis, so logic is testable with
  * a mock and the real adapter stays thin. The real adapter is built lazily to avoid

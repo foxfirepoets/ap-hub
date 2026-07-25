@@ -164,7 +164,7 @@ export function EvidencePanel({
       {ev.qboLink ? (
         <div>
           <a href={ev.qboLink} target="_blank" rel="noreferrer" data-testid="qbo-link">
-            Open in QuickBooks (sandbox)
+            Open in QuickBooks ({ev.posting?.status === 'posted' ? 'production' : 'sandbox'})
           </a>
           {ev.posting ? (
             <span className="muted">

@@ -279,12 +279,13 @@ function OnboardingPageInner() {
         <div className="panel" data-testid="connect-accounts">
           <h2>Connect your accounts</h2>
           <p className="muted">
-            Two real connections are all that&apos;s required — everything else (company confirmation, an initial
-            scan, and a safe automation-off default) happens automatically once both are done.
+            Connect Gmail and QuickBooks first. AP Hub then runs a no-write dry scan; an owner must
+            separately review the company identity, backup prerequisite, automation level, and write gate
+            before any QuickBooks transaction can be created.
           </p>
           <ConnectPrompt
             provider="Gmail"
-            description="You'll sign in with Google and grant AP Hub read-only access to one mailbox — you'll land right back here."
+            description="You'll grant mailbox read access. If draft replies are enabled, AP Hub also requests compose access for unsent drafts; only a human sends them."
             href="/api/connections/gmail/start"
             connected={state.connections.gmailConnected}
             errorText={connectErrors.gmail}
@@ -292,7 +293,7 @@ function OnboardingPageInner() {
           />
           <ConnectPrompt
             provider="QuickBooks"
-            description="You'll sign in to Intuit and connect the QuickBooks Online sandbox company — AP Hub only ever writes to this sandbox, never production."
+            description="You'll connect the configured QuickBooks Online company. Sandbox is the default; production remains disabled until its separate master switch, exact-realm checks, backup confirmation, and owner write gate are all enabled."
             href="/api/connections/qbo/start"
             connected={state.connections.qboConnected}
             errorText={connectErrors.qbo}

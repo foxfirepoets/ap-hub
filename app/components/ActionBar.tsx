@@ -5,7 +5,7 @@ import { canApprovePost, canReview } from '../lib/permissions';
 
 // Role-gated action buttons for a single item. Pure presentation: the parent owns the
 // action logic (so the keyboard shortcuts and these buttons call exactly ONE code path).
-// Owner_controller: Approve (posts to QBO sandbox). Bookkeeper: no post — shows
+// Owner_controller: Approve (posts through the environment-gated QBO writer). Bookkeeper: no post — shows
 // "Send to Owner" instead. CPA: read-only (only "Open source"). Hiding a button never
 // grants access — every action route re-checks the role server-side.
 export interface ActionBarProps {

@@ -82,7 +82,8 @@ export default function ExceptionsPage() {
         `/api/proposals/${proposalId}/approve`,
       );
       if (res.status === 201 && res.data) {
-        setNotice({ kind: 'good', text: `Posted to QuickBooks sandbox.`, qboLink: res.data.qbo_link });
+        const destination = res.data.mode === 'production' ? 'QuickBooks production' : 'QuickBooks sandbox';
+        setNotice({ kind: 'good', text: `Posted to ${destination}.`, qboLink: res.data.qbo_link });
         removeSelected();
       } else if (res.status === 202 && res.data && (res.data as { code?: string }).code === 'HELD_FOR_REVIEW') {
         const reason = (res.data as { reason?: string }).reason ?? 'held for review';

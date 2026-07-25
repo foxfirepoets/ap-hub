@@ -3,12 +3,15 @@
 A local TypeScript backend plus a Next.js review UI that reads accounting email
 from Gmail and verify documents through the operator's own **SwarmSync** proof platform
 (InvoiceProof · Verify-API · AuditProof), and produces reviewable QuickBooks Online
-transactions for QBO sandbox or supported Windows QuickBooks Desktop Pro, Premier,
+transactions for a configured QBO sandbox or explicitly gated production company,
+or supported Windows QuickBooks Desktop Pro, Premier,
 and Enterprise. It can create, update, inspect, and discard unsent Gmail drafts;
-a human is always responsible for sending them.
+a human is always responsible for sending those drafts. A separate, owner-released
+gatekeeper can forward an original invoice only to the configured QuickBooks capture address.
 
-It is **white-label**: dropping it into a new business is configuration only (their
-Gmail, their QuickBooks sandbox, their forwarding address, their Telegram chat).
+It is designed for repeatable, per-business installation. Each business still
+requires its own credentials, provider connections, company verification, backup
+evidence, owner write-gate approval, and live validation before accounting writes.
 
 ## What it does
 
@@ -18,14 +21,14 @@ Gmail (watched label)
   → gatekeeper: InvoiceProof scan → forward clean invoices to QBO capture / HOLD + Telegram alert
   → extract (LLM vision) → Verify-API check
   → map (vendor/account) → InvoiceProof gate → proposal (ready/review/exception)
-  → proof-gated post (QBO sandbox or explicitly enabled, company-bound QBD)
+  → proof-gated post (QBO sandbox/explicitly gated production, or explicitly enabled company-bound QBD)
   → daily audit anchor
 ```
 
 QuickBooks writes are proof-gated and fail closed. QBO production is default-off and
 requires an explicit production gate plus exact tenant realm/company binding. QBD is
 disabled by default and requires an owner-enabled write gate bound to the expected
-Windows company. Gmail reply handling is draft-only; AP Hub has no reply-send action.
+Windows company. Gmail reply handling is draft-only; the reply-draft API has no send action.
 
 ## Quick start
 
@@ -54,19 +57,22 @@ active realm (must say `sandbox`).
 `npm run cli -- correct --proposal <id> --field <f> --value <v>` records a correction (no
 external write).
 
-**Post to sandbox:** ready proposals post automatically. Inspect with
+**Post to sandbox:** after the owner verifies the exact company and backup, enables
+the connection write gate, and enables assisted/automatic processing, ready proposals
+can post automatically. Inspect with
 `npm run cli -- postings --status posted_sandbox` and `reconcile --proposals-vs-postings`.
 
 **Gatekeeper:** `npm run cli -- gatekeeper held` lists held invoices;
 `gatekeeper release --id <id>` forwards one after out-of-band verification (audited);
 `gatekeeper test-alert` verifies the Telegram channel.
 
-**Pause / resume:** `npm run cli -- pause` drains the poller; `resume` restarts it. Because
-Phase 1 writes nothing external and Phase 2 writes only to sandbox, pausing is always safe.
+**Pause / resume:** `npm run cli -- pause` drains the poller; `resume` restarts it.
+Before maintenance, confirm the provider-job health view has no sent or
+result-unknown work; pausing does not undo an external request already accepted by a provider.
 
 **If SwarmSync is down:** the pipeline degrades to review-only and the gatekeeper holds —
-it never blocks the queue and never lets an unscanned document through. Holds and
-`proof_scan_unavailable` exceptions clear automatically on the next successful scan.
+it never lets an unscanned document through. Retry the affected item after service
+recovery and resolve retained `proof_scan_unavailable` evidence through the review workflow.
 
 ## Guarantees (each backed by a named test)
 
@@ -77,7 +83,7 @@ it never blocks the queue and never lets an unscanned document through. Holds an
 | Production default-off; exact realm/company + owner/proof gates required | configuration and posting tests |
 | No double-post / double-forward | `idempotent_double_post`, `replay_after_timeout`, `no_double_forward` |
 | Nothing unscanned gets through | `proof_fail_safe`, `gatekeeper_hold`, `proof_gate_posting`, `unscannable_hold` |
-| White-label = config only | `white_label_install` |
+| Identical pipeline supports separate tenant configuration | `white_label_install` |
 
 Run `npm run verify` for repository-level verification. The Playwright suite
 stubs internal APIs and is therefore a UI contract test, not live integration

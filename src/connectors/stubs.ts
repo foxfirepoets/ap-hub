@@ -1,10 +1,12 @@
 /**
- * Capability-declaring stub adapters for QBD / Xero / Sage Intacct (CHUNK_5).
+ * Capability-declaring stub adapters for Xero / Sage Intacct plus the historical
+ * QBD contract fixture retained for provider-neutral contract tests.
  *
  * Phase 1A builds NO logic for these providers. Each declares its capability matrix
  * (so the platform can reason about it) but throws `NotImplementedInPhase` on any
  * read/create/readBack/verify/attach. This is what lets the seam exist without
- * pretending the providers work. Real logic lands in Phase 1B (Xero, Sage) / 1C (QBD).
+ * pretending the providers work. Active QBD runtime logic lives in `connectors/qbd.ts`;
+ * Xero and Sage Intacct remain explicitly out of the supported product surface.
  */
 
 import type { CanonicalEntityKind, CanonicalRecord, Unsupported } from '../canonical/model.js';

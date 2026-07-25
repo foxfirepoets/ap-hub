@@ -7,7 +7,7 @@ import { getFreshQboToken } from '../auth/qbo-refresh.js';
  * CHUNK_7's separate `qbo/write.ts`. That absence is grep-verifiable and asserted
  * by the `no_qbo_write` test.
  *
- * All calls target the SANDBOX host; there is no production base URL here.
+ * The configured environment selects sandbox or production; write authorization remains separate.
  */
 
 const SANDBOX_BASE = 'https://sandbox-quickbooks.api.intuit.com';

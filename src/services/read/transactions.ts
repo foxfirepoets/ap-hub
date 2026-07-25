@@ -1,11 +1,11 @@
 import { scopedQuery } from '../../db/scoped.js';
 import { isValidId } from '../index.js';
-import { sandboxLink } from './http.js';
+import { qboLink as buildQboLink } from './http.js';
 
 /**
  * CHUNK_3_READ — the transaction list. Projects each proposal into a UX status
  * (prepared / held / posted / reconciled / rejected / exception), attaching the
- * QBO sandbox link once posted. Read-only, tenant-scoped; `getTransactionById`
+ * environment-correct QBO link once posted. Read-only, tenant-scoped; `getTransactionById`
  * returns null for a cross-tenant id → 404.
  */
 
@@ -37,6 +37,7 @@ interface TxnDbRow {
   qbo_type: string | null;
   qbo_id: string | null;
   realm: string | null;
+  posting_status: string | null;
   reconciled: boolean;
   created_at: Date;
 }
@@ -54,7 +55,9 @@ function mapRow(r: TxnDbRow): TransactionRow {
   const txn = (r.proposed_txn ?? {}) as Record<string, unknown>;
   const vendorRef = (txn.vendorRef ?? null) as { name?: string } | null;
   const qboLink =
-    r.qbo_type && r.qbo_id && r.realm ? sandboxLink(r.realm, r.qbo_type, r.qbo_id) : null;
+    r.qbo_type && r.qbo_id && r.realm
+      ? buildQboLink(r.realm, r.qbo_type, r.qbo_id, r.posting_status === 'posted' ? 'production' : 'sandbox')
+      : null;
   return {
     proposalId: r.proposal_id,
     status: uxStatus(r.raw_status, r.reconciled),
@@ -84,6 +87,7 @@ const BASE_SELECT = `
     po.qbo_type,
     po.qbo_id,
     po.realm,
+    po.status           AS posting_status,
     EXISTS (
       SELECT 1 FROM reconciliation rc
        WHERE rc.tenant_id = p.tenant_id
@@ -93,7 +97,7 @@ const BASE_SELECT = `
     p.created_at
   FROM proposals p
   LEFT JOIN LATERAL (
-    SELECT id, qbo_type, qbo_id, realm
+    SELECT id, qbo_type, qbo_id, realm, status
       FROM postings
      WHERE tenant_id = p.tenant_id AND proposal_id = p.id AND status IN ('posted_sandbox','posted')
      ORDER BY id DESC LIMIT 1

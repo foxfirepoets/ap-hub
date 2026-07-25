@@ -19,8 +19,8 @@ export function OnboardingWelcome({ onGetStarted }: OnboardingWelcomeProps) {
       </p>
       <p className="muted">Before you start, you&apos;ll need to connect two things:</p>
       <ul className="muted">
-        <li>Gmail — the mailbox AP Hub should read.</li>
-        <li>QuickBooks (QuickBooks Online sandbox) — where reviewable transactions are prepared.</li>
+        <li>Gmail — the mailbox AP Hub should read and, when enabled, use for unsent drafts.</li>
+        <li>QuickBooks — the configured Online company, or a supported Windows Desktop company.</li>
       </ul>
       <button className="primary" onClick={onGetStarted}>
         Get Started
