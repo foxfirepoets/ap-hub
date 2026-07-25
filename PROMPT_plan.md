@@ -4,36 +4,48 @@ You are ralph-wiggum-loop operating in PLANNING mode.
 
 ## Your Only Job This Iteration
 
-Read the specs and produce IMPLEMENTATION_PLAN.md.
+Read the specs and reconcile IMPLEMENTATION_PLAN.md.
 Do NOT write application code or tests.
 
 ## Project Context
 
-Project: ap-hub-windows-local-only
-Stack: Node.js 20+ + Next.js 14 + PostgreSQL/pg-boss
+Project: ap-hub — local-first desktop application (Phase P1)
+Stack: Electron 32+ · Node.js 20+ TypeScript ESM · React 18 + Next.js 14 static export ·
+bundled PostgreSQL 16 · pg-boss · Vitest · Playwright
 Output directory: current project root
 
 ## Read These Files First
 
-1. AGENTS.md
-2. specs/01_CHUNK_1_SECRETS.md through specs/07_CHUNK_7_CERTIFICATION.md
-3. specs/SPEC-windows-local-only-runtime.md
-4. .ralph/guardrails.md
+1. `specs/SPEC-local-desktop-shell.md` — the contract
+2. `architecture-decision-packet-ap-hub-local-desktop-2026-07-25.md` — why, and the boundaries
+3. `.ralph/guardrails.md` — **read the email carve-out before any send-related change**
+4. `docs/audits/electron-migration-inventory-2026-07-25.md` — all 52 routes, already inventoried
+5. `docs/audits/architecture-map-2026-07-25.md` — what exists and what must not be touched
+6. `specs/01_CHUNK_1_SHELL.md` through `specs/09_CHUNK_9_PACKAGE.md`
+7. `AGENTS.md` — build commands and the validation gate
+
+Everything in `archive/` is historical. Do not build from it, do not restore it, and do not treat
+any spec inside it as a plan.
 
 ## Produce: IMPLEMENTATION_PLAN.md
 
-Use one `- [ ]` checkbox per independently committable task. Preserve chunk and dependency
-order. Name exact files/interfaces/tests. Each chunk must include validation and its completion
-promise from the chunk spec.
+`IMPLEMENTATION_PLAN.md` already exists and is reconciled to this direction. **Merge into it — do
+not overwrite it.** Use one `- [ ]` checkbox per independently committable task. Preserve chunk and
+dependency order. Name exact files, interfaces and tests. Each chunk must carry its validation step
+and the completion promise from its chunk spec.
 
 ## Rules
 
-- Every one of the seven generated chunk specs must appear.
+- All nine chunk specs must appear, in dependency order.
 - Do not include tasks from archived or historical specs.
-- Do not add work outside the frozen local-only spec.
+- Do not add work outside `specs/SPEC-local-desktop-shell.md`.
 - Do not generate code.
+- CHUNK_3's cross-tenant and RBAC replay lands inside CHUNK_3 — never deferred to a later chunk.
+- macOS host adapters are planned in the same chunk as their Windows counterparts, never stubbed.
 - Append the planning completion entry and promise to `.ralph/progress.md`.
 
 ## Completion Signal
 
-<promise>PLANNING COMPLETE</promise>
+Append to `.ralph/progress.md`, then output the same tag:
+
+<promise>PLANNING_COMPLETE</promise>

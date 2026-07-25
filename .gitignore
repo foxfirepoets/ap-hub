@@ -8,6 +8,11 @@ dist/
 build/
 *.tsbuildinfo
 
+# Electron shell build + packaged installers (CHUNK_1_SHELL / CHUNK_9_PACKAGE)
+dist-desktop/
+release/
+out/
+
 # Environment & secrets — NEVER commit
 .env
 .env.*

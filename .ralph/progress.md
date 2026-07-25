@@ -153,3 +153,82 @@ Verification:
 - Truth-fix audit: `GREEN_COMPLETE`.
 
 <promise>TFL GREEN: CBV-LOC001 TASK 2</promise>
+
+### 2026-07-25 — Workspace re-scaffolded for the local desktop direction
+
+`spec-to-ralphprep specs/SPEC-local-desktop-shell.md` run in **merge** mode against the existing
+workspace. Nothing was overwritten that had already been reconciled.
+
+Preserved verbatim (not touched):
+- `.ralph/guardrails.md` — including the email carve-out and the discovery/backup SIGNs
+- `.ralph/state.md`
+- `IMPLEMENTATION_PLAN.md`
+- this log's prior history
+
+Written or reconciled:
+- `specs/01_CHUNK_1_SHELL.md` … `specs/09_CHUNK_9_PACKAGE.md` — nine chunk specs (were missing)
+- `AGENTS.md` — removed the `docker compose up -d db` step (Docker is out of scope in this
+  direction); added the Electron commands and the new devDependencies note; `## Validation
+  Commands` heading and single-line gate kept intact
+- `PROMPT_plan.md` — repointed from the archived 7-chunk local-only specs to the nine local-desktop
+  chunk specs; promise tag corrected to `PLANNING_COMPLETE` (underscore) per the ralph contract
+- `PROMPT_build.md` — replaced the blanket "never … send email" instruction with the locked-
+  forwarder carve-out, which requires **exactly one** send site and treats zero as a defect
+- `README.ralph.md` — rewritten for the nine local-desktop chunks
+
+Header note: this log's original header reads "Project: ap-hub-windows-local-only / Total chunks: 7".
+That is historical. The current project is **ap-hub local desktop (Phase P1), 9 chunks**. The header
+is left in place because this file is append-only.
+
+<promise>PLANNING_COMPLETE</promise>
+
+### 2026-07-25 — CHUNK_1_SHELL — Electron shell
+
+Built the Electron main process, the frozen preload bridge, the hardened renderer, the tray and
+the single-instance lock. Electron 33.4.11 + electron-builder 25.1.8 + esbuild 0.28.1 added as
+devDependencies (recorded in AGENTS.md per the standing guardrail).
+
+Files added: `desktop/{main,preload,channels,security,status}.ts`, `desktop/boot.html`,
+`desktop/assets/tray.png`, `desktop/entitlements.mac.plist`, `scripts/build-desktop.mjs`,
+`electron-builder.yml`, `test/desktop-shell.test.ts`, `e2e-desktop/shell.spec.ts`.
+
+Design notes:
+- The preload is **bundled** (esbuild → CJS). A sandboxed preload cannot `require` a relative
+  module, so without bundling the channel allowlist would be re-typed inside the preload and
+  drift from `desktop/channels.ts`. Main is ESM because it resolves its own dir via
+  `import.meta.url`.
+- The channel allowlist is enforced **twice** — preload and `ipcMain`. The spec requires
+  enumeration at preload only; the second check means a preload compromise cannot widen the
+  surface.
+- Security logic lives in pure modules so the gate asserts the *properties* (CSP names no remote
+  origin, `connect-src 'none'`, an unregistered-but-well-formed channel is still refused, no tray
+  label contains a technical word) rather than asserting an options object was constructed.
+
+Verification:
+
+- `npm run verify`: **exit 0**.
+- Gate evidence: lint (now covering `desktop/**`), no-leak, typecheck, **65 test files passed**
+  (was 64 — `test/desktop-shell.test.ts` 17/17 added), production web build, **31 Playwright
+  passed** (was 24 — 7 desktop runtime assertions added).
+- Runtime proof against a real Electron process (`e2e-desktop/shell.spec.ts`): `window.require`,
+  `window.process`, `window.module`, `window.global`, `window.Buffer` all `undefined`; the
+  bridge is frozen and cannot be reassigned; an unregistered channel is refused without echoing
+  the channel name; `fetch('https://example.com')` is BLOCKED by CSP; zero network requests.
+- **No existing test was modified** — `git diff --name-only HEAD -- test/ e2e/` is empty. All
+  changes are additive.
+- Locked-forwarder scan: **exactly one** provider-send call site (`src/gmail/adapter.ts:142`),
+  reachable only via `createLockedForwarder`. Not zero, not two.
+
+Deviation recorded (DEVIATIONS.md #4): the renderer **static export** moves from CHUNK_1 task 3
+to CHUNK_3. `next build` with `output: 'export'` refuses to run while `app/api/**` exists, and
+those route files are CHUNK_3's to delete. The spec's own CHUNK_1 exit criterion — an empty
+window from an icon with `window.require` undefined — is met and proved.
+
+NOT verified, and not claimed:
+- **macOS.** No macOS machine is available in this environment. `desktop/` is
+  platform-neutral and the electron-builder mac target is configured, but nothing was built,
+  signed, notarized or launched on macOS. The CHUNK_1 exit criterion says "on both platforms";
+  only Windows is evidenced.
+- Packaged-installer behavior (CHUNK_9 owns it) — the shell was exercised unpackaged.
+
+<promise>CHUNK COMPLETE: CHUNK_1_SHELL</promise>

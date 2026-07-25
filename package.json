@@ -4,11 +4,16 @@
   "private": true,
   "type": "module",
   "description": "AI Accountant Hub — human-supervised Gmail invoice and statement intake for supported QuickBooks editions",
+  "main": "dist-desktop/main.mjs",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
     "dev": "tsx src/index.ts",
+    "desktop:build": "node scripts/build-desktop.mjs",
+    "desktop:dev": "npm run desktop:build && electron dist-desktop/main.mjs",
+    "dist:win": "npm run desktop:build && electron-builder --win --publish never",
+    "dist:mac": "npm run desktop:build && electron-builder --mac --publish never",
     "cli": "tsx src/cli.ts",
     "migrate:up": "tsx src/db/migrate.ts up",
     "migrate:down": "tsx src/db/migrate.ts down",
@@ -16,7 +21,7 @@
     "seed": "tsx src/db/seed.ts",
     "test": "vitest run",
     "test:int": "vitest run --mode integration",
-    "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\"",
+    "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\" \"desktop/**/*.ts\"",
     "lint:noleak": "node scripts/lint-noleak.mjs",
     "verify": "npm run lint && npm run lint:noleak && npm run typecheck && npm test && npm run web:build && npm run test:ui-contract",
     "verify:live": "npm run test:int",
@@ -27,7 +32,7 @@
     "web:build": "next build",
     "web:lint": "next lint",
     "e2e": "npm run test:ui-contract",
-    "test:ui-contract": "playwright test"
+    "test:ui-contract": "npm run desktop:build && playwright test"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
@@ -50,6 +55,9 @@
     "@types/pg": "^8.11.10",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8",
+    "esbuild": "^0.28.1",
     "eslint": "^9.17.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",

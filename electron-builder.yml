@@ -1,0 +1,64 @@
+# CHUNK_1_SHELL — packaging. Signing and clean-machine certification land in CHUNK_9.
+#
+# Both platforms install per-user and NON-ELEVATED: the spec's first acceptance criterion is a
+# standard non-admin user double-clicking one file. `perMachine: false` and an install root
+# under the user's own profile are what make that true — a machine-wide install would prompt
+# for administrator rights and fail the criterion outright.
+#
+# Signing identities are referenced by NAME from the build machine's environment and are never
+# committed. An unsigned build is a development artifact, not a shippable installer.
+
+appId: com.aphub.desktop
+productName: AP-Hub
+copyright: AP-Hub
+
+directories:
+  output: release
+  buildResources: desktop/assets
+
+# Only what the shell needs at runtime. The engine and the bundled PostgreSQL are added by
+# CHUNK_2; the statically exported renderer (`out/`) is added by CHUNK_3.
+files:
+  - dist-desktop/**/*
+  - package.json
+
+asar: true
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  # Authenticode. Resolved from the build machine's secret store at pack time, never here.
+  # signtoolOptions:
+  #   certificateSubjectName: ${env.APHUB_WIN_CERT_SUBJECT}
+
+nsis:
+  oneClick: false
+  perMachine: false          # per-user install → no administrator prompt
+  allowToChangeInstallationDirectory: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: AP-Hub
+  # CHUNK_9 replaces this with the explicit "what should happen to your information?" choice.
+  deleteAppDataOnUninstall: false
+
+mac:
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+  category: public.app-category.finance
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: desktop/entitlements.mac.plist
+  entitlementsInherit: desktop/entitlements.mac.plist
+  # Developer ID + notarization are supplied by the build machine in CHUNK_9:
+  #   CSC_NAME, APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID
+  notarize: false
+
+dmg:
+  writeUpdateInfo: false
+
+# No auto-update in P1. Update delivery is manual (download the next signed installer and run
+# it); automatic checking against a static signed manifest is designed in packet §8 and built
+# in P4. Nothing here forecloses it.
+publish: null

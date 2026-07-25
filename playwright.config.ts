@@ -28,7 +28,11 @@ export default defineConfig({
     trace: 'on-first-retry',
     headless: true,
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    { name: 'chromium', testDir: './e2e', use: { ...devices['Desktop Chrome'] } },
+    // CHUNK_1_SHELL — drives a real Electron process; needs no browser and no web server.
+    { name: 'desktop', testDir: './e2e-desktop' },
+  ],
   webServer: {
     // Build then serve the production app. Reuses a running server locally.
     command: `npx next build && npx next start -p ${PORT}`,

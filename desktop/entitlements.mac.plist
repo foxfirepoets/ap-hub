@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  CHUNK_1_SHELL — macOS hardened-runtime entitlements.
+
+  Deliberately minimal. The JIT / unsigned-memory entitlements are required by Electron's
+  V8; everything else is omitted, including any network-server entitlement, because AP-Hub
+  opens no listening socket the user did not ask for. TCC prompts for Documents, Desktop and
+  Downloads are handled as resolvable user states in CHUNK_8, not pre-granted here.
+-->
+<plist version="1.0">
+  <dict>
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    <!-- Outbound only: Gmail, QuickBooks and the accounting systems the user connected. -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+  </dict>
+</plist>

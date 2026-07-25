@@ -36,3 +36,26 @@ tokens in core.
 is out of scope for an interface extraction. This carve-out means a green `lint:noleak`
 should not be read as satisfying the literal repo-wide spec bullet — the scoped ban is the
 intended behavior.
+
+## 4. CHUNK_1 — the renderer static export is executed in CHUNK_3, not CHUNK_1
+
+`IMPLEMENTATION_PLAN.md` places "static-export the existing React tree into the renderer and
+load it" in CHUNK_1 task 3. It is executed in CHUNK_3 instead. CHUNK_1 ships the shell loading
+its own plain-language boot page (`desktop/boot.html`), which is also the `DB_STARTING` surface
+the happy path calls for.
+
+**Reason:** `next build` with `output: 'export'` refuses to run while `app/api/**` exists —
+Next.js does not support route handlers in a static export. Those 52 route files are deleted by
+CHUNK_3, which is the chunk that replaces them with IPC. Attempting the export in CHUNK_1 would
+require deleting the routes in CHUNK_1, which *is* CHUNK_3's work, and would move the
+cross-tenant/RBAC replay earlier than the chunk that owns it.
+
+This is a sequencing correction, not a dropped requirement. The spec's own CHUNK_1 exit
+criterion (§18) is *"an empty window opens from an icon and `window.require` is undefined"* —
+which is met and proved by `e2e-desktop/shell.spec.ts`. The plan task is more ambitious than
+the spec's exit criterion, and the spec governs.
+
+**Open at CHUNK_3:** three dynamic page routes (`statements/[id]`, `transactions/[id]`,
+`settings/tax-mapping/[id]`) take runtime ids that `generateStaticParams` cannot enumerate.
+They are the leading candidates for the per-route embedded-Next fallback (packet §3) and must
+be reported explicitly there, whichever way they resolve.
