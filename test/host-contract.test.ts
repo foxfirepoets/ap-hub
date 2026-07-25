@@ -2,6 +2,7 @@ import { describe, it, expect, afterAll } from 'vitest';
 import { createServer, type Server } from 'node:http';
 import { isAbsolute } from 'node:path';
 import { createHostAdapter, detectOs, type HostAdapter } from '../src/host/index.js';
+import type { CredentialTarget } from '../src/host/types.js';
 
 /**
  * HostAdapter contract suite (CHUNK_7, ARCHITECTURE §3). Runs against whichever adapter
@@ -25,14 +26,27 @@ d(`HostAdapter contract — ${os}`, () => {
     expect(host.logDir().startsWith(host.dataDir())).toBe(true);
   });
 
-  it('secretStore round-trips a value and returns null after delete', async () => {
-    const name = `contract-${Date.now()}`;
+  it('secretStore round-trips a Generic Credential and absent delete is idempotent', async () => {
+    const install = `contract-${Date.now()}`;
+    const name = `APHub/${install}/roundtrip` as CredentialTarget;
     const secret = 'aph_secret_value_' + Math.random().toString(36).slice(2);
-    await host.secretStore.put(name, secret);
-    expect(await host.secretStore.get(name)).toBe(secret);
-    await host.secretStore.delete(name);
+    try {
+      await host.secretStore.put(name, secret);
+      expect(await host.secretStore.get(name)).toBe(secret);
+      expect(await host.secretStore.listTargets?.(`APHub/${install}/`)).toContain(name);
+    } finally {
+      await host.secretStore.delete(name);
+      await host.secretStore.delete(name);
+    }
     expect(await host.secretStore.get(name)).toBeNull();
   }, 30_000);
+
+  it('secretStore rejects non-APHub and malformed targets before invoking the OS', async () => {
+    await expect(host.secretStore.put('OtherApp/install/key' as CredentialTarget, 'never-written'))
+      .rejects.toThrow('INVALID_CREDENTIAL_TARGET');
+    await expect(host.secretStore.get('APHub/../key' as CredentialTarget))
+      .rejects.toThrow('INVALID_CREDENTIAL_TARGET');
+  });
 
   it('probePort reports a known-occupied port with a PID, and a free port as free', async () => {
     const server = createServer((_req, res) => res.end('ok'));

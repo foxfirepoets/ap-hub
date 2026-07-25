@@ -10,11 +10,24 @@
 
 export type OsId = 'windows' | 'macos';
 
-/** Protects the master secrets (ENCRYPTION_KEY + broker install token) at rest. */
+/** A user-scoped Windows Generic Credential target; values are never embedded here. */
+export type CredentialTarget = `APHub/${string}/${string}`;
+
+export const CREDENTIAL_TARGET_PATTERN = /^APHub\/[A-Za-z0-9_-]+\/[A-Za-z0-9._-]+$/;
+
+export function assertCredentialTarget(target: string): asserts target is CredentialTarget {
+  if (!CREDENTIAL_TARGET_PATTERN.test(target)) {
+    throw new Error('INVALID_CREDENTIAL_TARGET');
+  }
+}
+
+/** Runtime secret authority. Implementations must never persist or report values. */
 export interface SecretStore {
-  put(name: string, secret: string): Promise<void>;
-  get(name: string): Promise<string | null>;
-  delete(name: string): Promise<void>;
+  put(target: string, secret: string): Promise<void>;
+  get(target: string): Promise<string | null>;
+  delete(target: string): Promise<void>;
+  /** Returns target identifiers only; credential values are never enumerated. */
+  listTargets?(prefix?: `APHub/${string}`): Promise<CredentialTarget[]>;
 }
 
 export interface ChildSpec {

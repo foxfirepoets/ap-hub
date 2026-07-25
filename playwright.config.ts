@@ -4,7 +4,17 @@ import { defineConfig, devices } from '@playwright/test';
 // call and the Google login redirect are STUBBED in the spec (page.route), so the behavioral
 // journey (login → Today → exception → evidence → approve → Posted + QBO link) runs without a
 // live database or a real Google account. Real auth/data are covered by the src gate + build.
-const PORT = 3100;
+function e2ePort(value: string | undefined): number {
+  if (value === undefined || value === '') return 3100;
+  if (!/^\d{4,5}$/.test(value)) throw new Error('APHUB_E2E_PORT must be a numeric unprivileged TCP port');
+  const port = Number(value);
+  if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+    throw new Error('APHUB_E2E_PORT must be between 1024 and 65535');
+  }
+  return port;
+}
+
+const PORT = e2ePort(process.env.APHUB_E2E_PORT);
 
 export default defineConfig({
   testDir: './e2e',
