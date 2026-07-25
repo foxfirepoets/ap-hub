@@ -9,10 +9,24 @@ const { Pool } = pg;
 
 let pool: pg.Pool | null = null;
 
+export function normalizePostgresConnectionString(connectionString: string): string {
+  try {
+    const url = new URL(connectionString);
+    const sslMode = url.searchParams.get('sslmode');
+    if (sslMode === 'require' || sslMode === 'prefer' || sslMode === 'verify-ca') {
+      url.searchParams.set('sslmode', 'verify-full');
+      return url.toString();
+    }
+  } catch {
+    // Let pg report malformed/non-URL connection strings with its native error.
+  }
+  return connectionString;
+}
+
 export function getPool(connectionString: string = process.env.DATABASE_URL ?? ''): pg.Pool {
   if (!pool) {
     if (!connectionString) throw new Error('DATABASE_URL is not set');
-    pool = new Pool({ connectionString, max: 10 });
+    pool = new Pool({ connectionString: normalizePostgresConnectionString(connectionString), max: 10 });
   }
   return pool;
 }
@@ -58,6 +72,6 @@ export async function closePool(): Promise<void> {
 /** Test helper: point the pool at a specific connection string, closing any prior pool. */
 export async function resetPoolForTest(connectionString: string): Promise<pg.Pool> {
   if (pool) await pool.end();
-  pool = new Pool({ connectionString, max: 5 });
+  pool = new Pool({ connectionString: normalizePostgresConnectionString(connectionString), max: 5 });
   return pool;
 }
