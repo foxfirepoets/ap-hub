@@ -7,6 +7,12 @@
 // - ESLint during build is skipped: the gate lints src/** with the repo eslint config;
 //   the app/ tree's correctness is covered by `next build` typechecking + the Playwright E2E.
 const nextConfig = {
+  // CHUNK_3_IPC. AP-Hub is a desktop application: the React tree is exported to plain files in
+  // `out/` and loaded by the Electron window straight off disk. There is no AP-Hub server and no
+  // AP-Hub address — every product operation travels over the sandboxed bridge instead
+  // (app/lib/api.ts). This is also why no request handler may live under `app/`: a static export
+  // cannot contain one, and reintroducing one would reintroduce the listening socket.
+  output: 'export',
   reactStrictMode: true,
   // Windows + Node 24 build-trace collection for `_not-found`/500 hits an ENOENT during
   // `next build` (collect-build-traces.js can't find/rename its own .nft.json/export

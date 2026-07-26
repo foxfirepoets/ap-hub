@@ -486,8 +486,10 @@ describe('CHUNK_4 reply draft API', () => {
     const paths = [
       '../src/reply-drafts/service.ts',
       '../src/reply-drafts/http.ts',
-      '../app/api/reply-drafts/route.ts',
-      '../app/api/reply-drafts/[id]/route.ts',
+      // CHUNK_3_IPC replaced the two `app/api/reply-drafts/**` route handlers with these; the
+      // scan follows the surface rather than shrinking when the old files were deleted.
+      '../desktop/ipc/read/reply-drafts.ts',
+      '../desktop/ipc/action/replyDrafts.ts',
     ];
     const source = paths.map((path) =>
       readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8')).join('\n');

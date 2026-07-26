@@ -4,14 +4,36 @@ import { fileURLToPath } from 'node:url';
 import { query } from '../src/db/pool.js';
 import { createSession } from '../src/auth/session.js';
 import { closeAll, countRows, createTenant, createUser, insertAttachment, insertMessage, resetTables } from './helpers.js';
-import { GET as listRoute } from '../app/api/statements/route.js';
-import { GET as detailRoute } from '../app/api/statements/[id]/route.js';
+import { getStatement, listStatements } from '../src/statements/review.js';
+import { runRead } from '../src/services/read/http.js';
 import {
   runCorrectStatement,
   runExcludeStatementLine,
   runFileStatement,
   runMatchStatementLine,
 } from '../src/statements/http.js';
+
+/**
+ * CHUNK_3_IPC deleted the thin `app/api/statements/**` route handlers — the desktop renderer
+ * reaches these reads over IPC now. The composition they performed (`runRead` + the review
+ * service, with the same role allowlist) is what this file has always been asserting, so it is
+ * reproduced here verbatim rather than dropped: the RBAC, tenant-isolation and 401 cases below
+ * still run against the real `src/**` code, unchanged.
+ */
+const STATEMENT_READ_ROLES = ['owner_controller', 'bookkeeper', 'cpa'] as const;
+
+function listRoute(request: Request): Promise<Response> {
+  const status = new URL(request.url).searchParams.get('status') ?? undefined;
+  return runRead(request, (ctx) => listStatements(ctx.tenantId, status), {
+    role: [...STATEMENT_READ_ROLES],
+  });
+}
+
+function detailRoute(request: Request, { params }: { params: { id: string } }): Promise<Response> {
+  return runRead(request, (ctx) => getStatement(ctx.tenantId, Number(params.id)), {
+    role: [...STATEMENT_READ_ROLES],
+  });
+}
 
 async function token(tenantId: number, role = 'owner_controller'): Promise<string> {
   const userId = await createUser(tenantId, {

@@ -20,7 +20,11 @@ export default function TaxMappingDetailPage() {
   const me = useSession();
   const owner = canApprovePost(me.role);
   const router = useRouter();
-  const { id } = useParams<{ id: string }>();
+  const params = useParams<{ id: string }>();
+  // The exported build bakes this address segment to a build-time placeholder, so it cannot be
+  // trusted here; the mapping the person actually opened is named in the loaded address.
+  const id =
+    typeof window === 'undefined' ? params.id : window.location.pathname.split('/').pop() ?? params.id;
 
   const [mapping, setMapping] = useState<TaxMapping | null>(null);
   const [loadError, setLoadError] = useState<{ status: number; message: string } | null>(null);

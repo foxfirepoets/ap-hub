@@ -104,23 +104,33 @@ never deleted, and no `fetch` fallback may be added.
 
 **Remaining CHUNK_3 work — five items, one coherent unit (see DEVIATIONS §6):**
 
-1. Delete all **54** route handlers (52 under `app/api/**` + the two `app/oauth/*/callback`, §5b).
-2. Apply the static-export change: 3 new `layout.tsx` + ~13 lines across 3 pages (§5a).
-3. Build the `file://` path interception in `desktop/main.ts` and prove it under **real**
-   Electron — currently `[UNVERIFIED in real Electron]`.
-4. Migrate the 24 journeys from the `chromium` project to the `desktop` project.
-5. Capture the Playwright trace showing zero renderer requests to an AP-Hub origin.
+1. ~~Delete all **54** route handlers~~ **DONE** on `agent/electron-renderer` — zero `route.ts`
+   remain under `app/`.
+2. ~~Apply the static-export change~~ **DONE** — `output: 'export'` set, 3 new `layout.tsx`, 13
+   changed lines across the 3 pages, `out/` emitted by `npm run web:build`.
+3. ~~Build the `file://` path interception and prove it under **real** Electron~~ **DONE and
+   `[VERIFIED in real Electron]`** — `desktop/renderer.ts` + `serveExportedRenderer()`, proved by
+   `e2e-desktop/renderer.spec.ts` (13 desktop Playwright tests, exit 0). Two findings only a real
+   window could produce are recorded as DEVIATIONS §7a/§7b, plus an entry-point deviation at §7c.
+4. **OPEN** — migrate the 24 journeys from the `chromium` project to the `desktop` project. They are
+   deliberately still failing; `npm run verify` exits 1 here and only here.
+5. **OPEN** — capture the Playwright trace showing zero renderer requests to an AP-Hub origin.
+   (`e2e-desktop/shell.spec.ts` already asserts the live window issues no HTTP request at all, which
+   is the same property for the shell's own load; the 24 journeys are what remain to prove it for.)
 
 Then B7 read-only security verification, then the CHUNK_3 promise line. **Not before.**
 
 `node_modules` is a directory junction into the main checkout in each worktree. Agents must not
 run `npm install`; `package.json` is orchestrator-owned.
 
-**Open question carried into CHUNK_3 (DEVIATIONS.md #4):** three page routes take runtime ids that
-`generateStaticParams` cannot enumerate — `statements/[id]`, `transactions/[id]`,
-`settings/tax-mapping/[id]`. The spike above is resolving how they work from `file://` without a
-product HTTP server and, ideally, without touching a page component. Must be reported explicitly
-whichever way it lands.
+**Open question carried into CHUNK_3 (DEVIATIONS.md #4) — ANSWERED.** The three runtime-id page
+routes (`statements/[id]`, `transactions/[id]`, `settings/tax-mapping/[id]`) each export one sentinel
+address from a sibling `layout.tsx`; the main process serves that sentinel page for any id in the
+family over the built-in `file:` scheme, and the page reads its id from the loaded address because
+`generateStaticParams` bakes the routing value. It could NOT be done without touching a page
+component — 13 lines across the three, reported at DEVIATIONS §5a. No security setting was relaxed:
+`contextIsolation`, `sandbox`, `nodeIntegration: false`, `RENDERER_CSP` and `isAllowedNavigation`
+(still `file:` only) are byte-identical to `53c4d9b`.
 
 **Exact next task:** review the `agent/ipc-foundation` handoff (verify `desktop/channels.ts`,
 `desktop/main.ts` and `src/**` are byte-identical to `53c4d9b`), apply its two shared-file patches,

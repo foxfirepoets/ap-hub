@@ -17,8 +17,8 @@ directories:
   buildResources: desktop/assets
 
 # Only what the shell needs at runtime. The AP-Hub source tree is bundled into
-# `dist-desktop/main.mjs` by esbuild; the statically exported renderer (`out/`) is added by
-# CHUNK_3.
+# `dist-desktop/main.mjs` by esbuild; `out/` is the statically exported React tree the window
+# loads off disk (CHUNK_3 — `npm run web:build` must have run before packaging).
 #
 # `node_modules` is listed EXPLICITLY. The main bundle leaves third-party packages external
 # (see scripts/build-desktop.mjs — bundling CommonJS into ESM breaks `require`), so `pg` and
@@ -26,6 +26,7 @@ directories:
 # electron-builder prunes this to production dependencies at pack time.
 files:
   - dist-desktop/**/*
+  - out/**/*
   - node_modules/**/*
   - package.json
 

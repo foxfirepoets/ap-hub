@@ -42,8 +42,17 @@ export default defineConfig({
     { name: 'desktop', testDir: './e2e-desktop' },
   ],
   webServer: {
-    // Build then serve the production app. Reuses a running server locally.
-    command: `npx next build && npx next start -p ${PORT}`,
+    /**
+     * Build then serve the exported renderer. `next start` is gone because there is nothing for
+     * it to start: CHUNK_3 exports the React tree to plain files (`output: 'export'`) and the real
+     * app loads them off disk, so the only thing that can serve them over HTTP is a plain file
+     * server. It exists solely for the BROWSER project below; the desktop project needs no server
+     * at all, and this whole block retires with `e2e/app.spec.ts`.
+     */
+    // `npm run web:build`, not a bare `next build`: the export is only complete once the inline
+    // scripts have been externalized, without which nothing starts under the window's script
+    // policy (scripts/externalize-inline-scripts.mjs).
+    command: `npm run web:build && npx tsx scripts/serve-web-export.mts ${PORT}`,
     url: `http://localhost:${PORT}/login`,
     timeout: 180_000,
     reuseExistingServer: !process.env.CI,
