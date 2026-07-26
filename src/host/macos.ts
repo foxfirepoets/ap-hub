@@ -65,8 +65,14 @@ export function createMacosHostAdapter(): HostAdapter {
   const secretStore = new KeychainSecretStore();
   return {
     os: 'macos',
+    persistedPlatform: 'darwin',
+    exeSuffix: '',
     dataDir: appDataDir,
     logDir: () => join(homedir(), 'Library', 'Logs', 'APHub'),
+    postgresBinDir: (resourceRoot: string) => join(resourceRoot, 'pgsql', 'bin'),
+    // Out of Version 1 scope (windows-only-v1-2026-07-25) — present so the adapter keeps
+    // compiling and a later macOS version stays a thin addition.
+    osAccountId: () => run('id', ['-u']),
     secretStore,
     fsPermissions: macosFsPermissions,
 

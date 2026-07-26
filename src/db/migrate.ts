@@ -12,10 +12,20 @@ const { Pool } = pg;
  */
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const MIGRATIONS_DIR = join(__dirname, '..', '..', 'migrations');
 
-export function migrationFiles(): string[] {
-  return readdirSync(MIGRATIONS_DIR)
+/**
+ * Where migrations live when this module runs from the source tree.
+ *
+ * The desktop shell overrides it. Once `desktop/main.ts` is bundled to `dist-desktop/`,
+ * `import.meta.url` no longer sits two levels below the repository root, so a path derived
+ * from it points somewhere that does not exist. The directory is therefore a parameter with
+ * a source-tree default rather than a constant — the CLI keeps working untouched and the
+ * packaged app passes the location it actually shipped the files to.
+ */
+export const DEFAULT_MIGRATIONS_DIR = join(__dirname, '..', '..', 'migrations');
+
+export function migrationFiles(dir: string = DEFAULT_MIGRATIONS_DIR): string[] {
+  return readdirSync(dir)
     .filter((f) => f.endsWith('.sql') && !f.endsWith('.down.sql'))
     .sort();
 }
@@ -34,15 +44,18 @@ export async function appliedMigrations(pool: pg.Pool): Promise<Set<string>> {
   return new Set(rows.map((r) => r.name));
 }
 
-export async function migrateUp(connectionString: string): Promise<string[]> {
+export async function migrateUp(
+  connectionString: string,
+  migrationsDir: string = DEFAULT_MIGRATIONS_DIR,
+): Promise<string[]> {
   const pool = new Pool({ connectionString });
   const applied: string[] = [];
   try {
     await ensureMigrationsTable(pool);
     const done = await appliedMigrations(pool);
-    for (const file of migrationFiles()) {
+    for (const file of migrationFiles(migrationsDir)) {
       if (done.has(file)) continue;
-      const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf8');
+      const sql = readFileSync(join(migrationsDir, file), 'utf8');
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
@@ -68,7 +81,10 @@ export async function migrateUp(connectionString: string): Promise<string[]> {
  * DOWN runs in the same transaction as removal from `_migrations`, so a
  * migration-level safety refusal leaves both schema and history unchanged.
  */
-export async function migrateDown(connectionString: string): Promise<string | null> {
+export async function migrateDown(
+  connectionString: string,
+  migrationsDir: string = DEFAULT_MIGRATIONS_DIR,
+): Promise<string | null> {
   const pool = new Pool({ connectionString });
   try {
     await ensureMigrationsTable(pool);
@@ -93,8 +109,8 @@ export async function migrateDown(connectionString: string): Promise<string | nu
     }
 
     const downFile = name.replace(/\.sql$/, '.down.sql');
-    const downPath = join(MIGRATIONS_DIR, downFile);
-    if (!readdirSync(MIGRATIONS_DIR).includes(downFile)) {
+    const downPath = join(migrationsDir, downFile);
+    if (!readdirSync(migrationsDir).includes(downFile)) {
       throw new Error(`Migration ${name} has no DOWN file (${downFile})`);
     }
 

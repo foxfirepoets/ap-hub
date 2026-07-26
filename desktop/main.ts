@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { isAllowedChannel, isAllowedExternalUrl, isAllowedNavigation } from './channels.js';
 import { RENDERER_WEB_PREFERENCES, RENDERER_CSP } from './security.js';
 import { engineStateLabel, type EngineState } from './status.js';
+import { startDatabase, describeDatabaseFailure, type StartedLocalDatabase } from './database.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -24,6 +25,10 @@ let tray: Tray | null = null;
 let engineState: EngineState = 'starting';
 /** Set on Quit so the window's close handler stops hiding and actually exits. */
 let quitting = false;
+/** The supervised private database. Null until it is up, and again after shutdown. */
+let database: StartedLocalDatabase | null = null;
+/** The last plain-language database problem, if any. Never a code or a stack trace. */
+let databaseProblem: string | null = null;
 
 /**
  * The renderer entry. CHUNK_3 static-exports the React tree to `out/`; until then the shell
@@ -118,7 +123,13 @@ function showWindow(): void {
 function setEngineState(state: EngineState): void {
   engineState = state;
   refreshTrayMenu();
-  mainWindow?.webContents.send('aphub:status:engine', { state, label: engineStateLabel(state) });
+  // `problem` travels with the state so the boot screen can name what went wrong instead of
+  // showing "starting up" forever. It is always a plain-language sentence, never a code.
+  mainWindow?.webContents.send('aphub:status:engine', {
+    state,
+    label: engineStateLabel(state),
+    problem: databaseProblem,
+  });
 }
 
 function refreshTrayMenu(): void {
@@ -150,7 +161,67 @@ function createTray(): void {
   refreshTrayMenu();
 }
 
-/** Quit stops all children. CHUNK_8 adds the supervised engine and database teardown here. */
+/**
+ * Bring the private database up, then report the shell as running.
+ *
+ * Deliberately not fatal. A database that will not start is a state the user must be able to
+ * SEE and act on — quitting silently would leave them with an app that "does nothing when I
+ * click it". `unstable` already carries the reassurance that their information is safe.
+ */
+async function startDatabaseSupervised(): Promise<void> {
+  try {
+    database = await startDatabase();
+    databaseProblem = null;
+    setEngineState('running');
+  } catch (err) {
+    database = null;
+    databaseProblem = describeDatabaseFailure(err).message;
+    /**
+     * Diagnostic goes to the main-process log, never to the renderer. The user sees
+     * `databaseProblem`; an operator debugging a failed launch needs the cause, and without
+     * it a startup failure is indistinguishable from a hang. CHUNK_8 routes this into the
+     * rotating log file.
+     */
+    const detail = (err as { detail?: string }).detail;
+    console.error(
+      '[aphub] database did not start:',
+      (err as Error)?.name ?? 'Error',
+      (err as Error)?.message ?? '',
+      detail ? `\n${detail}` : '',
+    );
+    setEngineState('unstable');
+  }
+}
+
+/**
+ * Stop the database child before the process goes away.
+ *
+ * `stop()` is a graceful `pg_ctl -m fast`, which checkpoints. Skipping it would leave the
+ * cluster to crash-recover on next launch — survivable, but it turns a one-second start into
+ * a visibly slow one, and it is exactly the shutdown path CHUNK_8's reboot drill exercises.
+ */
+async function stopDatabase(): Promise<void> {
+  const running = database;
+  database = null;
+  if (running === null) return;
+  try {
+    /**
+     * Bounded. `pg_ctl -m fast` normally returns in well under a second, but quit must not
+     * be able to hang on it: a stuck shutdown would leave the single-instance lock held and
+     * the app unable to start again. Crash recovery on the next launch is a far cheaper
+     * failure than an app that will not reopen.
+     */
+    await Promise.race([
+      running.postgres.stop(),
+      new Promise((resolve) => setTimeout(resolve, 15_000)),
+    ]);
+  } catch {
+    // Already gone, or refusing to stop. Nothing further is safe to do during teardown, and
+    // the cluster recovers on next launch.
+  }
+}
+
+/** Quit stops all children. CHUNK_8 adds the supervised engine teardown alongside this. */
 function quitApp(): void {
   quitting = true;
   app.quit();
@@ -168,7 +239,14 @@ function registerShellHandlers(): void {
   };
 
   handle('aphub:shell:version', () => ({ version: app.getVersion() }));
-  handle('aphub:shell:status', () => ({ engine: engineState, label: engineStateLabel(engineState) }));
+  handle('aphub:shell:status', () => ({
+    engine: engineState,
+    label: engineStateLabel(engineState),
+    // Words only. The port, the connection string and the password never cross the bridge —
+    // `ready` is the entire truth the renderer is entitled to about the database.
+    database: database === null ? 'unavailable' : 'ready',
+    problem: databaseProblem,
+  }));
 }
 
 /**
@@ -186,6 +264,9 @@ if (!app.requestSingleInstanceLock()) {
     registerShellHandlers();
     mainWindow = createWindow();
     createTray();
+    // Not awaited: the window and tray must appear immediately, showing DB_STARTING, rather
+    // than the app looking dead for the ~13 s a first-launch `initdb` takes.
+    void startDatabaseSupervised();
   });
 
   // Closing every window does NOT quit: the engine keeps processing from the tray.
@@ -193,8 +274,18 @@ if (!app.requestSingleInstanceLock()) {
 
   app.on('activate', () => showWindow());
 
-  app.on('before-quit', () => {
+  /**
+   * Hold the quit open until the database has checkpointed. `before-quit` is the last point
+   * at which an async teardown can still run; `will-quit` fires too late for a child that
+   * needs a graceful stop. The re-entry guard is what stops `app.quit()` here from looping.
+   */
+  let stopping = false;
+  app.on('before-quit', (event) => {
     quitting = true;
+    if (stopping || database === null) return;
+    stopping = true;
+    event.preventDefault();
+    void stopDatabase().finally(() => app.quit());
   });
 
   /**

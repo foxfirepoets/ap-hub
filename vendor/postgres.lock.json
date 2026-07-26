@@ -1,0 +1,22 @@
+{
+  "note": "Pinned PostgreSQL bundle. Regenerate with: node scripts/bundle-postgres.mjs --update-lock",
+  "source": {
+    "version": "16.10-1",
+    "url": "https://get.enterprisedb.com/postgresql/postgresql-16.10-1-windows-x64-binaries.zip",
+    "archive": "postgresql-16.10-1-windows-x64-binaries.zip",
+    "sha256": "ebb3b6af4fa69dea9951b66855bc4d42dc04e56ccb9aa7024ce3c58bd89d6b0c"
+  },
+  "keepTopLevel": [
+    "bin",
+    "lib",
+    "share"
+  ],
+  "dropSuffixes": [
+    ".pdb"
+  ],
+  "tree": {
+    "treeSha256": "b1eae8561526d38b6a58ccb4f43efa4e80c1c402a92a9441468a7452e288736c",
+    "fileCount": 1631,
+    "totalBytes": 125898162
+  }
+}

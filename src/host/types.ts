@@ -80,9 +80,31 @@ export interface PortProbe {
 
 export interface HostAdapter {
   readonly os: OsId;
+  /**
+   * The value this OS writes to `install.json.platform` and `local_install.platform`.
+   * Lives here so core modules can persist the field without naming an operating system.
+   */
+  readonly persistedPlatform: PersistedPlatform;
+  /**
+   * Filename suffix for a bundled executable (`.exe` on Windows, empty elsewhere). The
+   * database runtime takes this as an option so `src/db/**` names no platform.
+   */
+  readonly exeSuffix: string;
   /** %LOCALAPPDATA%\APHub | ~/Library/Application Support/APHub — absolute, user-scoped. */
   dataDir(): string;
   logDir(): string;
+  /**
+   * Where the bundled PostgreSQL executables sit beneath a packaged resource root. The
+   * caller supplies the root because only the shell knows whether it is running packaged
+   * or from a developer checkout; the adapter knows only the layout beneath it.
+   */
+  postgresBinDir(resourceRoot: string): string;
+  /**
+   * Stable identifier for the OS account that owns this install — the Windows SID or the
+   * macOS UID. CHUNK_4 makes this the product's identity anchor; CHUNK_2 records it in
+   * `install.json` so a later account mismatch can fail closed.
+   */
+  osAccountId(): Promise<string>;
   secretStore: SecretStore;
   spawnChild(spec: ChildSpec): ChildHandle;
   /** Task Scheduler task | LaunchAgent — non-elevated. */

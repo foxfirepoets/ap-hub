@@ -213,12 +213,29 @@ const windowsFsPermissions: FsPermissions = {
 
 const TASK_NAME = 'APHubWatchdog';
 
+/**
+ * The account's SID rather than its name. A Windows account can be renamed; its SID cannot,
+ * so the SID is the only identifier that stays true across a rename and therefore the only
+ * one an ownership check may fail closed on.
+ */
+async function windowsAccountId(): Promise<string> {
+  const sid = await runPowerShell(
+    '[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value',
+  );
+  if (!/^S-1-[0-9-]+$/.test(sid)) throw new Error('OS_ACCOUNT_ID_UNAVAILABLE');
+  return sid;
+}
+
 export function createWindowsHostAdapter(): HostAdapter {
   const secretStore = new WindowsCredentialManagerSecretStore();
   return {
     os: 'windows',
+    persistedPlatform: 'win32',
+    exeSuffix: '.exe',
     dataDir: appDataDir,
     logDir: () => join(appDataDir(), 'logs'),
+    postgresBinDir: (resourceRoot: string) => join(resourceRoot, 'pgsql', 'bin'),
+    osAccountId: windowsAccountId,
     secretStore,
     fsPermissions: windowsFsPermissions,
 

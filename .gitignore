@@ -3,9 +3,10 @@ node_modules/
 .pnp
 .pnp.js
 
-# Build output
-dist/
-build/
+# Build output. ANCHORED to the repository root: an unanchored `build/` also matches
+# `docs/build/`, which silently excluded the build-coordination registries.
+/dist/
+/build/
 *.tsbuildinfo
 
 # Electron shell build + packaged installers (CHUNK_1_SHELL / CHUNK_9_PACKAGE)
@@ -30,6 +31,13 @@ coverage/
 
 # Local Postgres data (if run locally)
 pgdata/
+
+# Bundled PostgreSQL runtime (CHUNK_2_DATABASE). 120 MB of third-party binaries rebuilt by
+# `node scripts/bundle-postgres.mjs`; the LOCK FILE is tracked so the pin and the expected
+# tree fingerprint are reviewable, the binaries themselves are not.
+vendor/pgsql/
+vendor/.cache/
+!vendor/postgres.lock.json
 
 # OS / editor
 .DS_Store

@@ -2,26 +2,54 @@
 
 **Current Iteration:** 1
 
-Current chunk: CHUNK_2_DATABASE
-Current task: 3 of 5 (tasks 1 and 3 done in part; see below)
-Last completed: CHUNK_2 migrations 014/015 + port probe + Open Question 1 spike
-Status: IN_PROGRESS — CHUNK_2 promise NOT appended, chunk is incomplete
+Current chunk: CHUNK_3_IPC
+Current task: 1 of 5
+Last completed: **CHUNK_2_DATABASE — complete.** Bundled PostgreSQL 16.10 starts under a real
+Electron process, initialises a private cluster, migrates itself and records `install.json`.
+Status: CHUNK_2 promise appended. CHUNK_3 not started.
 
-### CHUNK_2 remaining work — pick up here
+### CHUNK_2 — closed, with evidence
 
-- [ ] Bundle the chosen PostgreSQL (candidate A: official binaries) and write a trim script
-      that reproduces the bin+lib+share subset. Do not hand-curate the directory.
-- [ ] Start PostgreSQL as a supervised child on a private data directory, using
-      `probeFreePort()` from `src/db/bootstrap.ts`. Never connect to 5432.
-- [ ] Write the probed port to `install.json` and to `local_install.db_port`.
-- [ ] Run migrations automatically at launch (the runner already wraps each migration in a
-      transaction — `src/db/migrate.ts:48` — so the fail-usable property is already there).
-- [ ] Source a relocatable macOS PostgreSQL 16. **Cannot be validated here** — no macOS machine.
+All acceptance criteria met and evidenced against a REAL server, not mocks:
 
-Useful local fixture: this machine already runs PostgreSQL on **both** 5432 (scoop) and 55432
-(the archived build's bundled instance at `%LOCALAPPDATA%\APHub\bin\pgsql`, PG 16.4). The
-occupied-5432 and occupied-55432 collision cases the spec requires can be exercised for real
-here rather than simulated.
+- Bundle: `scripts/bundle-postgres.mjs` downloads the pinned official archive, verifies its
+  SHA-256, trims to `bin`+`lib`+`share` and fingerprints the tree. 120.1 MB / 1631 files.
+  `vendor/postgres.lock.json` is tracked; the binaries are not. `--verify-only` reproduces the
+  same tree hash.
+- Port: probe resolved to **55433** on this machine — upward past a genuinely occupied 55432,
+  which is the spec's collision edge case exercised for real rather than simulated. 5432 stayed
+  up and untouched throughout.
+- Password: generated per install, stored in Windows Credential Manager at
+  `APHub/database/superuser` **before** `initdb` runs, and never written to `install.json`.
+- Interrupted initialisation is recoverable: a sentinel beside the data directory distinguishes
+  our own half-written attempt (clear and retry) from somebody else's data (refuse, non-
+  destructively). `initialise()` previously DOCUMENTED that refusal without implementing it.
+- Migrations run automatically at launch; a fresh directory reaches head (014 + 015 applied).
+
+Measured on this machine: first launch 13.9 s (initdb-dominated), warm start ~1 s — consistent
+with the spike's 12.8 s / 0.7 s.
+
+### Two defects found only because the proof used a real process
+
+1. **`initdb` was handed a password file INSIDE the data directory.** `initdb` refuses a
+   non-empty target, so initialisation could never have succeeded. Pre-existing; invisible to
+   unit tests because they mocked `execFile`. Fixed: the file is written beside the directory.
+2. **`app.getAppPath()` is not the checkout root.** Electron sets it to the directory holding
+   the entry script, so the bundled runtime was looked for at `dist-desktop/pgsql/bin`. Fixed:
+   the root is derived from the module's own location. Regression test in
+   `test/desktop-packaging.test.ts`.
+
+Both were reported identically — "initdb.exe failed", empty stderr — because `run()` discarded
+stderr. `PostgresStartFailed` now carries a non-user-facing `detail`, and the shell checks the
+executable exists before trying to run it.
+
+### Also fixed: the boot screen could not report failure
+
+`desktop/boot.html` was static markup reading "AP-Hub is starting up". When the database failed
+it said that forever, with no explanation and no next action — the dead end the guardrails
+forbid. It now subscribes to `aphub:status:engine` and renders running / paused / unstable with
+the shell's plain-language sentence. External `boot.js`, because the renderer CSP is
+`script-src 'self'`.
 
 ## Instructions for ralph
 

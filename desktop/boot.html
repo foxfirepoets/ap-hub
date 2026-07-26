@@ -50,9 +50,13 @@
   </head>
   <body>
     <main>
-      <h1>AP-Hub is starting up.</h1>
-      <p class="detail">This only takes a moment the first time. Your information is safe.</p>
-      <div class="bar" role="progressbar" aria-label="AP-Hub is starting up"></div>
+      <h1 id="boot-heading" aria-live="polite">AP-Hub is starting up.</h1>
+      <p id="boot-detail" class="detail" aria-live="polite">
+        This only takes a moment the first time. Your information is safe.
+      </p>
+      <div id="boot-bar" class="bar" role="progressbar" aria-label="AP-Hub is starting up"></div>
     </main>
+    <!-- External file, not inline: the renderer CSP is `script-src 'self'`. -->
+    <script src="boot.js"></script>
   </body>
 </html>
