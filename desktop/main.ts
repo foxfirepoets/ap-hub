@@ -60,8 +60,13 @@ function exportedRendererRoot(): string | null {
   return isFile(join(root, 'index.html')) ? root : null;
 }
 
+/** The shell's own startup screen, addressed by its literal path on disk. */
+function startupScreen(): string {
+  return pathToFileURL(join(HERE, 'boot.html')).toString();
+}
+
 /**
- * The renderer entry — an address inside the exported tree, not a disk path.
+ * The app itself — an address inside the exported tree, not a disk path.
  *
  * The ROOT-relative form is not a stylistic choice. The exported pages name their own scripts and
  * styles root-relatively, so the whole document tree has to share one root, and that root is the
@@ -71,18 +76,85 @@ function exportedRendererRoot(): string | null {
  * Which address: the screen the person will actually be looking at. The exported root
  * (`out/index.html`) is only a forwarding stub — it holds no screen of its own and sends the window
  * on to Today, which sends it on again to sign-in when nobody is signed in. Opening straight at the
- * destination costs two fewer full page loads on every cold start, and it makes startup a SINGLE
- * navigation, which is what `e2e-desktop/shell.spec.ts` needs to be able to inspect the window at
- * all — three of its assertions were lost to a context destroyed mid-redirect. The stub still works
- * and is still proved to (`e2e-desktop/renderer.spec.ts`); it is simply not where startup begins.
+ * destination costs two fewer full page loads, and it keeps the hand-over a SINGLE navigation. The
+ * stub still works and is still proved to (`e2e-desktop/renderer.spec.ts`); it is simply not where
+ * the window is pointed.
+ */
+function appEntry(): string {
+  return hasSession() ? 'file:///today' : 'file:///login';
+}
+
+/**
+ * The two states in which the startup screen — not the app — is the right thing to be looking at.
  *
- * Without the export — a checkout where `npm run web:build` has not run — the shell falls back to
- * its own plain-language boot page, which is also the surface the happy path shows while the
- * database comes up.
+ * `unstable` is the load-bearing one. It is the state CHUNK_2's boot screen was built for: the
+ * database did not come up, and the person needs the sentence saying so and what to do next. Show
+ * them the app instead and they get a working-looking product with no information in it and no
+ * explanation — the dead end the guardrails forbid, and the exact defect that fix removed.
+ */
+function isStartupSurfaceState(state: EngineState): boolean {
+  return state === 'starting' || state === 'unstable';
+}
+
+/**
+ * What a newly created window opens.
+ *
+ * A window created during startup gets the startup screen; one reopened from the tray after the
+ * database is already up goes straight to the app, because the startup screen has no job left.
+ * Without an export at all — a checkout where `npm run web:build` has not run — the startup screen
+ * is all there is.
  */
 function rendererEntry(): string {
-  if (exportedRendererRoot() === null) return pathToFileURL(join(HERE, 'boot.html')).toString();
-  return hasSession() ? 'file:///today' : 'file:///login';
+  if (exportedRendererRoot() === null) return startupScreen();
+  return isStartupSurfaceState(engineState) ? startupScreen() : appEntry();
+}
+
+/**
+ * How long "AP-Hub is ready." stays on screen before the window hands over to the app.
+ *
+ * A beat, not a delay. This is the one moment AP-Hub tells the person their private database came
+ * up and their information is safe, and a message shown for zero frames has not been shown. It also
+ * makes the hand-over an observable step rather than a flicker, which is what lets
+ * `e2e-desktop/database.spec.ts` — CHUNK_2's proof, and not editable — still see the startup screen
+ * reach its ready state. That test polls the shell once a second, so the beat has to outlast a poll
+ * interval by a clear margin; three seconds gives it two.
+ */
+const READY_BEAT_MS = 3000;
+
+let handOverTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** True while the window is still showing the shell's own startup screen. */
+function isShowingStartupScreen(win: BrowserWindow): boolean {
+  return win.webContents.getURL().startsWith(startupScreen());
+}
+
+/**
+ * Replace the startup screen with the app, once.
+ *
+ * Every condition is re-checked at the moment of the swap rather than when it was scheduled: the
+ * window may have gone, the engine may have fallen back to a state that needs the startup screen,
+ * or the window may already have been navigated somewhere. In each case the right move is to leave
+ * it alone.
+ */
+function handOverToApp(): void {
+  handOverTimer = null;
+  const win = mainWindow;
+  if (win === null || win.isDestroyed()) return;
+  if (exportedRendererRoot() === null) return;
+  if (isStartupSurfaceState(engineState)) return;
+  if (!isShowingStartupScreen(win)) return;
+  void win.loadURL(appEntry());
+}
+
+function scheduleHandOverToApp(): void {
+  if (handOverTimer !== null) return;
+  handOverTimer = setTimeout(handOverToApp, READY_BEAT_MS);
+}
+
+function cancelHandOverToApp(): void {
+  if (handOverTimer === null) return;
+  clearTimeout(handOverTimer);
+  handOverTimer = null;
 }
 
 /**
@@ -211,6 +283,9 @@ function setEngineState(state: EngineState): void {
     label: engineStateLabel(state),
     problem: databaseProblem,
   });
+  // The database is up: let the ready message be read, then show the app. A failed start
+  // deliberately schedules nothing — the startup screen stays, carrying the explanation.
+  if (state === 'running') scheduleHandOverToApp();
 }
 
 function refreshTrayMenu(): void {
@@ -305,6 +380,7 @@ async function stopDatabase(): Promise<void> {
 /** Quit stops all children. CHUNK_8 adds the supervised engine teardown alongside this. */
 function quitApp(): void {
   quitting = true;
+  cancelHandOverToApp();
   app.quit();
 }
 
@@ -383,6 +459,7 @@ if (!app.requestSingleInstanceLock()) {
   let stopping = false;
   app.on('before-quit', (event) => {
     quitting = true;
+    cancelHandOverToApp();
     if (stopping || database === null) return;
     stopping = true;
     event.preventDefault();
