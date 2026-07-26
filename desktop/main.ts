@@ -9,14 +9,17 @@
  * `./security.js`, which the validation gate asserts directly. This file is wiring.
  */
 
-import { app, BrowserWindow, Menu, Tray, ipcMain, shell, session, nativeImage } from 'electron';
-import { existsSync } from 'node:fs';
+import { app, BrowserWindow, Menu, Tray, ipcMain, protocol, shell, session, nativeImage } from 'electron';
+import { statSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { isAllowedChannel, isAllowedExternalUrl, isAllowedNavigation } from './channels.js';
 import { RENDERER_WEB_PREFERENCES, RENDERER_CSP } from './security.js';
+import { contentTypeFor, resolveRendererRequest } from './renderer.js';
 import { engineStateLabel, type EngineState } from './status.js';
 import { startDatabase, describeDatabaseFailure, type StartedLocalDatabase } from './database.js';
+import { hasSession } from './ipc/context.js';
 import { registerProductHandlers } from './ipc/dispatcher.js';
 import { READ_CHANNELS } from './ipc/read/channels.js';
 import { READ_ENTRIES } from './ipc/read/index.js';
@@ -35,15 +38,160 @@ let database: StartedLocalDatabase | null = null;
 /** The last plain-language database problem, if any. Never a code or a stack trace. */
 let databaseProblem: string | null = null;
 
+/** True only for a real file. Injected into the pure resolver so it stays testable. */
+function isFile(path: string): boolean {
+  try {
+    return statSync(path).isFile();
+  } catch {
+    return false;
+  }
+}
+
 /**
- * The renderer entry. CHUNK_3 static-exports the React tree to `out/`; until then the shell
- * loads its own plain-language boot page, which is also the `DB_STARTING` surface the happy
- * path shows while the engine and database come up.
+ * Root of the statically exported React tree, or null when it has not been built.
+ *
+ * Development deliberately does NOT use `app.getAppPath()` — Electron sets that to the directory
+ * containing the entry script, so launching `electron dist-desktop/main.mjs` makes it
+ * `<root>/dist-desktop` and `out/` would be looked for one level too deep. This mirrors
+ * `resourceRoot()` in ./database.ts, which was corrected for exactly the same reason.
+ */
+function exportedRendererRoot(): string | null {
+  const root = join(app.isPackaged ? app.getAppPath() : dirname(HERE), 'out');
+  return isFile(join(root, 'index.html')) ? root : null;
+}
+
+/** The shell's own startup screen, addressed by its literal path on disk. */
+function startupScreen(): string {
+  return pathToFileURL(join(HERE, 'boot.html')).toString();
+}
+
+/**
+ * The app itself — an address inside the exported tree, not a disk path.
+ *
+ * The ROOT-relative form is not a stylistic choice. The exported pages name their own scripts and
+ * styles root-relatively, so the whole document tree has to share one root, and that root is the
+ * exported renderer. Opening a page by its literal disk path instead leaves every one of those
+ * references pointing at the root of the drive, where nothing lives.
+ *
+ * Which address: the screen the person will actually be looking at. The exported root
+ * (`out/index.html`) is only a forwarding stub — it holds no screen of its own and sends the window
+ * on to Today, which sends it on again to sign-in when nobody is signed in. Opening straight at the
+ * destination costs two fewer full page loads, and it keeps the hand-over a SINGLE navigation. The
+ * stub still works and is still proved to (`e2e-desktop/renderer.spec.ts`); it is simply not where
+ * the window is pointed.
+ */
+function appEntry(): string {
+  return hasSession() ? 'file:///today' : 'file:///login';
+}
+
+/**
+ * The two states in which the startup screen — not the app — is the right thing to be looking at.
+ *
+ * `unstable` is the load-bearing one. It is the state CHUNK_2's boot screen was built for: the
+ * database did not come up, and the person needs the sentence saying so and what to do next. Show
+ * them the app instead and they get a working-looking product with no information in it and no
+ * explanation — the dead end the guardrails forbid, and the exact defect that fix removed.
+ */
+function isStartupSurfaceState(state: EngineState): boolean {
+  return state === 'starting' || state === 'unstable';
+}
+
+/**
+ * What a newly created window opens.
+ *
+ * A window created during startup gets the startup screen; one reopened from the tray after the
+ * database is already up goes straight to the app, because the startup screen has no job left.
+ * Without an export at all — a checkout where `npm run web:build` has not run — the startup screen
+ * is all there is.
  */
 function rendererEntry(): string {
-  const exported = join(app.getAppPath(), 'out', 'index.html');
-  if (existsSync(exported)) return exported;
-  return join(HERE, 'boot.html');
+  if (exportedRendererRoot() === null) return startupScreen();
+  return isStartupSurfaceState(engineState) ? startupScreen() : appEntry();
+}
+
+/**
+ * How long "AP-Hub is ready." stays on screen before the window hands over to the app.
+ *
+ * A beat, not a delay. This is the one moment AP-Hub tells the person their private database came
+ * up and their information is safe, and a message shown for zero frames has not been shown. It also
+ * makes the hand-over an observable step rather than a flicker, which is what lets
+ * `e2e-desktop/database.spec.ts` — CHUNK_2's proof, and not editable — still see the startup screen
+ * reach its ready state. That test polls the shell once a second, so the beat has to outlast a poll
+ * interval by a clear margin; three seconds gives it two.
+ */
+const READY_BEAT_MS = 3000;
+
+let handOverTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** True while the window is still showing the shell's own startup screen. */
+function isShowingStartupScreen(win: BrowserWindow): boolean {
+  return win.webContents.getURL().startsWith(startupScreen());
+}
+
+/**
+ * Replace the startup screen with the app, once.
+ *
+ * Every condition is re-checked at the moment of the swap rather than when it was scheduled: the
+ * window may have gone, the engine may have fallen back to a state that needs the startup screen,
+ * or the window may already have been navigated somewhere. In each case the right move is to leave
+ * it alone.
+ */
+function handOverToApp(): void {
+  handOverTimer = null;
+  const win = mainWindow;
+  if (win === null || win.isDestroyed()) return;
+  if (exportedRendererRoot() === null) return;
+  if (isStartupSurfaceState(engineState)) return;
+  if (!isShowingStartupScreen(win)) return;
+  void win.loadURL(appEntry());
+}
+
+function scheduleHandOverToApp(): void {
+  if (handOverTimer !== null) return;
+  handOverTimer = setTimeout(handOverToApp, READY_BEAT_MS);
+}
+
+function cancelHandOverToApp(): void {
+  if (handOverTimer === null) return;
+  clearTimeout(handOverTimer);
+  handOverTimer = null;
+}
+
+/**
+ * Serve the exported renderer over the built-in `file:` scheme.
+ *
+ * No new scheme is registered and no security setting is relaxed: `isAllowedNavigation` still
+ * accepts `file:` and nothing else, and the window keeps context isolation, the sandbox and the
+ * no-remote-origin policy. All this changes is WHICH file answers a given address — see
+ * ./renderer.ts for the rules, which are asserted directly by the gate.
+ */
+function serveExportedRenderer(): void {
+  const outDir = exportedRendererRoot();
+  protocol.handle('file', async (request) => {
+    const resolution = resolveRendererRequest(new URL(request.url).pathname, outDir, isFile);
+    if (resolution.kind === 'missing') {
+      // Answered as missing rather than substituted with a page: the renderer's own router
+      // depends on a missing data address failing so it falls back to a full page load.
+      return new Response(null, { status: 404 });
+    }
+    let body: Buffer;
+    try {
+      body = await readFile(resolution.path);
+    } catch {
+      // Unreadable between the existence check and the read. Answered as missing rather than left
+      // to reject: an unhandled rejection here would fail the request with nothing in the log.
+      return new Response(null, { status: 404 });
+    }
+    return new Response(body, {
+      status: 200,
+      headers: {
+        'content-type': contentTypeFor(resolution.path),
+        // Also applied to every response by `applyContentSecurityPolicy`. Repeated here so a
+        // response this handler produces carries the policy on its own account.
+        'Content-Security-Policy': RENDERER_CSP,
+      },
+    });
+  });
 }
 
 /** Apply the CSP to every response in the app's session. No remote origin is named. */
@@ -111,7 +259,7 @@ function createWindow(): BrowserWindow {
     mainWindow = null;
   });
 
-  void win.loadFile(rendererEntry());
+  void win.loadURL(rendererEntry());
   return win;
 }
 
@@ -135,6 +283,9 @@ function setEngineState(state: EngineState): void {
     label: engineStateLabel(state),
     problem: databaseProblem,
   });
+  // The database is up: let the ready message be read, then show the app. A failed start
+  // deliberately schedules nothing — the startup screen stays, carrying the explanation.
+  if (state === 'running') scheduleHandOverToApp();
 }
 
 function refreshTrayMenu(): void {
@@ -229,6 +380,7 @@ async function stopDatabase(): Promise<void> {
 /** Quit stops all children. CHUNK_8 adds the supervised engine teardown alongside this. */
 function quitApp(): void {
   quitting = true;
+  cancelHandOverToApp();
   app.quit();
 }
 
@@ -266,6 +418,7 @@ if (!app.requestSingleInstanceLock()) {
   void app.whenReady().then(() => {
     applyContentSecurityPolicy();
     denyAllPermissions();
+    serveExportedRenderer();
     registerShellHandlers();
     /*
      * CHUNK_3_IPC. `databaseState` is read per call rather than captured, so a database that
@@ -306,6 +459,7 @@ if (!app.requestSingleInstanceLock()) {
   let stopping = false;
   app.on('before-quit', (event) => {
     quitting = true;
+    cancelHandOverToApp();
     if (stopping || database === null) return;
     stopping = true;
     event.preventDefault();

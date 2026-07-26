@@ -105,13 +105,22 @@ new `PageClient.tsx`. Measured against `53c4d9b`:
 The rejected alternative for the record: the server-wrapper split reaches the same outcome with
 386 deletions and three new 80–170-line files. Same behaviour, far worse reviewability.
 
-**Still open — `[UNVERIFIED in real Electron]`:** the `file://` path interception that serves the
-exported sentinel HTML for an arbitrary `/statements/<id>` path is **not yet built**.
-`desktop/main.ts` currently does a single fixed `win.loadFile(rendererEntry())` with no protocol
-interception. The client-hydration half — the part actually in question — was proved through an
-HTTP stand-in serving the identical exported artifacts, which is protocol-agnostic browser
-behaviour. The Electron wiring must still be built and proved end-to-end under a real Electron
-process before CHUNK_3 closes.
+**CLOSED 2026-07-26 — `[VERIFIED in real Electron]`.** The `file://` interception is built
+(`desktop/renderer.ts` for the rules, `serveExportedRenderer()` in `desktop/main.ts` for the
+wiring) and proved by `e2e-desktop/renderer.spec.ts` against a real Electron process: navigating to
+`/statements/424242`, `/transactions/999123` and `/settings/tax-mapping/919191` is answered 200 with
+that family's exported sentinel page, the address is preserved, and the page then calls
+`aphub:{statements,transactions,tax-mappings}:get` with the **runtime** id — observed at the main
+process, whose stub for that channel is the only thing the test adds. The sentinel document and every
+script it loads contain the sentinel and never the runtime id, so the id can only have come from the
+address. 13 desktop Playwright tests pass; `npx playwright test --project=desktop` exits 0.
+
+As built, the page diff is **+5/-1 in each of the three pages** (15 insertions, 3 deletions), two
+insertions per page being the comment explaining why the address is read instead of the route
+parameter; the semantic change is the two lines §5a predicted. The three new layouts are 14 lines
+each. Zero `href` / `router.push` call sites changed, as forecast.
+
+Findings the HTTP stand-in could not have produced are recorded as §7.
 
 ### 5b. There are 54 route handlers, not 52
 
@@ -184,3 +193,80 @@ together:
 5. Capture the zero-AP-Hub-origin network trace.
 
 Until all five land, CHUNK_3 is **incomplete** and its promise line must not be appended.
+
+**Status 2026-07-26:** items 1, 2 and 3 are done (see §7). Items 4 and 5 are open — the 24 journeys
+in `e2e/app.spec.ts` are deliberately left failing for the agent that migrates them, so
+`npm run verify` still exits 1 at Playwright and CHUNK_3 is still incomplete.
+
+## 7. CHUNK_3 — three things only a real Electron window revealed
+
+The static export and the `file://` interception landed together. Three departures were forced by
+evidence, and none of them was foreseeable from the spike, whose HTTP stand-in could not have
+produced any of them.
+
+### 7a. The exported pages carried inline scripts the window's script policy refuses
+
+`RENDERER_CSP` is `script-src 'self'` (`desktop/security.ts`), and its comment is explicit that
+"scripts get no such latitude". The exported pages, however, carry their startup data — the router
+tree, the redirect, the flight payload — in **inline `<script>` blocks**: five per page, 80 across
+the 16 pages. Under the policy every one of them is refused. Proved in a real window: the console
+showed `Refused to execute inline script` five times per page, `self.__next_f` stayed empty, nothing
+hydrated, and the app was dead static markup. **A browser stand-in without the app's CSP cannot see
+this at all**, which is exactly why the spike did not.
+
+The two available fixes are not equivalent:
+
+| Fix | Verdict |
+|---|---|
+| add `'unsafe-inline'` to `script-src` | **refused** — bends the control that stops rendered invoice/email content becoming executable |
+| name each block's digest in the policy | **refused** — ~80 digests regenerated per build; drift silently blanks the window |
+| externalize each block to a content-addressed file | **chosen** — artifacts conform to the policy instead |
+
+`scripts/externalize-inline-scripts.mjs` (wired into `npm run web:build`) writes each inline block to
+`out/_next/static/inline/<sha256-of-its-contents>.js` and rewrites the tag to a plain reference. It
+is idempotent, collapses the blocks pages share (80 → 39 files), and leaves `RENDERER_CSP` **byte
+for byte unchanged**. The invariant it creates is asserted twice: `test/desktop-renderer.test.ts`
+and `e2e-desktop/renderer.spec.ts` both fail if any exported page regains an inline script.
+
+### 7b. `connect-src 'none'` sends every in-app navigation down the full-page-load path
+
+Also visible only in a real window: the page router tries to fetch `<address>.txt?_rsc=…` before
+navigating, and `connect-src 'none'` refuses it — so the router falls back to a browser navigation
+every time. That is **correct and load-bearing**, not a defect: the fallback is the path the
+interception serves, and it is why the interception had to exist rather than being optional. The
+consequence for the resolver is that a request naming a file must be answered as MISSING and never
+substituted with a page, or the fallback never happens. Asserted in both new test files.
+
+### 7c. `rendererEntry()` opens the destination screen, not the exported root
+
+The task's literal wording was to point `rendererEntry()` at `out/index.html`. It points at
+`file:///login` instead (`file:///today` once a session is held — `hasSession()`), because
+`out/index.html` holds no screen: `app/page.tsx` is `redirect('/today')`, which the export turns into
+a forwarding stub, and Today then forwards again to sign-in when nobody is signed in. Three full page
+loads to show one screen.
+
+That is a cost, but the deciding evidence is stronger: the redirect chain **broke five assertions in
+`e2e-desktop/shell.spec.ts`** with `Execution context was destroyed, most likely because of a
+navigation`. That file may not be edited, and it was right — a startup that renavigates twice is a
+startup nothing can inspect. Entering at the destination makes startup a single navigation. The
+exported root still works and is still proved to (`renderer.spec.ts` navigates to `file:///` and
+asserts it lands on Today), it is simply not where startup begins.
+
+### 7d. Three test files stopped importing route handlers
+
+`test/bank-statement-api.test.ts` and `test/provider-durable-jobs.test.ts` imported four of the
+deleted route handlers; `test/reply-drafts-api.test.ts` scanned two of them for a send call. None is
+a listed safety test, and none lost an assertion: the two importers now compose the same `runRead` /
+`requireSession` one-liners the deleted handlers contained, verbatim, so every RBAC, tenant-isolation
+and 401/403/404/409 case still runs against the real `src/**` code; the send scan now reads the IPC
+modules that replaced the routes (`desktop/ipc/{read/reply-drafts,action/replyDrafts}.ts`) rather
+than shrinking to the two files that survived. Test count went 1535 → 1557, files 75 → 76.
+
+**One item for the journey-migration agent.** `e2e/app.spec.ts:287` ("reply draft surface contains no
+transmission control or provider-send source path") was one of the two chromium journeys still
+passing, because it reads source rather than driving a UI. It now fails for a DIFFERENT reason from
+the other 22: `ENOENT ... app\api\reply-drafts\route.ts` at `app.spec.ts:303`. Its `sourceFiles` list
+(lines 300–301) names two of the deleted route handlers and needs the same substitution already
+applied in `test/reply-drafts-api.test.ts` — `desktop/ipc/read/reply-drafts.ts` and
+`desktop/ipc/action/replyDrafts.ts`. It is the one failure in that file that is not fixed by moving
+the journey to Electron. Chromium is now 23 of 24 red rather than 22 of 24; the extra one is this.

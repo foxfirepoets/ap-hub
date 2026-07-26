@@ -7,8 +7,39 @@ import {
   stableProviderJobKey,
 } from '../src/qbdesktop/durable-jobs.js';
 import { closeAll, createConnection, createTenant, createUser, resetTables } from './helpers.js';
-import { GET as listJobs } from '../app/api/provider-jobs/route.js';
-import { POST as retryJob } from '../app/api/provider-jobs/[id]/retry/route.js';
+import { AuthError, requireSession } from '../src/auth/guard.js';
+import { listProviderJobs, runRead } from '../src/services/read/index.js';
+import { errorResponse, jsonResponse, tokenFromRequest } from '../src/services/read/http.js';
+
+/**
+ * CHUNK_3_IPC deleted the thin `app/api/provider-jobs/**` route handlers — the desktop renderer
+ * reaches this list and this retry over IPC now. Their composition is reproduced here verbatim so
+ * the owner-only RBAC, the invalid-id rejection and the unsafe-retry 409 below keep running
+ * against the real `src/**` code unchanged.
+ */
+function listJobs(request: Request): Promise<Response> {
+  return runRead(request, (ctx) => listProviderJobs(ctx.tenantId), { role: ['owner_controller'] });
+}
+
+async function retryJob(
+  request: Request,
+  context: { params: Promise<{ id: string }> },
+): Promise<Response> {
+  try {
+    const actor = await requireSession(tokenFromRequest(request), 'owner_controller');
+    const { id } = await context.params;
+    const jobId = Number(id);
+    if (!Number.isInteger(jobId) || jobId <= 0) return errorResponse('INVALID_ID', 'invalid job id', 400);
+    const job = await new DurableProviderJobs().retry(actor.tenantId, jobId);
+    return job ? jsonResponse(job) : errorResponse('NOT_FOUND', 'not found', 404);
+  } catch (error) {
+    if (error instanceof AuthError) return errorResponse(error.code, error.message, error.status);
+    if (error instanceof UnsafeProviderJobRetryError) {
+      return errorResponse('UNSAFE_RETRY', error.message, 409);
+    }
+    return errorResponse('INTERNAL', 'retry failed', 500);
+  }
+}
 
 async function desktopConnection(tenantId: number, companyId: string): Promise<number> {
   const id = await createConnection(tenantId, {

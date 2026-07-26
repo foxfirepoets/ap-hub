@@ -30,7 +30,11 @@ function validationSummary(detail: Record<string, unknown>): string {
 export default function StatementDetailPage() {
   const me = useSession();
   const params = useParams<{ id: string }>();
-  const id = Number(params.id);
+  // The exported build bakes this address segment to a build-time placeholder, so it cannot be
+  // trusted here; the statement the person actually opened is named in the loaded address.
+  const id = Number(
+    typeof window === 'undefined' ? params.id : window.location.pathname.split('/').pop() ?? params.id,
+  );
   const mutable = canReview(me.role);
   const [detail, setDetail] = useState<StatementDetail | null>(null);
   const [error, setError] = useState<string | null>(null);

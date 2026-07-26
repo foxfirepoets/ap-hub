@@ -28,8 +28,7 @@
     "typecheck": "tsc --noEmit",
     "build": "tsc -p tsconfig.build.json",
     "web:dev": "next dev",
-    "web:start": "next start -p 3000 -H 127.0.0.1",
-    "web:build": "next build",
+    "web:build": "next build && node scripts/externalize-inline-scripts.mjs",
     "web:lint": "next lint",
     "e2e": "npm run test:ui-contract",
     "test:ui-contract": "npm run desktop:build && playwright test"
