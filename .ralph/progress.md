@@ -317,3 +317,97 @@ Correction to the record: `.ralph/state.md` previously claimed this promise line
 appended. It had not — the claim was stale, the underlying work was real. Fixed here.
 
 <promise>CHUNK COMPLETE: CHUNK_2_DATABASE</promise>
+
+### 2026-07-26 — CHUNK_3_IPC — CLOSED
+
+Closed by the integration orchestrator merging the final remainder from `agent/electron-renderer`
+(`ca39e25`, merging `de2c8c8`) on top of the already-merged IPC dispatcher/read/action/renderer-
+transport/contract-test work (`0ca28f2`, `c93e331`, `7a1f4a6`, `85fc2be`, `87517ce`).
+
+Final remainder closed:
+- All **54** route handlers deleted (52 `app/api/**` + 2 `app/oauth/*/callback`) — confirmed
+  `app/api` and `app/oauth` no longer exist anywhere in the tree.
+- Static export applied (`next.config.mjs` `output: 'export'`); the 3 runtime-id routes
+  (`statements/[id]`, `transactions/[id]`, `settings/tax-mapping/[id]`) resolve via the
+  sentinel-`layout.tsx` pattern (DEVIATIONS §5a option A) — 13 lines across 3 pages, 3 new
+  10-line layout files, zero `href`/`router.push` call sites changed.
+- `file://` path interception built in `desktop/main.ts` and proved under a **real** Electron
+  process: `e2e-desktop/renderer.spec.ts` shows `/statements/<id>`, `/transactions/<id>` and
+  `/settings/tax-mapping/<id>` each serving the exported placeholder page and resolving the real
+  runtime id — the `[UNVERIFIED in real Electron]` flag from the freeze is now closed.
+- The boot screen (`desktop/boot.html`) restored to subscribe to `aphub:status:engine`, with a
+  new `e2e-desktop/boot-failure.spec.ts` (4 tests) proving a database that will not start shows a
+  plain-language sentence with a next action, nothing technical reaches the screen, and the
+  window never hands over to the app.
+- All 24 legacy browser journeys from `e2e/app.spec.ts` migrated into `e2e-desktop/**`
+  (`today.spec.ts`, `exceptions.spec.ts`, `gmail-drafts.spec.ts`, `tax-mapping.spec.ts`,
+  `settings.spec.ts`, `statements.spec.ts`, `accessibility.spec.ts`), driving the real
+  Electron/IPC transport via `app.evaluate` + `ipcMain.handle` overrides instead of
+  `page.route` — no coverage dropped, no `fetch` fallback added. The one journey that inspected
+  source paths (`reply draft surface contains no transmission control...`) now inspects
+  `desktop/ipc/read/reply-drafts.ts` / `desktop/ipc/action/replyDrafts.ts` instead of the deleted
+  route files, same assertion.
+- `chromium` Playwright project, `scripts/serve-web-export.mts`, the `webServer` config block and
+  `package.json`'s `web:start` script all removed — one `desktop` project remains.
+- The renderer's zero-network-request property is asserted directly (`e2e-desktop/shell.spec.ts:94`,
+  now also implicitly exercised across all 24 migrated journeys since none of them can reach a
+  network origin through `window.aphub.invoke`).
+
+**Independent re-verification by the integration lead** (not the authoring agent's self-report —
+re-run personally, real captured exit codes, no piped `tail`):
+
+- `npm run lint`: exit 0. `npm run lint:noleak`: exit 0. `npm run typecheck`: exit 0.
+- `npm test`: exit 0 — **76 test files, 1557 tests** (was 75/1535 before this remainder; +1 file
+  for the DB-failure test).
+- `npm run web:build`: exit 0 — static export succeeds now that `app/api/**` is gone.
+- `npm run test:ui-contract` (desktop build + Playwright): exit 0 — **47 passed, 0 skipped, 0
+  failed** (23 pre-existing shell/renderer/database/boot-failure + 24 migrated journeys).
+- `git diff --stat checkpoint/chunk3-start-b68984c -- src/`: empty. `src/**` is byte-identical
+  through the entire chunk.
+- One genuine type defect caught independently: the agent's self-reported `typecheck: EXIT:0` was
+  real but incomplete evidence — `tsconfig.json`'s `include` never covered `e2e-desktop/**`, so a
+  real `TS2322` in the newly-migrated `gmail-drafts.spec.ts` (assigning `externalDraftId: null`
+  against an inferred `string` type) passed the project's own gate silently. Found via a scoped
+  ad hoc tsc check (temporary tsconfig extending the real one with `e2e-desktop/**` + `dom` lib,
+  deleted after use), fixed with a 1-line type-widen (`de2c8c8`), re-verified clean.
+
+**Read-only security verification (Kraken)** — 9 of 10 checks PASS with direct evidence (route
+deletion complete; IPC channels dispatch through the same `runRead`/`runAction` wrappers per
+`docs/build/route-to-service-map.md`; the reply recipient deny-list is 11 fields in both
+`src/services/action/index.ts` and `desktop/ipc/action/replies.ts`, with `test/ipc-action-domains.test.ts`
+running one `it.each` case per field; exactly one provider-send call site,
+`src/gmail/adapter.ts:131` inside `sendForward`, reachable only via `createLockedForwarder`,
+recipient bound at construction with no caller-supplied recipient parameter;
+`runMarkNotificationRead` still takes no role; no `min(1)` added to the write-gate strings;
+`desktop/ipc/read/channels.ts` and `action/channels.ts` are bare zero-import `as const` arrays).
+
+One safety test **was** touched — `test/desktop-shell.test.ts` (`a255ea2`): the exact-equality
+channel-list assertion widened from `toEqual([...SHELL_CHANNELS])` to
+`toEqual([...SHELL_CHANNELS, ...READ_CHANNELS, ...ACTION_CHANNELS])`. Judged acceptable: it stays
+exact `toEqual` (not loosened to `toContain` or a length check) and correctly reflects the 50
+channels CHUNK_3 legitimately added — the guarantee (the enumerated channel set is exactly what
+the test says it is) is unchanged, only the enumeration grew to match reality.
+
+**One finding recorded, not fixed, and deliberately NOT blocking this promise**: `src/index.ts` +
+`src/http.ts` are a pre-pivot HTTP service (binds `127.0.0.1`, registers `src/auth/routes.ts`'s
+OAuth callbacks and a QBO Desktop SOAP endpoint) that predates the Electron pivot (`e88a7e8`) and
+was never archived the way the hosted key broker was (`archive/pre-local-desktop-20260725/broker/**`).
+It is still wired to a live `npm run dev` script and exercised by `test/http-security.test.ts`.
+It is **not** reachable from the packaged Electron app — `desktop/main.ts` never imports
+`src/index.ts` — so it does not violate this chunk's acceptance criteria (the renderer's
+zero-network-request property, proved above). But it does mean the broader claim "no product HTTP
+listener remains" is true of the shipped binary and not true of the repo as a whole. Two
+architecture docs (`docs/audits/architecture-map-2026-07-17.md`,
+`docs/audits/architecture-map-2026-07-25.md`) still describe it as live current architecture.
+**Recommended disposition**: archive `src/index.ts` + `src/http.ts` alongside the broker in
+CHUNK_6_CLEANUP (which already owns "remove every hosted dependency and technical surface the
+user could ever see"), or explicitly document why it is deliberately kept and repoint the two
+architecture docs. Not CHUNK_3's scope; tracked here so it is not silently lost.
+
+Standing environment blockers restated (not dropped): no macOS machine, no signing identities, no
+clean VMs — every "on both platforms" claim above is Windows-only evidenced.
+
+Locked forwarder: **exactly one** provider-send call site. Not zero. Merge commit: `ca39e25`
+on `feat/local-desktop-p1`, pushed to `origin/feat/local-desktop-p1`.
+
+<promise>CHUNK COMPLETE: CHUNK_3_IPC</promise>

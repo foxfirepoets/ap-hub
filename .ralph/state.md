@@ -2,13 +2,18 @@
 
 **Current Iteration:** 1
 
-Current chunk: CHUNK_3_IPC
-Current task: 1 of 5
-Last completed: **CHUNK_2_DATABASE — complete.** Bundled PostgreSQL 16.10 starts under a real
-Electron process, initialises a private cluster, migrates itself and records `install.json`.
-Status: CHUNK_2 promise appended to `.ralph/progress.md` on 2026-07-26 (it was claimed here
-earlier than it was actually written — the work was real, the record was not; corrected).
-CHUNK_3 in progress: interfaces frozen, `agent/ipc-foundation` active.
+Current chunk: CHUNK_4_IDENTITY
+Current task: not started
+Last completed: **CHUNK_3_IPC — complete and CLOSED 2026-07-26.** Merge commit `ca39e25` on
+`feat/local-desktop-p1`, pushed. All 54 routes deleted, static export live, `file://`
+interception proved under real Electron, all 24 legacy journeys migrated to `e2e-desktop/**`
+over real IPC, chromium project removed. Independently re-verified by the integration
+orchestrator (not agent self-report): lint:0 noleak:0 typecheck:0 test:0 (76 files/1557) web:build:0
+playwright:0 (47/47, 0 skipped). Kraken read-only security pass: 9/10 clean, one safety test
+correctly widened (not weakened), one non-blocking finding recorded (pre-pivot `src/index.ts`/
+`src/http.ts` HTTP service never archived — see `.ralph/progress.md` 2026-07-26 CHUNK_3_IPC entry
+for full detail and recommended CHUNK_6 disposition). Promise appended to `.ralph/progress.md`.
+CHUNK_4_IDENTITY not yet started.
 
 ### CHUNK_3 — in progress (orchestrated, multi-agent)
 
