@@ -16,11 +16,30 @@ directories:
   output: release
   buildResources: desktop/assets
 
-# Only what the shell needs at runtime. The engine and the bundled PostgreSQL are added by
-# CHUNK_2; the statically exported renderer (`out/`) is added by CHUNK_3.
+# Only what the shell needs at runtime. The AP-Hub source tree is bundled into
+# `dist-desktop/main.mjs` by esbuild; the statically exported renderer (`out/`) is added by
+# CHUNK_3.
+#
+# `node_modules` is listed EXPLICITLY. The main bundle leaves third-party packages external
+# (see scripts/build-desktop.mjs — bundling CommonJS into ESM breaks `require`), so `pg` and
+# its dependencies must be present in the installed app or the database never opens.
+# electron-builder prunes this to production dependencies at pack time.
 files:
   - dist-desktop/**/*
+  - node_modules/**/*
   - package.json
+
+# CHUNK_2_DATABASE. These must stay OUTSIDE the asar archive:
+#   pgsql   — `initdb` and `postgres` are executed as child processes, and Windows cannot
+#             execute a file that only exists inside an asar.
+#   migrations — read as real files at launch by the migration runner.
+# Rebuild `vendor/pgsql` with `node scripts/bundle-postgres.mjs` before packaging; the
+# expected tree fingerprint is pinned in `vendor/postgres.lock.json`.
+extraResources:
+  - from: vendor/pgsql
+    to: pgsql
+  - from: migrations
+    to: migrations
 
 asar: true
 

@@ -16,7 +16,7 @@
  */
 
 import { build } from 'esbuild';
-import { cpSync, mkdirSync, rmSync } from 'node:fs';
+import { cpSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -35,25 +35,69 @@ const common = {
   logLevel: 'info',
   // The shell is not shipped to a browser; keep it readable in a crash report.
   minify: false,
-  sourcemap: false,
 };
 
+/**
+ * MAIN — ESM, with every third-party package left external.
+ *
+ * `packages: 'external'` is load-bearing, not an optimisation. Bundling a CommonJS
+ * dependency into an ESM output rewrites its internal `require()` calls into a shim that
+ * throws `Dynamic require of "events" is not supported` the moment the module is actually
+ * used. `pg` is CommonJS and reaches for Node built-ins that way, so bundling it produced a
+ * main process that died on its first database call.
+ *
+ * The Electron main process is a full Node environment and can load `pg` itself. Relative
+ * imports — the AP-Hub source tree — are still bundled; only bare specifiers are externalised,
+ * which is why `pg` must stay in `dependencies` and be shipped by electron-builder.
+ */
 await build({
   ...common,
   entryPoints: [join(SRC, 'main.ts')],
   outfile: join(OUT, 'main.mjs'),
   format: 'esm',
+  packages: 'external',
+  sourcemap: true,
 });
 
+/**
+ * PRELOAD — CJS, still fully bundled. Deliberately NOT given the same treatment: a sandboxed
+ * preload has no module resolution at all, so anything left external there is unreachable at
+ * runtime. Bundling is what keeps `desktop/channels.ts` the single source of truth.
+ */
 await build({
   ...common,
   entryPoints: [join(SRC, 'preload.ts')],
   outfile: join(OUT, 'preload.cjs'),
   format: 'cjs',
+  sourcemap: false,
 });
 
 // Static assets the main process resolves relative to its own directory.
 cpSync(join(SRC, 'boot.html'), join(OUT, 'boot.html'));
+cpSync(join(SRC, 'boot.js'), join(OUT, 'boot.js'));
 cpSync(join(SRC, 'assets'), join(OUT, 'assets'), { recursive: true });
+
+/**
+ * Fail the build if a Node package got embedded in the ESM main bundle again.
+ *
+ * The symptom of that mistake is a runtime crash on a code path that may not run until the
+ * user's first launch, so it must be caught here rather than discovered later. Checking for
+ * esbuild's own dynamic-require shim catches the whole class, not just `pg`.
+ */
+const mainSource = readFileSync(join(OUT, 'main.mjs'), 'utf8');
+const packagingDefects = [];
+if (/Dynamic require of/.test(mainSource)) {
+  packagingDefects.push(
+    'main.mjs contains esbuild\'s dynamic-require shim — a CommonJS package was bundled into ESM output.',
+  );
+}
+for (const marker of ['node_modules/pg/lib/client.js', 'node_modules/pg-pool', 'node_modules/pg-protocol']) {
+  if (mainSource.includes(marker)) packagingDefects.push(`main.mjs embeds ${marker}; it must stay external.`);
+}
+if (packagingDefects.length) {
+  console.error('desktop build FAILED — ESM packaging defect:');
+  for (const d of packagingDefects) console.error(`  ${d}`);
+  process.exit(1);
+}
 
 console.log('desktop shell built → dist-desktop/');

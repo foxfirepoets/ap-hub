@@ -19,6 +19,14 @@ const PORT = e2ePort(process.env.APHUB_E2E_PORT);
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: false,
+  /**
+   * One worker, because AP-Hub holds a single-instance lock (desktop/main.ts): a second
+   * Electron process quits immediately rather than supervising a second PostgreSQL over the
+   * same data directory. That is correct product behaviour, so the suite must not run two
+   * desktop spec FILES at once — with the default worker count they land in parallel workers
+   * and the second app exits before its first assertion.
+   */
+  workers: 1,
   forbidOnly: !!process.env.CI,
   retries: 0,
   reporter: [['list']],
