@@ -19,6 +19,8 @@ import { RENDERER_WEB_PREFERENCES, RENDERER_CSP } from './security.js';
 import { contentTypeFor, resolveRendererRequest } from './renderer.js';
 import { engineStateLabel, type EngineState } from './status.js';
 import { startDatabase, describeDatabaseFailure, type StartedLocalDatabase } from './database.js';
+import { establishLocalIdentity } from './local-signin.js';
+import { closePool } from '../src/db/pool.js';
 import { hasSession } from './ipc/context.js';
 import { registerProductHandlers } from './ipc/dispatcher.js';
 import { READ_CHANNELS } from './ipc/read/channels.js';
@@ -327,6 +329,15 @@ function createTray(): void {
 async function startDatabaseSupervised(): Promise<void> {
   try {
     database = await startDatabase();
+    // The one place `src/services/**` learns where the private database lives — `getPool()`
+    // (`src/db/pool.ts`) reads this lazily on first query. Nothing else may set it: the
+    // connection string never crosses the bridge, never reaches a log, and is not the
+    // renderer's to know.
+    process.env.DATABASE_URL = database.connectionString;
+    // CHUNK_4_IDENTITY: the OS account that opened AP-Hub becomes its owner, with no password
+    // and no browser tab. `database.install.osAccountId` is already verified against the
+    // running account (`OsAccountMismatch` would have thrown inside `startDatabase()`).
+    await establishLocalIdentity(database.install.osAccountId);
     databaseProblem = null;
     setEngineState('running');
   } catch (err) {
@@ -361,6 +372,14 @@ async function stopDatabase(): Promise<void> {
   database = null;
   if (running === null) return;
   try {
+    /**
+     * Close this process's own query pool first. CHUNK_4_IDENTITY's local sign-in is the
+     * first thing in the main process to ever open one (`src/db/pool.ts`'s `getPool()`
+     * singleton) — an unclosed `pg.Pool` holds a live socket that keeps Node's event loop,
+     * and therefore the whole app, from exiting even after the window is gone. Bounded for
+     * the same reason the stop below is: quit must not be able to hang on it.
+     */
+    await Promise.race([closePool(), new Promise((resolve) => setTimeout(resolve, 5_000))]);
     /**
      * Bounded. `pg_ctl -m fast` normally returns in well under a second, but quit must not
      * be able to hang on it: a stuck shutdown would leave the single-instance lock held and
