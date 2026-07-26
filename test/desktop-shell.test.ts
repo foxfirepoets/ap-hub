@@ -8,6 +8,8 @@ import {
   isAllowedExternalUrl,
   isAllowedNavigation,
 } from '../desktop/channels.js';
+import { READ_CHANNELS } from '../desktop/ipc/read/channels.js';
+import { ACTION_CHANNELS } from '../desktop/ipc/action/channels.js';
 import {
   RENDERER_WEB_PREFERENCES,
   RENDERER_CSP,
@@ -58,7 +60,18 @@ describe('renderer_hardening (spec §9)', () => {
 describe('ipc_surface_enumerated (spec §9)', () => {
   it('admits exactly the registered channels', () => {
     for (const channel of IPC_CHANNELS) expect(isAllowedChannel(channel)).toBe(true);
-    expect(IPC_CHANNELS).toEqual([...SHELL_CHANNELS]);
+    /*
+     * CHUNK_1 pinned this to `[...SHELL_CHANNELS]`. CHUNK_3 adds the 50 migrated product
+     * operations, which `desktop/channels.ts` anticipates by name, so the expected set grows —
+     * but the assertion keeps the SAME strength: an exact `toEqual` against the union of the
+     * enumerated lists, with no `toContain`, no length check and no wildcard. An unenumerated
+     * channel still fails, which is the security property spec §9 is protecting.
+     *
+     * Deliberately brittle: CHUNK_5 (connect) and CHUNK_7 (backup) will each break this line,
+     * and that is the point — widening the renderer's reachable surface should require an
+     * explicit, reviewed edit here rather than passing silently.
+     */
+    expect(IPC_CHANNELS).toEqual([...SHELL_CHANNELS, ...READ_CHANNELS, ...ACTION_CHANNELS]);
   });
 
   it('every registered channel is named aphub:<domain>:<action>', () => {
