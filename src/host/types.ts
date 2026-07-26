@@ -10,6 +10,27 @@
 
 export type OsId = 'windows' | 'macos';
 
+/**
+ * Platform identifiers as they are PERSISTED — in `install.json` and in
+ * `local_install.platform`. These are Node's `process.platform` values rather than `OsId`,
+ * because the migration's CHECK constraint is written against them.
+ *
+ * They live here, in the one directory the OS-boundary scan exempts, so that core modules can
+ * validate the field without naming an operating system themselves. Windows-only Version 1 is a
+ * scope reduction, not a licence to leak `win32` through `src/**` — see
+ * `docs/decisions/windows-only-v1-2026-07-25.md`.
+ *
+ * `darwin` is retained in the union because migration 014 already accepts it and the abstraction
+ * is deliberately preserved; nothing in Version 1 may WRITE it (enforced by
+ * `SUPPORTED_PLATFORMS`).
+ */
+export const PERSISTED_PLATFORMS = ['win32', 'darwin'] as const;
+export type PersistedPlatform = (typeof PERSISTED_PLATFORMS)[number];
+
+/** What Version 1 will actually accept and write. Windows only. */
+export const SUPPORTED_PLATFORMS = ['win32'] as const;
+export type SupportedPlatform = (typeof SUPPORTED_PLATFORMS)[number];
+
 /** A user-scoped Windows Generic Credential target; values are never embedded here. */
 export type CredentialTarget = `APHub/${string}/${string}`;
 
