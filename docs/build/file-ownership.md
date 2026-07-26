@@ -81,3 +81,31 @@ preload-side equivalent and B2 must add an assertion for it.
 5. Report: commit SHA, changed files, tests run, shared files touched, known limitations.
 6. **Never edit a safety test to accommodate a connector, shell or OS adapter.** A conflict is a
    stop-and-escalate.
+
+## Agent suitability — measured, not assumed (2026-07-26)
+
+Recorded because assignment mistakes cost a whole agent run, and because the registry cache at
+`~/.claude/skills/output-to-orchestrator/registry.json` (45 agents, exported 2026-07-12) is
+**stale against the live roster of ~120** and in at least one case describes an agent's specialty
+incorrectly. Score against the live list, and treat the cache as a hint.
+
+| Agent | Task it did here | Outcome |
+|---|---|---|
+| `system-architect` | froze the 5 IPC interface contracts (1587 lines) | strong — found 3 real authorization traps the route map omitted |
+| `backend-architect` | IPC foundation (71 tests); 29 action channels (264 tests) | strong twice — caught the write-gate `min(1)` trap and the missing `provider-jobs` service fn |
+| `Jason` | 21 read channels (48 tests) | strong — found the snake_case `mappingJson` serialization by querying a live DB |
+| `Alex` | exhaustive contract replay (530 tests) | strong — proved its own fixtures valid first, which caught a real fixture bug |
+| `Kraken` | read-only reconciliation of state docs vs repo evidence | strong — proved the CHUNK_2 promise line was never written |
+| `Casey` | static-export spike | strong — empirical, and pushed back correctly when asked to shrink the diff |
+| `Casey` (2nd call) | the Electron build/interception task | **declined** — self-identified as a UI/UX design specialist and judged Electron/build engineering on fraud-control software out of scope. Touched nothing. Defensible, but it cost a run. |
+
+**Lesson:** the same agent name answered as a frontend engineer on one call and a UX designer on
+the next, while the registry cache lists it as React/Next engineering. **Do not infer engineering
+capability from a registry description.** For build, packaging, Electron main-process or
+test-infrastructure work prefer an agent that has already succeeded on this codebase
+(`backend-architect`, `Alex`, `Jason`) over one whose description merely sounds adjacent.
+
+**Also standing, for every future packet:** require `npm run lint` explicitly. Three agents
+reported their own checks clean having run only `tsc --noEmit` and scoped vitest; the gate lints
+`test/**` and aborts at that FIRST step, so their unused imports made the whole gate red while
+hiding a genuine test failure behind it.
