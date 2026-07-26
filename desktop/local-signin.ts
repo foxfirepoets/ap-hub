@@ -32,9 +32,14 @@ const SESSION_COOKIE_SECRET_TARGET = 'APHub/auth/session-cookie-secret';
  * `src/auth/session.ts` signs cookies with is generated once, on first launch, and kept in the
  * OS credential store exactly like the database password (`DATABASE_PASSWORD_TARGET`). Never
  * logged, never written to `install.json`, never surfaced to the user.
+ *
+ * The length check (not just presence) matters: a stray short value already sitting in the
+ * environment — a leftover dev `.env`, a misconfigured launcher — must not be trusted as "already
+ * set" and silently skip real secret generation. `src/config.ts`'s schema requires at least 32
+ * characters; anything shorter is not a usable secret, it is noise that must be overwritten.
  */
 async function ensureSessionCookieSecret(): Promise<void> {
-  if (process.env.SESSION_COOKIE_SECRET) return;
+  if (process.env.SESSION_COOKIE_SECRET && process.env.SESSION_COOKIE_SECRET.length >= 32) return;
   const { secretStore } = createHostAdapter();
   let secret = await secretStore.get(SESSION_COOKIE_SECRET_TARGET);
   if (secret === null) {
