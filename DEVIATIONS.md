@@ -135,3 +135,52 @@ with the single-use ephemeral loopback callback. **Consequence to state plainly:
 and CHUNK_5 there is no working provider OAuth return path.** That is acceptable only because
 CHUNK_5 is the chunk that builds the desktop connect flow in the first place — the deleted
 surface belongs to the retired hosted/dev web mode, not to the desktop product.
+
+## 6. CHUNK_3 — moving the renderer to IPC breaks the 24 browser E2E journeys by design
+
+Discovered 2026-07-26 when the gate reached Playwright: **22 of the 24 tests in
+`e2e/app.spec.ts` fail** with `getByTestId('today-page')` not found.
+
+**Cause, and it is correct behaviour rather than a defect:** `app/lib/api.ts` no longer calls
+`fetch`. It calls `window.aphub.invoke`, which is injected by the Electron preload and **does not
+exist in a plain Chromium browser** served by `next start`. So the pages never render. This is the
+direct, intended consequence of CHUNK_3's whole purpose — AP-Hub is not a browser application and
+opens no product listening socket. `playwright.config.ts` has two projects: `chromium` (`./e2e`,
+browser) and `desktop` (`./e2e-desktop`, real Electron).
+
+Test 9 of the suite still passes, which is informative: *"reply draft surface contains no
+transmission control or provider-send source path"* inspects source rather than driving a UI, so
+it is transport-independent.
+
+### What must NOT happen
+
+- **Do not delete these tests.** They carry coverage nothing else has: UI-level RBAC (bookkeeper
+  sees "Send to Owner" and never an approve-and-post button; cpa is read-only), the Gmail draft
+  prepare/edit/open/discard flow, the missing-compose-scope recovery path, immutability of an
+  externally sent Gmail projection, statement review/match/exclude/file, tax-mapping badges and
+  audit trail, keyboard skip-navigation, focus trapping, and mobile viewport behaviour.
+- **Do not add a `fetch` fallback** to `app/lib/api.ts` so the browser suite keeps passing. That
+  reintroduces the browser product surface this chunk exists to remove, keeps `app/api/**` alive,
+  and therefore also keeps `next build --output export` blocked (DEVIATIONS §4).
+- **Do not mark CHUNK_3 complete while the gate is red here.** The chunk's own acceptance criteria
+  require `npm run verify` to exit 0 and a Playwright trace showing zero renderer requests to an
+  AP-Hub origin. Neither is satisfied yet.
+
+### Resolution
+
+Migrate the 24 journeys from the `chromium` project into the `desktop` project so they drive the
+**static-exported renderer inside real Electron over IPC**. This is the same coverage against the
+real transport, and it is what finally proves the acceptance criterion "a Playwright network trace
+shows zero renderer requests to an AP-Hub origin" — a browser-served suite could never prove that.
+
+This is bundled with the rest of the remaining CHUNK_3 work, because these pieces only make sense
+together:
+
+1. Delete all **54** route handlers (52 under `app/api/**` + the two `app/oauth/*/callback`, §5b).
+2. Apply the static-export change: 3 new `layout.tsx` + ~13 lines across 3 pages (§5a).
+3. Build the `file://` path interception in `desktop/main.ts` and prove it under real Electron —
+   currently `[UNVERIFIED in real Electron]` (§5a).
+4. Migrate the 24 journeys to the `desktop` project.
+5. Capture the zero-AP-Hub-origin network trace.
+
+Until all five land, CHUNK_3 is **incomplete** and its promise line must not be appended.

@@ -77,12 +77,37 @@ without it the filter would vanish silently.
 - `statements:correct`'s `value` is required-but-**nullable**, not optional.
 - `tax-mappings:revalidate` takes an **optional** reason while its three siblings require one.
 
-**Still to do in CHUNK_3:** merge B5 + B6 · delete all **54** route handlers (52 under
-`app/api/**` plus the two `app/oauth/*/callback` — DEVIATIONS §5b) · apply the static-export
-change (3 new `layout.tsx` + 13 lines across 3 pages — DEVIATIONS §5a) · **build and prove the
-`file://` interception under a real Electron process** (currently `[UNVERIFIED in real
-Electron]`) · Playwright trace showing zero renderer requests to an AP-Hub origin · B7
-read-only security verification · append the CHUNK_3 promise line.
+### CHUNK_3 — status at `87517ce`: unit gate GREEN, Playwright RED (expected)
+
+Definitive **serial** run, real exit codes (not a pipeline's `tail`):
+`LINT:0` · `NOLEAK:0` · `TYPECHECK:0` · `UNIT_TESTS:0` — **75 test files, 1535 tests, all pass**
+(baseline was 70/602; CHUNK_3 added 5 files and 933 tests).
+
+`npm run verify` still **exits 1** at the Playwright step, and that is correct rather than a
+defect. See DEVIATIONS §6: 22 of the 24 `e2e/app.spec.ts` browser journeys fail because
+`app/lib/api.ts` now calls `window.aphub.invoke`, which does not exist in a plain Chromium
+browser served by `next start`. Those tests must be MIGRATED to the `desktop` Playwright project,
+never deleted, and no `fetch` fallback may be added.
+
+**Two verification lessons learned the hard way this session — do not repeat:**
+
+1. `npm run verify | grep | tail` reports **`tail`'s** exit status, not the gate's. A gate result
+   must be taken from a redirect plus a real `$?`. This produced a false "gate green" claim.
+2. The gate stops at the FIRST failing step (`lint`). An early abort and a clean pass produce
+   similarly short output. A lint error therefore masks every test result behind it — and did.
+3. `tsc --noEmit` passing is **not** `npm run lint` passing. Every agent packet must require
+   `npm run lint` explicitly; three unused imports failed the gate at step 1.
+
+**Remaining CHUNK_3 work — five items, one coherent unit (see DEVIATIONS §6):**
+
+1. Delete all **54** route handlers (52 under `app/api/**` + the two `app/oauth/*/callback`, §5b).
+2. Apply the static-export change: 3 new `layout.tsx` + ~13 lines across 3 pages (§5a).
+3. Build the `file://` path interception in `desktop/main.ts` and prove it under **real**
+   Electron — currently `[UNVERIFIED in real Electron]`.
+4. Migrate the 24 journeys from the `chromium` project to the `desktop` project.
+5. Capture the Playwright trace showing zero renderer requests to an AP-Hub origin.
+
+Then B7 read-only security verification, then the CHUNK_3 promise line. **Not before.**
 
 `node_modules` is a directory junction into the main checkout in each worktree. Agents must not
 run `npm install`; `package.json` is orchestrator-owned.
