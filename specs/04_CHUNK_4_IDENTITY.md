@@ -12,7 +12,7 @@ Removing SSO removes the front door, not the authorization model.
 
 ## Acceptance Criteria
 
-- [ ] OS-account identity (Windows SID, macOS UID) is added to `src/host/types.ts`, `src/host/windows.ts` and `src/host/macos.ts` — **macOS is implemented, not stubbed**.
+- [ ] OS-account identity (Windows SID) is added to `src/host/types.ts` and `src/host/windows.ts`. The macOS adapter keeps compiling but is **out of Version 1 scope** and is not validated.
 - [ ] `install.json` is written under the install root with install id, OS account id, platform, app version, db port, data directory and log directory.
 - [ ] Any key in `install.json` whose name or value resembles a credential is **rejected at load**, as is a `dbPort` outside 1024–65535.
 - [ ] A corrupted `install.json` is regenerated from the database and the OS account rather than failing.
@@ -28,9 +28,9 @@ No HTTP endpoints. Host adapter additions behind `src/host/types.ts`:
 
 | Interface | Windows | macOS |
 |---|---|---|
-| `getOsAccountId()` | Current-user SID | Current-user UID |
-| `getInstallRoot()` | `%LOCALAPPDATA%\APHub` | `~/Library/Application Support/APHub` |
-| `secretStore` | Credential Manager (already built, `src/host/windows.ts:176`) | Keychain |
+| `getOsAccountId()` | Current-user SID | *(out of V1 scope)* |
+| `getInstallRoot()` | `%LOCALAPPDATA%\APHub` | *(out of V1 scope)* |
+| `secretStore` | Credential Manager (already built, `src/host/windows.ts:176`) | *(out of V1 scope)* |
 
 ## Database Changes
 

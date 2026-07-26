@@ -12,7 +12,7 @@ is safe before anything valuable is put inside it.
 
 ## Acceptance Criteria
 
-- [ ] `npm run dist:win` and `npm run dist:mac` build configuration exists and an unpacked app launches a window from an icon on both platforms.
+- [ ] `npm run dist:win` build configuration exists and an unpacked app launches a window from an icon on Windows. (macOS out of Version 1 scope.)
 - [ ] The renderer runs with `contextIsolation: true`, `sandbox: true`, `nodeIntegration: false`, `webSecurity: true`.
 - [ ] `window.require`, `window.process` and `window.module` are all `undefined` when evaluated in renderer JavaScript.
 - [ ] A CSP is applied that names no remote origin.

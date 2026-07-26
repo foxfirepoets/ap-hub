@@ -1,4 +1,6 @@
-# README.ralph.md — AP-Hub Local Desktop Shell (Phase P1)
+# README.ralph.md — AP-Hub Local Desktop Shell (Windows-only Version 1)
+
+> **Scope: WINDOWS ONLY.** `docs/decisions/windows-only-v1-2026-07-25.md` is authoritative.
 
 Scaffolded by spec-to-ralphprep from `specs/SPEC-local-desktop-shell.md` on 2026-07-25.
 Merged into an existing workspace — `IMPLEMENTATION_PLAN.md`, `.ralph/state.md` and
@@ -20,15 +22,15 @@ Chunks (9 total):
 - CHUNK_6_CLEANUP — remove the broker, default SwarmSync off, exhaustive plain-language errors
 - CHUNK_7_BACKUP — encrypted backup, verify-by-re-read, rotation, one-click restore, repair
 - CHUNK_8_SUPERVISION — autostart, child recovery, bounded crash loop, notifications
-- CHUNK_9_PACKAGE — signed Windows NSIS + signed/notarized macOS DMG, clean-machine certification
+- CHUNK_9_PACKAGE — Windows NSIS installer + clean-machine certification (macOS out of V1 scope)
 
 ## Prerequisites
 
 - Node.js 20+
 - PostgreSQL 16 reachable at `DATABASE_URL` for development and tests (no Docker)
 - Electron 32+ and electron-builder (installed as devDependencies)
-- For CHUNK_9 only: an Authenticode signing certificate and an Apple Developer ID + notarization
-  credentials, plus a clean Windows VM and a clean macOS machine
+- For CHUNK_9 only: an Authenticode signing certificate (absent — an unsigned internal release
+  candidate is produced instead) and the strongest available clean Windows environment
 
 ## Setup Before First Run
 

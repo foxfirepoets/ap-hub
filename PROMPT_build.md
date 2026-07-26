@@ -26,7 +26,7 @@ commit the task, update state and progress, and append `<promise>TASK_COMPLETE</
   door, user-facing environment variables, or raw provider errors in the UI.
 - Never ask the user for an API key in any flow, and never display the words API, key, token, port,
   environment variable, migration, worker, model or JSON in the UI.
-- Do not defer macOS. Host adapters ship in the same chunk as their Windows counterparts.
+- **Version 1 is WINDOWS ONLY** (`docs/decisions/windows-only-v1-2026-07-25.md`). Do not spend build time on macOS packaging, signing, notarization or testing. `src/host/macos.ts` and `src/host/types.ts` are preserved and MUST keep compiling — do not delete them, do not maintain them.
 - Do not expose a non-loopback listener. Do not store plaintext credentials anywhere.
 - Do not bypass provider, proof or read-back gates. Every one fails closed.
 - Do not generate code for a future chunk's domain.

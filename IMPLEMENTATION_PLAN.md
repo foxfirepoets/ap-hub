@@ -1,4 +1,8 @@
-# Implementation Plan — AP-Hub Local Desktop Shell (Phase P1)
+# Implementation Plan — AP-Hub Local Desktop Shell (Windows-only Version 1)
+
+> **SCOPE: WINDOWS ONLY** — `docs/decisions/windows-only-v1-2026-07-25.md` is authoritative.
+> macOS packaging, signing, notarization and acceptance criteria are out of Version 1.
+> The macOS abstractions are preserved and must keep compiling.
 
 Spec: `specs/SPEC-local-desktop-shell.md`
 Architecture: `architecture-decision-packet-ap-hub-local-desktop-2026-07-25.md`
@@ -22,7 +26,8 @@ installed-environment validation.
 
 ## CHUNK_2_DATABASE — Bundled invisible PostgreSQL
 
-- [ ] Bundle a PostgreSQL 16 runtime for Windows and macOS; spike both candidate distributions and pick on installer size and cold-start time (Open Question 1).
+- [x] ~~Spike both candidate distributions (Open Question 1).~~ **DONE** — `docs/audits/postgres-bundling-spike-2026-07-25.md`. Chosen: official PostgreSQL Windows binaries trimmed to `bin`+`lib`+`share`.
+- [ ] Bundle the chosen PostgreSQL 16 Windows runtime with a reproducible trim script.
 - [ ] Start PostgreSQL as a supervised child with a private data directory, probing ports from 55432 upward; never connect to or modify an existing instance on 5432. Record the chosen port in `install.json`.
 - [ ] Add `migrations/014_local_install.sql` and `015_backups.sql` with tested DOWN scripts; run migrations automatically at launch inside a transaction, leaving the previous version usable on failure.
 - [ ] Add `test/db-bootstrap.test.ts` covering occupied 5432, occupied 55432, a fresh data directory reaching head, and UP → DOWN → UP.
@@ -38,7 +43,7 @@ installed-environment validation.
 
 ## CHUNK_4_IDENTITY — OS-account owner identity
 
-- [ ] Add OS-account identity (Windows SID, macOS UID) to `src/host/types.ts`, `src/host/windows.ts` and `src/host/macos.ts`; write non-secret `install.json` and reject any key whose name or value resembles a credential.
+- [ ] Add OS-account identity (Windows SID) to `src/host/types.ts` and `src/host/windows.ts`; write non-secret `install.json` and reject any key whose name or value resembles a credential. (macOS adapter keeps compiling; out of V1 scope.)
 - [ ] Make the OS account holder the owner; remove Google SSO as the product entry point in `app/login/page.tsx` and `src/auth/**` while preserving all tenant and role authorization.
 - [ ] Add `test/local-install.test.ts` proving cross-account separation, the plain-language explanation for a second OS account, and OS-account mismatch failing closed.
 - [ ] Run `npm run verify` plus a two-account manual check, record artifacts, then append `<promise>CHUNK COMPLETE: CHUNK_4_IDENTITY</promise>`.
@@ -69,15 +74,15 @@ installed-environment validation.
 
 ## CHUNK_8_SUPERVISION — Continuous operation on both platforms
 
-- [ ] Implement autostart: per-user Task Scheduler on Windows, LaunchAgent on macOS. Sequence PostgreSQL readiness, then the engine, then the window.
+- [ ] Implement autostart: per-user Task Scheduler on Windows, non-elevated. Sequence PostgreSQL readiness, then the engine, then the window.
 - [ ] Restore killed children within 90 seconds; stop after five failures in ten minutes with a plain-language message and a support-export action.
 - [ ] Handle sleep, wake and network loss with durable cursor and job resumption and no duplicate work; rotate logs at 10 MiB / 10 files; add native OS notifications for crash-loop, disk-full, backup-failed and reconnect-needed.
-- [ ] Run `npm run verify` plus child-kill, reboot, sleep/wake and network-loss drills on both platforms, record artifacts, then append `<promise>CHUNK COMPLETE: CHUNK_8_SUPERVISION</promise>`.
+- [ ] Run `npm run verify` plus child-kill, reboot, sleep/wake and network-loss drills on Windows, record artifacts, then append `<promise>CHUNK COMPLETE: CHUNK_8_SUPERVISION</promise>`.
 
 ## CHUNK_9_PACKAGE — Signed installers and clean-machine certification
 
-- [ ] Produce a signed Windows NSIS installer and a signed, notarized macOS DMG, both non-admin, installing every component silently. Signing identities referenced by name from the build machine's secret store, never committed.
+- [ ] Produce a Windows NSIS installer, non-admin, installing every component silently. No Authenticode certificate is available: ship an **unsigned internal release candidate** plus signing-ready configuration, artifact SHA-256, build manifest and the exact future signing command. (macOS DMG out of V1 scope.)
 - [ ] Implement uninstall with an explicit user choice about data, and repair that reinstalls components without touching user data.
-- [ ] Execute the clean-machine test plan on a fresh Windows VM and a fresh macOS machine with no Node, PostgreSQL, Docker or Git: listener inspection, cross-account isolation, reboot and child-kill drills, destroy-and-restore, external-folder restore, tampered-update refusal, and SmartScreen/Gatekeeper friction recorded.
+- [ ] Execute the clean-machine test plan on the strongest available clean Windows environment with no Node, PostgreSQL, Docker or Git: listener inspection, cross-account isolation, reboot and child-kill drills, destroy-and-restore, external-folder restore, tampered-update refusal, SmartScreen friction recorded.
 - [ ] Reconcile `README.md`, `INSTALL.md`, `AGENTS.md` and all UI copy with observed behavior, stating every remaining limitation.
 - [ ] Run `truth-fix-loop` then `spec-vs-build-brutal-audit` against `specs/SPEC-local-desktop-shell.md`; require zero P0/P1 defects and an artifact per acceptance criterion before appending `<promise>CHUNK COMPLETE: CHUNK_9_PACKAGE</promise>`.

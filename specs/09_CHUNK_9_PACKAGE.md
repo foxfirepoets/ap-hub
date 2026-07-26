@@ -11,19 +11,19 @@ Nothing here is marked done on local-only evidence. "Works on my machine" is not
 
 ## Acceptance Criteria
 
-- [ ] `npm run dist:win` produces a **signed** NSIS `.exe` installing to `%LOCALAPPDATA%\APHub` with **no administrator prompt**.
-- [ ] `npm run dist:mac` produces a **signed and notarized** `.dmg` installing to `~/Library/Application Support/APHub` with no administrator prompt.
+- [ ] `npm run dist:win` produces an NSIS `.exe` installing to `%LOCALAPPDATA%\APHub` with **no administrator prompt**. No Authenticode certificate is available, so Version 1 ships an **unsigned internal release candidate** plus signing-ready configuration, an artifact SHA-256, a build manifest, and the exact future signing command.
+- [ ] ~~macOS `.dmg`~~ — **OUT OF VERSION 1 SCOPE** (`docs/decisions/windows-only-v1-2026-07-25.md`).
 - [ ] Signing identities are referenced by name from the build machine's secret store and **never committed**.
 - [ ] Installer size ≤ 200 MB; install duration on a clean machine ≤ 5 minutes; cold launch to a usable window ≤ 15 seconds; warm launch ≤ 4 seconds.
 - [ ] Uninstall removes program components and **asks explicitly** what to do with user data — never deletes silently, never leaves data with no way to remove it.
 - [ ] Repair reinstalls components without altering any document, proposal, posting or audit row.
-- [ ] Clean-machine run on a fresh Windows VM and a fresh macOS machine with **no Node, PostgreSQL, Docker or Git**, as a standard non-admin user.
-- [ ] Listener inspection captured: `Get-NetTCPConnection` (Windows) and `lsof -i` (macOS) show no AP-Hub listener except the bundled PostgreSQL and the transient OAuth callback — and no non-loopback binding.
-- [ ] Cross-account isolation, child-kill, crash-ceiling and reboot drills captured on both platforms.
-- [ ] Destroy-and-restore drill captured on both platforms with matching counts, audit rows and postings.
+- [ ] Clean-machine run on the strongest available clean Windows environment (Windows Sandbox > new standard non-admin account > disposable VM > isolated install dir + profile) with **no Node, PostgreSQL, Docker or Git**.
+- [ ] Listener inspection captured: `Get-NetTCPConnection` shows no AP-Hub listener except the bundled PostgreSQL, the transient OAuth callback and the QuickBooks Web Connector endpoint — and no non-loopback binding.
+- [ ] Cross-account isolation, child-kill, crash-ceiling and reboot drills captured on Windows.
+- [ ] Destroy-and-restore drill captured on Windows with matching counts, audit rows and postings.
 - [ ] Restore from a user-nominated external folder exercised; corrupted-backup handling shows a visible warning and prunes nothing.
 - [ ] A repository scan confirms **exactly one** provider-send call site — `sendForward` in `src/gmail/adapter.ts` — still recipient-bound with no recipient parameter. Zero occurrences is a **failure**, not a pass.
-- [ ] SmartScreen and Gatekeeper friction recorded; TCC prompts on macOS handled as resolvable states, not crashes.
+- [ ] SmartScreen friction recorded (an unsigned build will warn; expected and labelled).
 - [ ] `README.md`, `INSTALL.md`, `AGENTS.md` and all UI copy reconciled with observed behavior, stating every remaining limitation.
 - [ ] All tests pass with zero failures (`npm run verify` exits 0) **with no existing test modified**.
 
@@ -33,8 +33,8 @@ No new runtime interfaces. Build and packaging surface only:
 
 | Command | Produces |
 |---|---|
-| `npm run dist:win` | Signed NSIS `.exe`, non-admin, per-user install |
-| `npm run dist:mac` | Signed + notarized `.dmg`, non-admin, per-user install |
+| `npm run dist:win` | NSIS `.exe`, non-admin, per-user install (unsigned in V1) |
+| ~~`npm run dist:mac`~~ | *Out of Version 1 scope* |
 
 Update delivery in this phase is **manual only** — the user downloads the next signed installer and
 runs it. Automatic checking is P4 and must not be foreclosed: the pre-update snapshot and the

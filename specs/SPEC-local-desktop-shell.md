@@ -1,9 +1,20 @@
 # SPEC: AP-Hub Local Desktop Shell (Phase P1)
 
+> ## SCOPE AMENDMENT — 2026-07-25: Version 1 is WINDOWS ONLY
+>
+> macOS is removed from Version 1 development, packaging, signing, notarization, testing,
+> documentation and acceptance criteria. Authoritative decision:
+> **`docs/decisions/windows-only-v1-2026-07-25.md`** — where this spec still says "both
+> platforms" or names macOS as required, that decision wins and this spec is the defect.
+>
+> Cross-platform abstractions are **preserved and must keep compiling** (`src/host/types.ts`,
+> `src/host/macos.ts`). They must never appear in a Version 1 acceptance criterion or
+> completion claim. macOS may be reconsidered after the Windows product is proven.
+
 ## Metadata
-- Version: 1.0 | Date: 2026-07-25 | Tier: FULL | Greenfield/Brownfield: Brownfield
-- Status: Ready for Build
-- Success measure: On a clean Windows or macOS computer with no Node, PostgreSQL, Docker or Git installed, a standard non-admin user installs one downloaded file, double-clicks an icon, and reaches a working AP-Hub window — without a browser, a URL, a port number, or an environment variable ever appearing — and that install can be destroyed and fully restored from its own backup with no data loss.
+- Version: 1.1 | Date: 2026-07-25 | Tier: FULL | Greenfield/Brownfield: Brownfield
+- Status: Ready for Build · **Windows-only Version 1**
+- Success measure: On a clean Windows computer with no Node, PostgreSQL, Docker or Git installed, a standard non-admin user installs one downloaded file, double-clicks an icon, and reaches a working AP-Hub window — without a browser, a URL, a port number, or an environment variable ever appearing — and that install can be destroyed and fully restored from its own backup with no data loss.
 - Architecture grounding: `architecture-decision-packet-ap-hub-local-desktop-2026-07-25.md` — verdict `READY_FOR_SPEC` · route-by-route migration evidence: `docs/audits/electron-migration-inventory-2026-07-25.md`
 - Open questions: 3
 
@@ -15,9 +26,9 @@
 - PostgreSQL 16, bundled as a private embedded binary (no Docker, no system install)
 - pg + pg-boss for data and durable jobs (existing)
 - Vitest for unit and integration tests; Playwright for renderer contract tests
-- Windows Credential Manager (Win32 Advapi32) and macOS Keychain for secrets
+- Windows Credential Manager (Win32 Advapi32) for secrets
 - Windows: Task Scheduler autostart, signed NSIS installer
-- macOS: LaunchAgent autostart, signed and notarized DMG
+- (macOS LaunchAgent / notarized DMG — OUT OF VERSION 1 SCOPE)
 
 ## Architecture Grounding Summary
 
@@ -78,19 +89,26 @@ In scope:
 - Exhaustive plain-language error mapping with no raw-message fallback.
 - Local rotating logs and an explicit, redacted support export. No telemetry by default.
 - **Encrypted automatic local backup with verification, rotation, one-click restore, repair mode, exportable backup, and an optional user-nominated external copy folder** (architecture packet §7). This is P0 — a local-only product without proven restore is one drive failure from destroying the user's entire AP history.
-- Signed Windows installer and signed, notarized macOS installer, both non-admin.
-- Autostart and crash recovery on both platforms.
+- Signed Windows installer, non-admin. (macOS installer out of Version 1 scope.)
+- Autostart and crash recovery on Windows.
 - Uninstall and repair, with data removal as an explicit user choice.
 
 ### Do Not Build
 
-- **Filesystem discovery** — Phase P2. Building it here would couple an unproven scanner to an unproven shell.
-- **The eight-screen setup wizard** — Phase P3. This phase keeps the existing onboarding screens working inside the new shell.
-- **Inference of vendors, accounts or coding patterns** — Phase P3.
-- **Xero and Sage Intacct connectors** — Phase P4. They stay as capability-declaring stubs that throw.
+> **SCOPE EXPANSION — 2026-07-25.** The owner has pulled discovery, the setup wizard, inference,
+> and the Xero / Sage Intacct connectors **into Windows Version 1**. The four entries below are
+> therefore **superseded** and are retained only to record what changed. See
+> `docs/decisions/windows-only-v1-2026-07-25.md`.
+
+- ~~**Filesystem discovery** — Phase P2.~~ **NOW IN V1 SCOPE.**
+- ~~**The eight-screen setup wizard** — Phase P3.~~ **NOW IN V1 SCOPE.**
+- ~~**Inference of vendors, accounts or coding patterns** — Phase P3.~~ **NOW IN V1 SCOPE.**
+- ~~**Xero and Sage Intacct connectors** — Phase P4.~~ **NOW IN V1 SCOPE.** They must not remain
+  silent or indefinite stubs; where live credentials are absent, everything up to the real
+  connection boundary ships and only the external proof is marked awaiting credentials.
 - **Automatic update checking and delivery** — Phase P4. This phase must not foreclose it (architecture packet §8 fixes the design), and the manual path — download the next signed installer and run it — works from day one without it.
 - **Extraction changes of any kind** — the deterministic tier-1 parser and the consent-gated extraction ladder (architecture packet §6) are P2 and P3. Extraction behaves exactly as it does today in this phase.
-- **Shared or remote multi-user access** — architecture packet §9 fixes v1 at one computer, one OS account, one install, many companies. Nothing here builds toward shared installs.
+- **Shared or remote multi-user access** — v1 is one Windows user profile, one install, many companies. The database and credentials belong to that profile; other Windows accounts cannot reach it. Nothing here builds toward shared installs.
 - **The Mac ↔ Windows QuickBooks Desktop bridge pairing** — Phase P4.
 - **Any new accounting logic, posting path, mapping rule or extraction change** — this is a delivery-shell phase; the engine is reused verbatim.
 - **Removal of the locked gatekeeper forwarder** — explicitly retained per the architecture packet §6.
@@ -106,7 +124,7 @@ minutes with zero technical questions asked.
 
 - [ ] Double-clicking the installer on a clean Windows machine with no Node, PostgreSQL, Docker or Git produces a working AP-Hub icon. FAIL if any prerequisite must be installed manually.
 - [ ] Launching from the icon opens the AP-Hub window with no browser process started by AP-Hub. FAIL if a browser opens for anything except provider login.
-- [ ] `Get-NetTCPConnection` (Windows) and `lsof -i` (macOS) show no AP-Hub listening socket other than the bundled PostgreSQL on its probed port and, transiently, the OAuth callback. FAIL on any other listener, and FAIL on any non-loopback binding.
+- [ ] `Get-NetTCPConnection` (Windows) shows no AP-Hub listening socket other than the bundled PostgreSQL on its probed port and, transiently, the OAuth callback. FAIL on any other listener, and FAIL on any non-loopback binding.
 - [ ] The bundled PostgreSQL runs on a probed port at or above 55432 with its own data directory. FAIL if it binds 5432 or writes into an existing PostgreSQL data directory.
 - [ ] With a system PostgreSQL already running on 5432, AP-Hub installs and runs without disturbing it. FAIL if the existing instance stops, changes, or is connected to.
 - [ ] The renderer performs zero HTTP requests to an AP-Hub origin; every product operation travels over IPC. FAIL if any `fetch` to a local AP-Hub port appears in a renderer network trace.
@@ -131,7 +149,10 @@ minutes with zero technical questions asked.
 
 DONE means ALL true in the DEPLOYED environment, with an artifact per item
 (HTTP response, DB row, screenshot, log line):
-1. Each acceptance criterion is observed on a clean Windows machine and a clean macOS machine, with the listener inspection, the cross-account check, and the crash and reboot drills captured.
+1. Each acceptance criterion is observed on **a clean Windows machine** (Version 1 scope — see
+   `docs/decisions/windows-only-v1-2026-07-25.md`), with the `Get-NetTCPConnection` listener
+   inspection, the cross-account check, and the crash and reboot drills captured.
+   The macOS clean-machine run and the `lsof -i` inspection are **retired from Version 1**.
 
 NOT done if:
 - Verified only locally ("works on my machine" is not done)
@@ -303,7 +324,7 @@ user chose.
 | Cross-account separation explained | `test/local-install.test.ts` — a foreign OS account yields a distinct install id and the explanatory state, never a silent empty database |
 | Six guarantees intact | Existing guarantee tests run unmodified |
 | Posting contracts intact | `test/posting.test.ts`, `test/qbd-posting-contract.test.ts`, `test/connector-contract.test.ts` unmodified |
-| Clean-machine install | `pilot/validate-clean-install.ps1` (Windows) and a new macOS equivalent |
+| Clean-machine install | `pilot/validate-clean-install.ps1` (Windows). macOS equivalent retired from V1. |
 
 `npm run verify` remains the gate. Existing safety tests are never edited to accommodate the shell —
 a conflict is a stop-and-escalate.
@@ -315,7 +336,7 @@ There is no server deployment. "Deploy" means producing two signed installers.
 | Platform | Build | Signing | Install root | Autostart |
 |---|---|---|---|---|
 | Windows | `npm run dist:win` → NSIS `.exe` | Authenticode | `%LOCALAPPDATA%\APHub` | Per-user Task Scheduler |
-| macOS | `npm run dist:mac` → `.dmg` | Developer ID + **notarization** | `~/Library/Application Support/APHub` | LaunchAgent |
+| ~~macOS~~ | *Out of Version 1 scope — see `docs/decisions/windows-only-v1-2026-07-25.md`* | — | — | — |
 
 Signing identities come from the build machine's secret store and are referenced by name only —
 never committed. Rollback is reinstalling the previous signed installer; user data is preserved
@@ -425,12 +446,12 @@ transaction, with the previous version left usable on failure.
 **Limitations**
 - The installer grows to roughly 200 MB because Electron, Node and PostgreSQL are all bundled. This is the accepted cost of "the user installs nothing themselves."
 - QuickBooks Desktop remains Windows-only; no Intuit mechanism exists for macOS.
-- macOS privacy prompts (TCC) are unavoidable and appear on first access to Documents, Desktop and Downloads.
-- Windows SmartScreen and macOS Gatekeeper will warn until the signing certificates build reputation.
+- Windows SmartScreen will warn until the signing certificate builds reputation.
+- **Version 1 is Windows only.** macOS is deferred by an explicit scope decision, not by oversight.
 - The onboarding screens in this phase are the existing ones. The eight-screen wizard arrives in P3.
 
 **Open Questions**
-1. **Which PostgreSQL distribution to bundle** — the official zip on Windows and a relocatable build on macOS, versus `embedded-postgres`. Resolution: build both spikes in Phase 1 and pick on installer size and cold-start time. Does not touch money, auth or customer data.
+1. ~~**Which PostgreSQL distribution to bundle**~~ — **RESOLVED 2026-07-25.** Both spikes were built and measured: `docs/audits/postgres-bundling-spike-2026-07-25.md`. Chosen: the **official PostgreSQL Windows binaries**, trimmed to `bin`+`lib`+`share` (119.6 MB), over `embedded-postgres` (99 MB). Decided on release channel — `embedded-postgres` has never shipped a stable release on any line — and on first-launch headroom (12,755 ms vs 14,838 ms against a 15 s budget). The macOS counter-argument for `embedded-postgres` is void under Windows-only V1.
 2. **Whether the tray icon should offer Pause processing in P1 or P3** — Resolution: owner's call at the first working build; defaulting to including it, since the supervisor already exposes the state.
 3. **Whether an exported backup should be openable on a different computer** — today the encryption key lives only in this machine's credential store, so an exported backup is useless if the machine dies, which is exactly the disaster backups exist for. Resolution: implement machine-bound encryption in this phase and state the limitation plainly in the export copy; evaluate an owner-held recovery phrase as a P2 addition. Flagged because it touches customer data: **this phase ships with the limitation documented, not hidden.**
 
@@ -443,7 +464,7 @@ Intacct, macOS validation, the Mac ↔ Windows QuickBooks Desktop bridge, and au
 - Bundled PostgreSQL colliding with a system instance and confusing or corrupting data — mitigated by probing from 55432, a private data directory, and never connecting to 5432.
 - A no-send scan finding the locked forwarder and deleting it — mitigated by the architecture packet §6 carve-out, and by `test/lockdown.test.ts` asserting exactly one allowed site rather than zero.
 - Moving 52 HTTP routes to IPC silently dropping an authorization check — mitigated by replaying the existing cross-tenant and RBAC matrices against every IPC channel.
-- macOS being quietly deferred again — mitigated by implementing both host adapters in the same phase, never stubbing one.
+- ~~macOS being quietly deferred again~~ — **superseded.** macOS is now deferred by an explicit, documented owner decision (`docs/decisions/windows-only-v1-2026-07-25.md`), not quietly. The abstraction seam is preserved and must keep compiling so a later macOS version stays a thin addition.
 - Removing the broker breaking extraction for anyone who relied on it — mitigated by the existing local-runtime and user-key paths in `src/llm/detect.ts`, which are already first-class.
 - The 200 MB installer triggering security software — mitigated by signing both installers and recording SmartScreen and Gatekeeper friction in the clean-machine test plan.
 - Backup appearing to work but being unrestorable — the classic failure mode — mitigated by verifying every backup by re-reading it, never pruning until a newer copy verifies, surfacing failure visibly, and proving the full destroy-and-restore drill in certification rather than trusting that a file was written.
@@ -489,27 +510,27 @@ redacted.
 
 ### Build Phases
 
-1. **CHUNK_1_SHELL** — Electron main, preload with a frozen API, single-instance lock, tray icon, window lifecycle, hardened renderer settings. Exit: an empty window opens from an icon on both platforms and `window.require` is undefined.
+1. **CHUNK_1_SHELL** — Electron main, preload with a frozen API, single-instance lock, tray icon, window lifecycle, hardened renderer settings. Exit: an empty window opens from an icon on Windows and `window.require` is undefined.
 2. **CHUNK_2_DATABASE** — bundle PostgreSQL, probe from 55432, private data directory, supervised child, automatic migrations, `014_local_install`. Exit: `test/db-bootstrap.test.ts` green with 5432 and 55432 both occupied; migrations reach head on a fresh directory.
 3. **CHUNK_3_IPC** — replace the 52 `app/api/**` routes with IPC channels calling the same `src/services/**` functions; static-export the React tree into the renderer. Exit: `test/ipc-contract.test.ts` replays the full cross-tenant and RBAC matrices; the renderer makes zero AP-Hub HTTP calls.
 4. **CHUNK_4_IDENTITY** — OS-account owner identity, `install.json`, removal of Google SSO as the product entry, cross-account isolation. Exit: a second OS account reaches no data of the first.
 5. **CHUNK_5_CONNECT** — provider login in the system browser, ephemeral single-use loopback callback, focus return, tokens into the credential store. Exit: Gmail connects end to end with no embedded webview and no manual code copying.
 6. **CHUNK_6_CLEANUP** — remove the broker, `compose.yaml` and user-facing environment variables; default SwarmSync off; exhaustive error mapping with the raw fallback deleted; local-only telemetry. Exit: zero `BROKER_` references; `test/error-mapping.test.ts` proves no raw fallback path exists.
 7. **CHUNK_7_BACKUP** — encrypted backup with the key in the OS credential store; verify-after-write; rotation that never prunes the last verified copy; one-click restore; repair mode; exportable backup; optional user-nominated external folder; visible failure warnings. Exit: `test/backup-restore.int.test.ts` proves the destroy-and-restore drill with exact count, audit and posting fidelity.
-8. **CHUNK_8_SUPERVISION** — autostart on both platforms, child-kill recovery within 90 seconds, bounded crash loop, sleep and network recovery, log rotation, native notifications. Exit: kill, reboot and crash-ceiling drills pass on both platforms.
-9. **CHUNK_9_PACKAGE** — signed Windows NSIS installer, signed and notarized macOS DMG, non-admin install, uninstall with an explicit data choice, repair. Exit: clean-machine install passes on both platforms with the full checklist captured, including the destroy-and-restore drill.
+8. **CHUNK_8_SUPERVISION** — autostart on both platforms, child-kill recovery within 90 seconds, bounded crash loop, sleep and network recovery, log rotation, native notifications. Exit: kill, reboot and crash-ceiling drills pass on Windows.
+9. **CHUNK_9_PACKAGE** — signed Windows NSIS installer, non-admin install, uninstall with an explicit data choice, repair. Exit: clean-machine install passes on Windows with the full checklist captured, including the destroy-and-restore drill. (macOS DMG out of V1 scope.)
 
 ### Final checklist
 
-- [ ] All 18 acceptance criteria observed on a clean Windows machine, with artifacts
-- [ ] All 18 acceptance criteria observed on a clean macOS machine, with artifacts
+- [ ] All acceptance criteria observed on a clean Windows machine, with artifacts
+- [ ] ~~clean macOS machine~~ — retired from Version 1
 - [ ] `npm run verify` exits 0 with no existing test modified
-- [ ] Listener inspection captured on both platforms
+- [ ] Listener inspection captured on Windows (`Get-NetTCPConnection`)
 - [ ] Cross-account isolation demonstrated
 - [ ] Child-kill, crash-ceiling and reboot drills captured
 - [ ] `grep -rn "BROKER_" src/ app/` returns zero
 - [ ] Exactly one provider-send call site confirmed by scan
-- [ ] Destroy-and-restore drill captured on both platforms with matching counts, audit rows and postings
+- [ ] Destroy-and-restore drill captured on Windows with matching counts, audit rows and postings
 - [ ] Restore from a user-nominated external folder exercised
 - [ ] Corrupted-backup handling shows a visible warning and prunes nothing
 - [ ] Uninstall and repair exercised, data choice honored

@@ -12,7 +12,7 @@ resilience.
 
 ## Acceptance Criteria
 
-- [ ] Autostart is implemented on **both** platforms — per-user Task Scheduler on Windows, LaunchAgent in `~/Library/LaunchAgents` on macOS. macOS is implemented, not stubbed.
+- [ ] Autostart is implemented on **Windows** — per-user Task Scheduler, non-elevated. (macOS LaunchAgent out of Version 1 scope.)
 - [ ] Startup sequences PostgreSQL readiness → engine → window.
 - [ ] Killing the engine, the PostgreSQL child, or both restores them within **90 seconds** with jobs intact and no duplicate work.
 - [ ] Five induced failures within ten minutes **stop** the restart loop and show *"AP-Hub is having trouble starting. Your information is safe."* with Retry and Get support export actions.
@@ -34,8 +34,8 @@ No HTTP endpoints. Supervisor state exposed to the renderer as events, not chann
 | `aphub:status:database` | `'starting' \| 'ready' \| 'failed'` | Tray + Settings status panel |
 | `aphub:status:backup` | `'ok' \| 'warning'` with a plain-language last-verified string | Settings + notification |
 
-Host adapter additions: `installAutostart()` / `removeAutostart()`, implemented for Windows Task
-Scheduler and macOS LaunchAgent behind `src/host/types.ts`.
+Host adapter additions: `registerAutostart()` / `unregisterAutostart()` behind `src/host/types.ts`,
+implemented for Windows Task Scheduler. The macOS branch keeps compiling, unvalidated.
 
 ## Database Changes
 

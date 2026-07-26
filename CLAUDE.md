@@ -83,7 +83,7 @@ TelegramSender) so logic is unit-tested with mocks and the real adapters stay th
 - `src/qbo/` · `src/qbdesktop/` — provider implementations. `src/statements/` — bank statements.
 - `src/gmail/` — intake and drafts. `src/gatekeeper/` — locked forwarder, decision engine.
 - `src/extract/` · `src/llm/` — extraction; `llm/detect.ts` auto-detects local runtimes.
-- `src/host/` — OS adapters (Windows built, macOS being built).
+- `src/host/` — OS adapters. **Windows-only Version 1** (`docs/decisions/windows-only-v1-2026-07-25.md`); `macos.ts` is preserved and must keep compiling, but is out of scope and unmaintained.
 - `app/` — React screens, moving into the Electron renderer.
 - `migrations/*.sql` — schema. `specs/` — the current spec + `specs/reference/`.
 - `archive/` — superseded work. **Do not build from it.**

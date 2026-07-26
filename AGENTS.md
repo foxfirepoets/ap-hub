@@ -1,5 +1,6 @@
 # AGENTS.md — Build, Test, and Validation Commands
-# Project: ap-hub — local-first desktop application (Phase P1)
+# Project: ap-hub — local-first Windows desktop application (Version 1)
+# Scope: WINDOWS ONLY — docs/decisions/windows-only-v1-2026-07-25.md
 # Spec: specs/SPEC-local-desktop-shell.md
 
 ## Environment
@@ -40,8 +41,8 @@ npm run web:dev
 
 ```bash
 npm run desktop:dev
-npm run dist:win
-npm run dist:mac
+npm run dist:win        # Version 1 target
+# npm run dist:mac      -- OUT OF VERSION 1 SCOPE
 ```
 
 ## Test

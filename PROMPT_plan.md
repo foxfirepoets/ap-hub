@@ -41,7 +41,7 @@ and the completion promise from its chunk spec.
 - Do not add work outside `specs/SPEC-local-desktop-shell.md`.
 - Do not generate code.
 - CHUNK_3's cross-tenant and RBAC replay lands inside CHUNK_3 — never deferred to a later chunk.
-- macOS host adapters are planned in the same chunk as their Windows counterparts, never stubbed.
+- **Version 1 is WINDOWS ONLY** (`docs/decisions/windows-only-v1-2026-07-25.md`). Do not plan macOS packaging, signing, notarization or acceptance criteria. Preserve the macOS abstractions; they must keep compiling.
 - Append the planning completion entry and promise to `.ralph/progress.md`.
 
 ## Completion Signal

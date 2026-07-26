@@ -73,8 +73,18 @@ required-by-policy → send to review; and **never** label an unscanned item "in
 A watchdog restart during an uncertain write could create a duplicate.
 Mitigation: durable leases and an authoritative provider query before any retry.
 
-### SIGN: macOS quietly deferred
-Mitigation: macOS host adapters are implemented in the same chunk as Windows, never stubbed.
+### SIGN: macOS work consuming Windows Version 1 build time
+**Superseded by an explicit owner decision (2026-07-25): Version 1 is WINDOWS ONLY.**
+See `docs/decisions/windows-only-v1-2026-07-25.md`.
+macOS is no longer "quietly deferred" — it is deliberately out of scope. The risk has inverted:
+the defect is now spending Version 1 time on macOS packaging, signing, notarization or testing.
+Mitigation: `src/host/types.ts` and `src/host/macos.ts` are PRESERVED and must keep compiling so
+a later macOS version stays a thin addition — but macOS must never appear in a Version 1
+acceptance criterion, gate, or completion claim.
+
+### SIGN: a Windows-only decision used to justify leaking OS specifics into core
+Windows-only is a scope reduction, not a licence to hard-code `process.platform` through `src/**`.
+Mitigation: `npm run lint:noleak` keeps OS identifiers confined to `src/host/**`. It stays green.
 
 ## Scope Exclusions — Do Not Build
 
@@ -94,6 +104,7 @@ Mitigation: macOS host adapters are implemented in the same chunk as Windows, ne
 - DO NOT BUILD: QuickBooks web scraping or credential automation.
 - DO NOT BUILD: removal of tenant or role isolation.
 - DO NOT BUILD: Linux packaging.
+- DO NOT BUILD: macOS packaging, signing, notarization, or macOS acceptance criteria — OUT OF VERSION 1 SCOPE (2026-07-25). Do not delete the macOS abstractions; do not spend V1 time on them.
 
 ## Standing Guardrails (always active)
 
