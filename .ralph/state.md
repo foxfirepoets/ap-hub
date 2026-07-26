@@ -49,12 +49,16 @@ Three findings from the freeze, each verified against the code by the integratio
 | `spike/static-export` | `ap-hub-worktrees/export-spike` | throwaway spike: the 3 runtime-id screens | **answered, deliberately NOT merged** — see DEVIATIONS §5a |
 | `agent/ipc-read-domains` | `ap-hub-worktrees/ipc-read` | 21 read channels | **merged + activated** `c93e331` |
 | `agent/ipc-action-domains` | `ap-hub-worktrees/ipc-action` | 29 mutation channels | **merged + activated** `7a1f4a6` |
-| `agent/ipc-renderer` | `ap-hub-worktrees/ipc-renderer` | `app/lib/api.ts` + `session.tsx` → IPC | active |
-| `agent/ipc-contract-tests` | `ap-hub-worktrees/ipc-qa` | `test/ipc-contract.test.ts` full replay | active |
+| `agent/ipc-renderer` | `ap-hub-worktrees/ipc-renderer` | `app/lib/api.ts` + `session.tsx` → IPC | **merged** `85fc2be` |
+| `agent/ipc-contract-tests` | `ap-hub-worktrees/ipc-qa` | `test/ipc-contract.test.ts` full replay (530 tests) | **merged** `87517ce` |
 
 **Live at `7a1f4a6`** (tag `checkpoint/chunk3-all-channels`): **all 50 product channels**
-registered and serving — 21 read + 29 action. `npm run verify` **exit 0**. 378/378 IPC tests.
+registered and serving — 21 read + 29 action. 378/378 IPC tests at that commit.
 Preload bundle 4.8kb (channel-name strings only; no zod, no pg).
+
+CORRECTION: an earlier revision of this file claimed `npm run verify` **exit 0** here. It did
+not. That reading came from a piped invocation where `$?` was `tail`'s status. The gate was red
+at `lint` at the time. See the status section below for measured exit codes.
 
 Collision resolved at integration: B3 and B4 both registered `aphub:tax-mappings:discover`,
 which `buildRegistry` would have thrown `DUPLICATE_CHANNEL` on at startup. Kept B3's — the
