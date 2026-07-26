@@ -18,6 +18,8 @@ import { RENDERER_WEB_PREFERENCES, RENDERER_CSP } from './security.js';
 import { engineStateLabel, type EngineState } from './status.js';
 import { startDatabase, describeDatabaseFailure, type StartedLocalDatabase } from './database.js';
 import { registerProductHandlers } from './ipc/dispatcher.js';
+import { READ_CHANNELS } from './ipc/read/channels.js';
+import { READ_ENTRIES } from './ipc/read/index.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -269,15 +271,15 @@ if (!app.requestSingleInstanceLock()) {
      * `aphub:shell:status` reports from, so the renderer can never see the bridge and the
      * status line disagree.
      *
-     * `contributions` is empty until B3 (read domains) and B4 (action domains) land, which
-     * makes this call inert: it registers no channel and changes no behaviour. It is wired
-     * now so the seam is proven under a real Electron process before 50 channels depend on it.
+     * B3's 21 read channels are live. B4's action channels are appended here when they merge;
+     * the dispatcher asserts registry/allowlist symmetry in both directions, so a channel that
+     * exists in only one of the two places fails at startup rather than at a user's keystroke.
      */
     registerProductHandlers({
       ipcMain,
       databaseState: () =>
         database !== null ? 'ready' : databaseProblem === null ? 'starting' : 'failed',
-      contributions: [],
+      contributions: [{ channels: READ_CHANNELS, entries: READ_ENTRIES }],
     });
     mainWindow = createWindow();
     createTray();

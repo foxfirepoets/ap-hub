@@ -10,6 +10,12 @@
  * CHUNK_3 adds the 52 migrated product operations, CHUNK_5 the connect flow, CHUNK_7 backup.
  */
 
+// CHUNK_3_IPC — the product channel names. These modules have ZERO imports on purpose: this
+// file is bundled into the sandboxed preload, so anything they import lands there too and
+// reproduces the CHUNK_2 `Dynamic require of "events"` failure at the preload layer.
+// `test/ipc-foundation.test.ts` asserts they stay import-free.
+import { READ_CHANNELS } from './ipc/read/channels.js';
+
 /** Shell-level channels. One entry per operation, named `aphub:<domain>:<action>`. */
 export const SHELL_CHANNELS = [
   'aphub:shell:version',
@@ -20,7 +26,10 @@ export const SHELL_CHANNELS = [
  * Every channel the preload bridge will relay. CHUNK_3/5/7 append their own lists here.
  * Frozen so a later import cannot widen the surface at runtime.
  */
-export const IPC_CHANNELS: readonly string[] = Object.freeze([...SHELL_CHANNELS]);
+export const IPC_CHANNELS: readonly string[] = Object.freeze([
+  ...SHELL_CHANNELS,
+  ...READ_CHANNELS,
+]);
 
 const CHANNEL_SET: ReadonlySet<string> = new Set(IPC_CHANNELS);
 

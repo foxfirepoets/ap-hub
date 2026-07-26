@@ -264,7 +264,13 @@ describe('registry and allowlist symmetry is enforced in both directions', () =>
       ipcMain,
       databaseState: ready,
       contributions: [{ channels: ['aphub:shell:version'], entries: [fixtureEntry(spy)] }],
-      reservedChannels: SHELL_CHANNELS,
+      // Reserve every OTHER allowlisted channel. This test is about the 1:1
+      // channel→handler mapping, not about covering the real registry, so reserving by
+      // exclusion keeps it honest as CHUNK_3/5/7 add channels — a hard-coded
+      // `SHELL_CHANNELS` here goes stale the moment the allowlist grows, which is exactly
+      // what happened when B3's 21 read channels landed. The CHANNEL_WITHOUT_HANDLER path
+      // itself is still guarded by the test directly above.
+      reservedChannels: IPC_CHANNELS.filter((c) => c !== 'aphub:shell:version'),
     });
     expect(registered).toEqual(['aphub:shell:version']);
   });
