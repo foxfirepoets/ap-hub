@@ -37,12 +37,14 @@ and a build-time assertion both enforce this.
 | Integration lead | `feat/local-desktop-p1` | `Desktop/ap-hub` | all shared files; merges; gate | — | active |
 | A — Database | `agent/database-chunk2` | `ap-hub-worktrees/database` | `src/db/**`, `src/install/**`, `scripts/bundle-postgres.mjs`, `vendor/postgres.lock.json`, `test/local-database*.test.ts` | `desktop/main.ts`, `electron-builder.yml` | **CHUNK_2 complete — merged** |
 | B1 — IPC interfaces | *(integration lead, main checkout)* | `Desktop/ap-hub` | `docs/build/interfaces/**` | — | **frozen — see below** |
-| B2 — IPC foundation | `agent/ipc-foundation` | `ap-hub-worktrees/ipc-foundation` | `desktop/ipc/dispatcher.ts`, `desktop/ipc/envelope.ts`, `desktop/ipc/registry.ts`, `desktop/ipc/errors.ts`, `desktop/ipc/context.ts`, `test/ipc-foundation.test.ts` | `desktop/channels.ts`, `desktop/main.ts` | active |
-| B3 — IPC read domains | `agent/ipc-read-domains` | `ap-hub-worktrees/ipc-read` | `desktop/ipc/read/**`, `test/ipc-read-*.test.ts` | `desktop/channels.ts` (append via patch request) | queued behind B2 |
-| B4 — IPC action domains | `agent/ipc-action-domains` | `ap-hub-worktrees/ipc-action` | `desktop/ipc/action/**`, `test/ipc-action-*.test.ts` | `desktop/channels.ts` (append via patch request) | queued behind B2 |
-| B5 — Renderer transport | `agent/ipc-renderer` | `ap-hub-worktrees/ipc-renderer` | `app/lib/api.ts`, `app/lib/session.tsx` **only** | — | queued behind B3+B4 |
-| B6 — IPC contract tests | `agent/ipc-contract-tests` | `ap-hub-worktrees/ipc-qa` | `test/ipc-contract.test.ts` | — | queued behind B3+B4 |
-| B7 — IPC security verifier | *(read-only, no branch)* | `Desktop/ap-hub` | nothing — reports only | — | queued behind B5+B6 |
+| B2 — IPC foundation | `agent/ipc-foundation` | `ap-hub-worktrees/ipc-foundation` | `desktop/ipc/dispatcher.ts`, `desktop/ipc/envelope.ts`, `desktop/ipc/registry.ts`, `desktop/ipc/errors.ts`, `desktop/ipc/context.ts`, `test/ipc-foundation.test.ts` | `desktop/channels.ts`, `desktop/main.ts` | **merged** `0ca28f2` |
+| B3 — IPC read domains | `agent/ipc-read-domains` | `ap-hub-worktrees/ipc-read` | `desktop/ipc/read/**`, `test/ipc-read-*.test.ts` | `desktop/channels.ts` (append via patch request) | **merged + activated** `c93e331` |
+| B4 — IPC action domains | `agent/ipc-action-domains` | `ap-hub-worktrees/ipc-action` | `desktop/ipc/action/**`, `test/ipc-action-*.test.ts` | `desktop/channels.ts` (append via patch request) | **merged + activated** `7a1f4a6` |
+| B5 — Renderer transport | `agent/ipc-renderer` | `ap-hub-worktrees/ipc-renderer` | `app/lib/api.ts`, `app/lib/session.tsx` **only** | — | **merged** `85fc2be` |
+| B6 — IPC contract tests | `agent/ipc-contract-tests` | `ap-hub-worktrees/ipc-qa` | `test/ipc-contract.test.ts` (530 tests) | — | **merged** `87517ce` |
+| B7 — IPC security verifier | *(read-only, no branch)* | `Desktop/ap-hub` | nothing — reports only | — | queued behind G1a+G1b |
+| G1a — Electron build | `agent/electron-renderer` | `ap-hub-worktrees/electron-renderer` | `app/api/**` + `app/oauth/**` deletion, `next.config.mjs`, the 3 `[id]/layout.tsx` + 3 page id-reads, `desktop/main.ts` interception, new `e2e-desktop/` test | `desktop/main.ts` (granted — no other writer active) | active |
+| G1b — Journey migration | `agent/electron-renderer` (same branch, after G1a) | `ap-hub-worktrees/electron-renderer` | `e2e/app.spec.ts` → `e2e-desktop/**`, `playwright.config.ts` | `playwright.config.ts` | queued behind G1a |
 | C — Discovery | `agent/discovery-wizard` | `ap-hub-worktrees/discovery` | `src/discovery/**` (new), wizard components, inference evidence model | migration number | not started |
 | D — Providers | `agent/providers-xero-sage` | `ap-hub-worktrees/providers` | `src/connectors/xero.ts`, `src/connectors/sage.ts`, provider auth adapters | `src/connectors/types.ts` (contract change needs approval) | not started |
 | E — QA/packaging | `agent/qa-packaging` | `ap-hub-worktrees/qa-package` | clean-user harness, installer smoke tests, artifact manifest | `electron-builder.yml` | not started |
