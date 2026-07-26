@@ -48,19 +48,41 @@ Three findings from the freeze, each verified against the code by the integratio
 | `agent/ipc-foundation` | `ap-hub-worktrees/ipc-foundation` | dispatcher, envelope, registry, errors, context | **merged** `0ca28f2` |
 | `spike/static-export` | `ap-hub-worktrees/export-spike` | throwaway spike: the 3 runtime-id screens | **answered, deliberately NOT merged** — see DEVIATIONS §5a |
 | `agent/ipc-read-domains` | `ap-hub-worktrees/ipc-read` | 21 read channels | **merged + activated** `c93e331` |
-| `agent/ipc-action-domains` | `ap-hub-worktrees/ipc-action` | mutation channels | active |
+| `agent/ipc-action-domains` | `ap-hub-worktrees/ipc-action` | 29 mutation channels | **merged + activated** `7a1f4a6` |
+| `agent/ipc-renderer` | `ap-hub-worktrees/ipc-renderer` | `app/lib/api.ts` + `session.tsx` → IPC | active |
+| `agent/ipc-contract-tests` | `ap-hub-worktrees/ipc-qa` | `test/ipc-contract.test.ts` full replay | active |
 
-**Live at `c93e331`:** 21 read channels registered and serving. `npx tsc --noEmit` 0 ·
-119/119 unit · 13/13 real-Electron Playwright · preload bundle 3.3kb (channel strings only,
-no zod/pg). Tag `checkpoint/chunk3-foundation` pushed.
+**Live at `7a1f4a6`** (tag `checkpoint/chunk3-all-channels`): **all 50 product channels**
+registered and serving — 21 read + 29 action. `npm run verify` **exit 0**. 378/378 IPC tests.
+Preload bundle 4.8kb (channel-name strings only; no zod, no pg).
 
-**Still to do in CHUNK_3 after B4 merges:** B5 renderer transport (`app/lib/api.ts`,
-`app/lib/session.tsx` only) · B6 `test/ipc-contract.test.ts` full cross-tenant + RBAC replay
-across every channel · delete all **54** route handlers (52 under `app/api/**` plus the two
-`app/oauth/*/callback` — see DEVIATIONS §5b) · build and prove the `file://` interception for
-the three runtime-id screens under a **real** Electron process (currently
-`[UNVERIFIED in real Electron]`, DEVIATIONS §5a) · Playwright trace showing zero renderer
-requests to an AP-Hub origin · B7 read-only security verification.
+Collision resolved at integration: B3 and B4 both registered `aphub:tax-mappings:discover`,
+which `buildRegistry` would have thrown `DUPLICATE_CHANNEL` on at startup. Kept B3's — the
+deciding fact is the wrapper, and `runDiscoverTaxCodes` goes through `runTaxMappingRead`, the
+owner-only READ clone. B3's entry was checked for `queryParams: ['code']` first, because the
+service reads `url.searchParams.get('code')` (`src/services/action/taxMappings.ts:238`) and
+without it the filter would vanish silently.
+
+**Do not "simplify" these — each is a place a plausible cleanup breaks something:**
+
+- `/api/provider-jobs/:id/retry` has **no** service function; its logic is inline in the route
+  file, reproduced verb-for-verb in `desktop/ipc/action/providerJobs.ts`.
+- The write-gate's two string fields are permissive (max only, no `min(1)`) **on purpose**.
+  `setOwnerWriteGate` (`src/accounting/write-gates.ts:13-19`) only demands non-empty values when
+  `enabled` is true, so the DISABLE path sends `''`. A `min(1)` makes turning production
+  accounting writes **off** impossible — failing closed in the dangerous direction.
+- `cpa` may READ bank statements but not mutate them. The read routes admit three roles,
+  `action()` (`src/statements/http.ts:24`) admits two. Unifying them grants CPAs write access.
+- There are **9** role-bearing wrappers, not the 5 the route map documents.
+- `statements:correct`'s `value` is required-but-**nullable**, not optional.
+- `tax-mappings:revalidate` takes an **optional** reason while its three siblings require one.
+
+**Still to do in CHUNK_3:** merge B5 + B6 · delete all **54** route handlers (52 under
+`app/api/**` plus the two `app/oauth/*/callback` — DEVIATIONS §5b) · apply the static-export
+change (3 new `layout.tsx` + 13 lines across 3 pages — DEVIATIONS §5a) · **build and prove the
+`file://` interception under a real Electron process** (currently `[UNVERIFIED in real
+Electron]`) · Playwright trace showing zero renderer requests to an AP-Hub origin · B7
+read-only security verification · append the CHUNK_3 promise line.
 
 `node_modules` is a directory junction into the main checkout in each worktree. Agents must not
 run `npm install`; `package.json` is orchestrator-owned.
