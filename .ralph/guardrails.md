@@ -86,6 +86,33 @@ acceptance criterion, gate, or completion claim.
 Windows-only is a scope reduction, not a licence to hard-code `process.platform` through `src/**`.
 Mitigation: `npm run lint:noleak` keeps OS identifiers confined to `src/host/**`. It stays green.
 
+### SIGN: two agents running DB-backed suites at once against the one shared database
+
+Found 2026-07-26 during CHUNK_3 orchestration. `npm run verify` exited 0, and a full-suite run
+started minutes later — overlapping two agent worktrees running their own vitest suites —
+reported 1 failure in 980 with no code change in between.
+
+`test/setup.ts` already guards this with `acquireCrossProcessDatabaseLock()`, keyed on a hash of
+`DATABASE_URL`, and `vitest.config` sets `fileParallelism: false`. The lock is sound in itself:
+it waits 180 s, verifies the owning pid is alive, clears a stale lock, and **throws** on timeout
+rather than proceeding. But the protection is **per test FILE, not per suite RUN**, because
+`pool: 'forks'` gives each file a new process that re-acquires the lock and releases it via
+`process.once('exit')`. Two concurrent suites therefore interleave at file granularity, and any
+file that assumes shared tables are otherwise quiet can see rows another suite is mutating.
+
+Mitigation for whoever orchestrates agents:
+
+- Every agent worktree shares one PostgreSQL — `node_modules` is a directory junction and so, in
+  effect, is the database. Give agents **narrowly scoped** test commands
+  (`npx vitest run test/<their-file>.test.ts`), never the full suite.
+- The integration lead runs the full gate **serially**, with no agent suites in flight. A gate
+  result obtained while agents were running tests is not trustworthy evidence.
+- **Never let an agent "fix" a failure in a file it does not own.** Re-run that file in isolation
+  first. A failure that only appears during concurrent runs is a scheduling artifact, and
+  "fixing" it means changing correct code to satisfy a phantom.
+- Conversely: do not dismiss a failure as contention without reproducing its absence in
+  isolation. Contention is a hypothesis to test, not an excuse to accept.
+
 ## Scope Exclusions — Do Not Build
 
 - DO NOT BUILD: a hosted AP-Hub application, public AP-Hub URL, tunnel, or inbound relay.
