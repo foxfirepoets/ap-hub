@@ -22,7 +22,7 @@ http.createServer(async (req, res) => {
   // Fake auth so SessionGuard (app/lib/session.tsx) doesn't redirect to /login during this test.
   if (url.pathname === '/api/me') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ data: { email: 'spike@test.local', role: 'owner', tenantId: 1 } }));
+    res.end(JSON.stringify({ data: { email: 'spike@test.local', role: 'owner_controller', tenantId: 1 } }));
     return;
   }
   const decodedPath = decodeURIComponent(url.pathname);
