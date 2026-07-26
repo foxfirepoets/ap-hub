@@ -10,6 +10,57 @@ Status: CHUNK_2 promise appended to `.ralph/progress.md` on 2026-07-26 (it was c
 earlier than it was actually written — the work was real, the record was not; corrected).
 CHUNK_3 in progress: interfaces frozen, `agent/ipc-foundation` active.
 
+### CHUNK_3 — in progress (orchestrated, multi-agent)
+
+**Integration branch:** `feat/local-desktop-p1` · **integration commit:** `53c4d9b` (pushed).
+**Recovery tag before CHUNK_3:** `checkpoint/chunk3-start-b68984c` (pushed).
+
+Baseline re-verified at `b68984c` before any CHUNK_3 change, matching expectations exactly:
+`npm run verify` exit 0 · 70 test files · 602 tests · 37 Playwright (6 of them bundled-PostgreSQL
+under a real Electron process) · exactly one provider-send site (`src/gmail/adapter.ts:142`) ·
+52 `app/api/**/route.ts` files · `vendor/postgres.lock.json` tree 1631 files / 125898162 bytes
+matching the measured `vendor/pgsql` tree.
+
+**Frozen interfaces:** `docs/build/interfaces/` (1587 lines). The load-bearing decision, which is
+NOT to be re-opened: the dispatcher reuses the existing exported service wrappers **unmodified**
+by synthesizing a `Request` and decoding the `Response`. `src/services/**` is not edited by this
+chunk. `runAction` is module-private and has more clones than
+`docs/build/route-to-service-map.md:52` records — exporting or unifying them is an authorization
+change disguised as a refactor and is forbidden here.
+
+Three findings from the freeze, each verified against the code by the integration lead:
+
+1. `runTaxMappingRead` (`src/services/action/taxMappings.ts:74`) and `runDimensionMappingRead`
+   (`src/services/action/dimensionMappings.ts:69`) are **owner-only READ wrappers**, and the route
+   map omits both. Porting either with a plain `runRead` widens owner-only data to every role.
+2. `ok` is **not** "no code present". `errorResponse('QBO_RETRY', …, 202)`
+   (`src/services/action/index.ts:153`) is a genuine `ok: true` carrying a code; the retry screens
+   branch on it. Hence the additive `IpcResult.status` field on `desktop/preload.ts`.
+3. `runMarkNotificationRead` (`src/services/action/notifications.ts:19`) calls `readContext` with
+   **no role**, so `cpa` — otherwise read-only — can perform this one mutation. Faithful to today's
+   behaviour and to the route map; **preserved deliberately** in CHUNK_3 rather than silently
+   "fixed", because changing it is a behaviour change outside this chunk. Revisit in CHUNK_4.
+
+**Agent worktrees** (see `docs/build/file-ownership.md` for full ownership):
+
+| Branch | Worktree | Task | Status |
+|---|---|---|---|
+| `agent/ipc-foundation` | `ap-hub-worktrees/ipc-foundation` | dispatcher, envelope, registry, errors, context | active |
+| `spike/static-export` | `ap-hub-worktrees/export-spike` | throwaway spike: how the 3 runtime-id screens export | active |
+
+`node_modules` is a directory junction into the main checkout in each worktree. Agents must not
+run `npm install`; `package.json` is orchestrator-owned.
+
+**Open question carried into CHUNK_3 (DEVIATIONS.md #4):** three page routes take runtime ids that
+`generateStaticParams` cannot enumerate — `statements/[id]`, `transactions/[id]`,
+`settings/tax-mapping/[id]`. The spike above is resolving how they work from `file://` without a
+product HTTP server and, ideally, without touching a page component. Must be reported explicitly
+whichever way it lands.
+
+**Exact next task:** review the `agent/ipc-foundation` handoff (verify `desktop/channels.ts`,
+`desktop/main.ts` and `src/**` are byte-identical to `53c4d9b`), apply its two shared-file patches,
+merge, then release B3 (read domains) and B4 (action domains) in parallel worktrees.
+
 ### CHUNK_2 — closed, with evidence
 
 All acceptance criteria met and evidenced against a REAL server, not mocks:
