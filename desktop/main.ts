@@ -20,6 +20,8 @@ import { startDatabase, describeDatabaseFailure, type StartedLocalDatabase } fro
 import { registerProductHandlers } from './ipc/dispatcher.js';
 import { READ_CHANNELS } from './ipc/read/channels.js';
 import { READ_ENTRIES } from './ipc/read/index.js';
+import { ACTION_CHANNELS } from './ipc/action/channels.js';
+import { ACTION_ENTRIES } from './ipc/action/index.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -279,7 +281,10 @@ if (!app.requestSingleInstanceLock()) {
       ipcMain,
       databaseState: () =>
         database !== null ? 'ready' : databaseProblem === null ? 'starting' : 'failed',
-      contributions: [{ channels: READ_CHANNELS, entries: READ_ENTRIES }],
+      contributions: [
+        { channels: READ_CHANNELS, entries: READ_ENTRIES },
+        { channels: ACTION_CHANNELS, entries: ACTION_ENTRIES },
+      ],
     });
     mainWindow = createWindow();
     createTray();

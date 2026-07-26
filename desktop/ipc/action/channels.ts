@@ -63,7 +63,6 @@ export const ACTION_CHANNELS = [
   'aphub:tax-mappings:disable',
   'aphub:tax-mappings:replace',
   'aphub:tax-mappings:revalidate',
-  'aphub:tax-mappings:discover',
 
   // dimension-mapping review queue (owner only)
   'aphub:dimension-mappings:accept',

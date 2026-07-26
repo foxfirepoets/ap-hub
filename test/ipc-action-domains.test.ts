@@ -167,7 +167,6 @@ const VALID_PAYLOAD: Readonly<Record<string, Record<string, unknown>>> = {
     reason: 'rate changed',
   },
   'aphub:tax-mappings:revalidate': { taxMappingId: 987654 },
-  'aphub:tax-mappings:discover': {},
   'aphub:dimension-mappings:accept': { mappingId: 987654 },
   'aphub:dimension-mappings:correct': { mappingId: 987654, normalizedValue: 'Marketing' },
   'aphub:dimension-mappings:reject': { mappingId: 987654, reason: 'not a department' },
@@ -180,7 +179,6 @@ const VALID_PAYLOAD: Readonly<Record<string, Record<string, unknown>>> = {
 const EXPECTED_METHOD: Readonly<Record<string, string>> = {
   'aphub:reply-drafts:update': 'PATCH',
   'aphub:reply-drafts:discard': 'DELETE',
-  'aphub:tax-mappings:discover': 'GET',
 };
 
 function rolesOf(entry: RegistryEntry): readonly string[] | 'any' {
@@ -195,9 +193,9 @@ function admits(entry: RegistryEntry, role: string): boolean {
 // --- 1. the surface itself -------------------------------------------------------------------
 
 describe('the action surface is complete and symmetric', () => {
-  it('registers a channel for every mutation, and 30 of them', () => {
-    expect(ACTION_ENTRIES).toHaveLength(30);
-    expect(ACTION_CHANNELS).toHaveLength(30);
+  it('registers a channel for every mutation, and 29 of them', () => {
+    expect(ACTION_ENTRIES).toHaveLength(29);
+    expect(ACTION_CHANNELS).toHaveLength(29);
   });
 
   it('is set-equal between the zero-import name list and the entries, in both directions', () => {
@@ -241,7 +239,6 @@ describe('the action surface is complete and symmetric', () => {
       'POST /api/tax-mappings/:taxMappingId/disable',
       'POST /api/tax-mappings/:taxMappingId/replace',
       'POST /api/tax-mappings/:taxMappingId/revalidate',
-      'GET /api/tax-mappings/discover',
       'POST /api/dimension-mappings/:mappingId/accept',
       'POST /api/dimension-mappings/:mappingId/correct',
       'POST /api/dimension-mappings/:mappingId/reject',
@@ -275,13 +272,15 @@ describe('the action surface is complete and symmetric', () => {
     }
   });
 
-  it('declares no body keys on the one GET channel', () => {
-    const discover = byChannel.get('aphub:tax-mappings:discover')!;
-    expect(discover.method).toBe('GET');
-    expect(discover.bodyKeys ?? []).toEqual([]);
-    // `runDiscoverTaxCodes` reads `code` off searchParams (taxMappings.ts:238), so it must be a
-    // query param or the filter silently disappears.
-    expect(discover.queryParams).toEqual(['code']);
+  it('registers no GET channel, because every action channel mutates', () => {
+    // `aphub:tax-mappings:discover` used to live here and was the sole GET. Both B3 and B4
+    // registered it; the integration lead kept B3's, because it goes through
+    // `runTaxMappingRead` — the owner-only READ wrapper — so it belongs with the reads.
+    // This is now the stronger invariant: nothing on the ACTION surface may be a GET, so a
+    // read can never drift into the mutation registry and inherit an action role default.
+    for (const entry of ACTION_ENTRIES) {
+      expect(entry.method, `${entry.channel} is on the action surface and must not be a GET`).not.toBe('GET');
+    }
   });
 
   it('never duplicates a path param into the body', () => {
@@ -701,18 +700,18 @@ describe('the role matrix matches the wrapper that actually gates each channel',
     }
   });
 
-  it('refuses bookkeeper on every owner-only channel, and there are 18 of them', async () => {
+  it('refuses bookkeeper on every owner-only channel, and there are 17 of them', async () => {
     const ownerOnly = ACTION_ENTRIES.filter((e) => !admits(e, 'bookkeeper'));
-    expect(ownerOnly).toHaveLength(18);
+    expect(ownerOnly).toHaveLength(17);
     setSessionToken(session.bookkeeper!);
     for (const entry of ownerOnly) {
       expect((await drive(entry, VALID_PAYLOAD[entry.channel])).code, entry.channel).toBe('FORBIDDEN');
     }
   });
 
-  it('refuses cpa on all 29 channels that are not the notification read', async () => {
+  it('refuses cpa on all 28 channels that are not the notification read', async () => {
     const closed = ACTION_ENTRIES.filter((e) => !admits(e, 'cpa'));
-    expect(closed).toHaveLength(29);
+    expect(closed).toHaveLength(28);
     setSessionToken(session.cpa!);
     for (const entry of closed) {
       expect((await drive(entry, VALID_PAYLOAD[entry.channel])).code, entry.channel).toBe('FORBIDDEN');

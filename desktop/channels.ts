@@ -15,6 +15,7 @@
 // reproduces the CHUNK_2 `Dynamic require of "events"` failure at the preload layer.
 // `test/ipc-foundation.test.ts` asserts they stay import-free.
 import { READ_CHANNELS } from './ipc/read/channels.js';
+import { ACTION_CHANNELS } from './ipc/action/channels.js';
 
 /** Shell-level channels. One entry per operation, named `aphub:<domain>:<action>`. */
 export const SHELL_CHANNELS = [
@@ -29,6 +30,7 @@ export const SHELL_CHANNELS = [
 export const IPC_CHANNELS: readonly string[] = Object.freeze([
   ...SHELL_CHANNELS,
   ...READ_CHANNELS,
+  ...ACTION_CHANNELS,
 ]);
 
 const CHANNEL_SET: ReadonlySet<string> = new Set(IPC_CHANNELS);
