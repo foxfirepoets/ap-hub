@@ -1,8 +1,7 @@
 import PageClient from './PageClient';
 
 export function generateStaticParams() {
-  console.log('>>> generateStaticParams CALLED for statements/[id]');
-  return [{ id: 'sentinel' }];
+  return [{ slug: ['sentinel'] }];
 }
 
 export default function Page() {

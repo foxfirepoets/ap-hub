@@ -7,7 +7,6 @@
 // - ESLint during build is skipped: the gate lints src/** with the repo eslint config;
 //   the app/ tree's correctness is covered by `next build` typechecking + the Playwright E2E.
 const nextConfig = {
-  output: 'export',
   reactStrictMode: true,
   // Windows + Node 24 build-trace collection for `_not-found`/500 hits an ENOENT during
   // `next build` (collect-build-traces.js can't find/rename its own .nft.json/export
