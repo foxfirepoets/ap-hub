@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
 
-import { IPC_CHANNELS, SHELL_CHANNELS } from '../desktop/channels.js';
+import { IPC_CHANNELS } from '../desktop/channels.js';
 import {
   buildRegistry,
   defineChannel,

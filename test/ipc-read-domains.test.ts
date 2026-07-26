@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterAll } from 'vitest';
 
 import { READ_CHANNELS } from '../desktop/ipc/read/channels.js';
 import { READ_ENTRIES } from '../desktop/ipc/read/index.js';
-import { CHANNEL_PATTERN, SHELL_CHANNELS } from '../desktop/channels.js';
+import { CHANNEL_PATTERN } from '../desktop/channels.js';
 import { buildRegistry, type RegistryEntry, type ChannelContribution } from '../desktop/ipc/registry.js';
 import { createDispatcher } from '../desktop/ipc/dispatcher.js';
 import { clearSessionToken, setSessionToken } from '../desktop/ipc/context.js';
