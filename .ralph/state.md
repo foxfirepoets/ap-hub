@@ -45,8 +45,22 @@ Three findings from the freeze, each verified against the code by the integratio
 
 | Branch | Worktree | Task | Status |
 |---|---|---|---|
-| `agent/ipc-foundation` | `ap-hub-worktrees/ipc-foundation` | dispatcher, envelope, registry, errors, context | active |
-| `spike/static-export` | `ap-hub-worktrees/export-spike` | throwaway spike: how the 3 runtime-id screens export | active |
+| `agent/ipc-foundation` | `ap-hub-worktrees/ipc-foundation` | dispatcher, envelope, registry, errors, context | **merged** `0ca28f2` |
+| `spike/static-export` | `ap-hub-worktrees/export-spike` | throwaway spike: the 3 runtime-id screens | **answered, deliberately NOT merged** — see DEVIATIONS §5a |
+| `agent/ipc-read-domains` | `ap-hub-worktrees/ipc-read` | 21 read channels | **merged + activated** `c93e331` |
+| `agent/ipc-action-domains` | `ap-hub-worktrees/ipc-action` | mutation channels | active |
+
+**Live at `c93e331`:** 21 read channels registered and serving. `npx tsc --noEmit` 0 ·
+119/119 unit · 13/13 real-Electron Playwright · preload bundle 3.3kb (channel strings only,
+no zod/pg). Tag `checkpoint/chunk3-foundation` pushed.
+
+**Still to do in CHUNK_3 after B4 merges:** B5 renderer transport (`app/lib/api.ts`,
+`app/lib/session.tsx` only) · B6 `test/ipc-contract.test.ts` full cross-tenant + RBAC replay
+across every channel · delete all **54** route handlers (52 under `app/api/**` plus the two
+`app/oauth/*/callback` — see DEVIATIONS §5b) · build and prove the `file://` interception for
+the three runtime-id screens under a **real** Electron process (currently
+`[UNVERIFIED in real Electron]`, DEVIATIONS §5a) · Playwright trace showing zero renderer
+requests to an AP-Hub origin · B7 read-only security verification.
 
 `node_modules` is a directory junction into the main checkout in each worktree. Agents must not
 run `npm install`; `package.json` is orchestrator-owned.
