@@ -20,6 +20,20 @@ export interface IpcResult<T = unknown> {
   data?: T;
   code?: string;
   message?: string;
+  /**
+   * CHUNK_3: the originating HTTP status, carried through so the renderer adapter can keep
+   * `apiGet` throwing and `apiPost` NOT throwing on 201/202/409/400. That asymmetry is
+   * load-bearing — screens branch on the status rather than on a thrown error — so dropping
+   * it would silently change error handling in every mutation screen and force page edits.
+   *
+   * Optional and additive: the CHUNK_1 shell channels omit it and stay correct, and the
+   * adapter defaults an absent value to `ok ? 200 : 500`.
+   *
+   * `ok` is NOT "no code present": `errorResponse('QBO_RETRY', …, 202)`
+   * (`src/services/action/index.ts:153`) is a real `ok: true` response that also carries a
+   * code, and the retry screens depend on it.
+   */
+  status?: number;
 }
 
 const CHANNEL_REFUSED: IpcResult = Object.freeze({

@@ -6,7 +6,9 @@ Current chunk: CHUNK_3_IPC
 Current task: 1 of 5
 Last completed: **CHUNK_2_DATABASE — complete.** Bundled PostgreSQL 16.10 starts under a real
 Electron process, initialises a private cluster, migrates itself and records `install.json`.
-Status: CHUNK_2 promise appended. CHUNK_3 not started.
+Status: CHUNK_2 promise appended to `.ralph/progress.md` on 2026-07-26 (it was claimed here
+earlier than it was actually written — the work was real, the record was not; corrected).
+CHUNK_3 in progress: interfaces frozen, `agent/ipc-foundation` active.
 
 ### CHUNK_2 — closed, with evidence
 

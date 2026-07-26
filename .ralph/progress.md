@@ -287,3 +287,33 @@ a scoop install on 5432 and the archived `cbv-loc001` build's bundled instance o
 about are genuinely occupied here, which is a useful fixture for CHUNK_2's remaining work. That
 install root also contains a `.env` and a `secrets/` directory from the old design, which spec §9
 now forbids — outside the repo, but relevant to CHUNK_9's uninstall/repair story.
+
+### 2026-07-26 — CHUNK_2_DATABASE — CLOSED (supersedes the PARTIAL entry above)
+
+The `2026-07-25 — CHUNK_2_DATABASE — PARTIAL` entry above is **historical and superseded**. It is
+left unedited because this log is append-only. Everything its "NOT done" list named was completed
+by the four commits that followed it:
+
+| Commit | What it closed |
+|---|---|
+| `3eee57b` | recorded the remaining CHUNK_2 work and the local port-collision fixture |
+| `ccd2d3c` | `install.json` credential rejection + the supervised PostgreSQL runtime |
+| `f3120a5` | Electron ESM packaging for the `pg` runtime (`packages: 'external'`) |
+| `b68984c` | bundled PostgreSQL starts **and migrates** under a real Electron process |
+
+Verified by the integration lead on 2026-07-26 at `b68984c` before opening CHUNK_3:
+
+- `npm run verify` exits 0.
+- 37/37 Playwright tests pass, of which **6** are bundled-PostgreSQL tests under a real Electron
+  process (`e2e-desktop/database.spec.ts`): the shell reaches `running` with its private database
+  ready; a real cluster exists in the install's private data directory; `install.json` records a
+  private port and carries **no** credential; the database listens only on loopback on its own
+  port; the migrated schema is reachable on that port with the stored password.
+- `vendor/postgres.lock.json` `tree.fileCount` 1631 / `totalBytes` 125898162 matches the real
+  `vendor/pgsql` tree exactly (measured, not asserted).
+- Locked forwarder: **exactly one** provider-send call site, `src/gmail/adapter.ts:142`. Not zero.
+
+Correction to the record: `.ralph/state.md` previously claimed this promise line had already been
+appended. It had not — the claim was stale, the underlying work was real. Fixed here.
+
+<promise>CHUNK COMPLETE: CHUNK_2_DATABASE</promise>

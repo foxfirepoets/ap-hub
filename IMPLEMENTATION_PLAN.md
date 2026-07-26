@@ -19,19 +19,19 @@ installed-environment validation.
 
 ## CHUNK_1_SHELL — Electron shell
 
-- [ ] Add Electron and electron-builder; create `desktop/main.ts`, `desktop/preload.ts`, and the build config. Wire a single-instance lock, window lifecycle, and a tray icon with Open / Pause / Resume / Quit.
-- [ ] Harden the renderer: `contextIsolation: true`, `sandbox: true`, `nodeIntegration: false`, a CSP with no remote origins, blocked navigation to non-`file://` origins, and `shell.openExternal` limited to the four provider domains. Prove `window.require`, `window.process` and `window.module` are undefined from renderer JavaScript.
-- [ ] Static-export the existing React tree into the renderer and load it. Change no page component.
-- [ ] Run `npm run verify` plus a Playwright renderer-hardening assertion, record artifacts in `.ralph/progress.md`, then append `<promise>CHUNK COMPLETE: CHUNK_1_SHELL</promise>`.
+- [x] Add Electron and electron-builder; create `desktop/main.ts`, `desktop/preload.ts`, and the build config. Wire a single-instance lock, window lifecycle, and a tray icon with Open / Pause / Resume / Quit.
+- [x] Harden the renderer: `contextIsolation: true`, `sandbox: true`, `nodeIntegration: false`, a CSP with no remote origins, blocked navigation to non-`file://` origins, and `shell.openExternal` limited to the four provider domains. Prove `window.require`, `window.process` and `window.module` are undefined from renderer JavaScript.
+- [~] **DEFERRED TO CHUNK_3** (DEVIATIONS.md #4): static-export the existing React tree into the renderer and load it. Change no page component. `next build --output export` refuses to run while `app/api/**` exists, and CHUNK_3 is the chunk that deletes those 52 routes. CHUNK_1 ships `desktop/boot.html` instead, which is also the `DB_STARTING` surface. The spec's CHUNK_1 exit criterion (§18) is met and proved by `e2e-desktop/shell.spec.ts`.
+- [x] Run `npm run verify` plus a Playwright renderer-hardening assertion, record artifacts in `.ralph/progress.md`, then append `<promise>CHUNK COMPLETE: CHUNK_1_SHELL</promise>`.
 
 ## CHUNK_2_DATABASE — Bundled invisible PostgreSQL
 
 - [x] ~~Spike both candidate distributions (Open Question 1).~~ **DONE** — `docs/audits/postgres-bundling-spike-2026-07-25.md`. Chosen: official PostgreSQL Windows binaries trimmed to `bin`+`lib`+`share`.
-- [ ] Bundle the chosen PostgreSQL 16 Windows runtime with a reproducible trim script.
-- [ ] Start PostgreSQL as a supervised child with a private data directory, probing ports from 55432 upward; never connect to or modify an existing instance on 5432. Record the chosen port in `install.json`.
-- [ ] Add `migrations/014_local_install.sql` and `015_backups.sql` with tested DOWN scripts; run migrations automatically at launch inside a transaction, leaving the previous version usable on failure.
-- [ ] Add `test/db-bootstrap.test.ts` covering occupied 5432, occupied 55432, a fresh data directory reaching head, and UP → DOWN → UP.
-- [ ] Run `npm run verify`, record artifacts, then append `<promise>CHUNK COMPLETE: CHUNK_2_DATABASE</promise>`.
+- [x] Bundle the chosen PostgreSQL 16 Windows runtime with a reproducible trim script.
+- [x] Start PostgreSQL as a supervised child with a private data directory, probing ports from 55432 upward; never connect to or modify an existing instance on 5432. Record the chosen port in `install.json`.
+- [x] Add `migrations/014_local_install.sql` and `015_backups.sql` with tested DOWN scripts; run migrations automatically at launch inside a transaction, leaving the previous version usable on failure.
+- [x] Add `test/db-bootstrap.test.ts` covering occupied 5432, occupied 55432, a fresh data directory reaching head, and UP → DOWN → UP.
+- [x] Run `npm run verify`, record artifacts, then append `<promise>CHUNK COMPLETE: CHUNK_2_DATABASE</promise>`. — closed 2026-07-26; promise line appended to `.ralph/progress.md`.
 
 ## CHUNK_3_IPC — Replace 52 HTTP routes with IPC
 

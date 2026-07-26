@@ -36,10 +36,41 @@ and a build-time assertion both enforce this.
 |---|---|---|---|---|---|
 | Integration lead | `feat/local-desktop-p1` | `Desktop/ap-hub` | all shared files; merges; gate | — | active |
 | A — Database | `agent/database-chunk2` | `ap-hub-worktrees/database` | `src/db/**`, `src/install/**`, `scripts/bundle-postgres.mjs`, `vendor/postgres.lock.json`, `test/local-database*.test.ts` | `desktop/main.ts`, `electron-builder.yml` | **CHUNK_2 complete — merged** |
-| B — IPC | `agent/ipc-chunk3` | `ap-hub-worktrees/ipc` | `desktop/ipc/**` (new), per-domain handler modules, IPC schemas, `test/ipc-contract.test.ts` | `desktop/channels.ts`, `desktop/main.ts` | not started |
+| B1 — IPC interfaces | *(integration lead, main checkout)* | `Desktop/ap-hub` | `docs/build/interfaces/**` | — | **frozen — see below** |
+| B2 — IPC foundation | `agent/ipc-foundation` | `ap-hub-worktrees/ipc-foundation` | `desktop/ipc/dispatcher.ts`, `desktop/ipc/envelope.ts`, `desktop/ipc/registry.ts`, `desktop/ipc/errors.ts`, `desktop/ipc/context.ts`, `test/ipc-foundation.test.ts` | `desktop/channels.ts`, `desktop/main.ts` | active |
+| B3 — IPC read domains | `agent/ipc-read-domains` | `ap-hub-worktrees/ipc-read` | `desktop/ipc/read/**`, `test/ipc-read-*.test.ts` | `desktop/channels.ts` (append via patch request) | queued behind B2 |
+| B4 — IPC action domains | `agent/ipc-action-domains` | `ap-hub-worktrees/ipc-action` | `desktop/ipc/action/**`, `test/ipc-action-*.test.ts` | `desktop/channels.ts` (append via patch request) | queued behind B2 |
+| B5 — Renderer transport | `agent/ipc-renderer` | `ap-hub-worktrees/ipc-renderer` | `app/lib/api.ts`, `app/lib/session.tsx` **only** | — | queued behind B3+B4 |
+| B6 — IPC contract tests | `agent/ipc-contract-tests` | `ap-hub-worktrees/ipc-qa` | `test/ipc-contract.test.ts` | — | queued behind B3+B4 |
+| B7 — IPC security verifier | *(read-only, no branch)* | `Desktop/ap-hub` | nothing — reports only | — | queued behind B5+B6 |
 | C — Discovery | `agent/discovery-wizard` | `ap-hub-worktrees/discovery` | `src/discovery/**` (new), wizard components, inference evidence model | migration number | not started |
 | D — Providers | `agent/providers-xero-sage` | `ap-hub-worktrees/providers` | `src/connectors/xero.ts`, `src/connectors/sage.ts`, provider auth adapters | `src/connectors/types.ts` (contract change needs approval) | not started |
 | E — QA/packaging | `agent/qa-packaging` | `ap-hub-worktrees/qa-package` | clean-user harness, installer smoke tests, artifact manifest | `electron-builder.yml` | not started |
+
+### Standing constraint — how CHUNK_3 appends to the channel allowlist
+
+`desktop/channels.ts` is a shared file AND it is **bundled into the sandboxed preload**
+(`scripts/build-desktop.mjs`), because a sandboxed preload cannot resolve modules at runtime.
+Three agents (B2/B3/B4) each need to register channels. They do NOT edit `channels.ts`.
+
+Instead each owns a **pure channel-list module** that `channels.ts` imports and spreads:
+
+```ts
+// desktop/ipc/read/channels.ts   (owned by B3)
+export const READ_CHANNELS = ['aphub:today:list', ...] as const;
+// desktop/ipc/action/channels.ts (owned by B4)
+export const ACTION_CHANNELS = ['aphub:proposals:approve', ...] as const;
+```
+
+The integration lead applies the single import+spread edit to `channels.ts` once.
+
+**Hard constraint on those two modules: ZERO imports.** A bare `as const` array of string
+literals and nothing else — no Electron, no Node builtins, no `src/**` import, no type import
+that pulls in a runtime module. They are dragged into the preload bundle, so anything they
+import lands in a sandboxed context that cannot support it. A service import here reproduces
+the CHUNK_2 `Dynamic require of "events"` class of failure at the preload layer instead of the
+main layer. `test/desktop-packaging.test.ts` guards the main bundle; this constraint is the
+preload-side equivalent and B2 must add an assertion for it.
 
 ## Rules
 
