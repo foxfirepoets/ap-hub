@@ -66,7 +66,7 @@ const ROOT = join(__dirname, '..');
  */
 
 // ---------------------------------------------------------------------------------------------
-// 0. the combined registry — the one source of truth for "all 50 channels"
+// 0. the combined registry — the one source of truth for "all 52 channels"
 // ---------------------------------------------------------------------------------------------
 
 const REGISTRY = buildRegistry([
@@ -116,6 +116,7 @@ const VALID_PAYLOAD: Readonly<Record<string, Record<string, unknown>>> = {
   'aphub:tax-mappings:discover': {},
   'aphub:tax-mappings:audit': { id: 987654 },
   'aphub:onboarding:get': {},
+  'aphub:connections:status': {},
 
   // --- actions --------------------------------------------------------------------------------
   'aphub:proposals:approve': { proposalId: 987654 },
@@ -189,6 +190,7 @@ const VALID_PAYLOAD: Readonly<Record<string, Record<string, unknown>>> = {
   'aphub:dimension-mappings:save-rule': { mappingId: 987654 },
   'aphub:dimension-mappings:select-alternate': { mappingId: 987654, providerId: '42' },
   'aphub:provider-jobs:retry': { jobId: 987654 },
+  'aphub:connections:start': { provider: 'gmail' },
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -265,19 +267,19 @@ function assertNoLeakage(envelope: unknown, entry?: RegistryEntry): void {
 }
 
 // ===============================================================================================
-// 1. THE SURFACE: exactly 50 channels, every sample payload valid against its OWN schema
+// 1. THE SURFACE: exactly 52 channels, every sample payload valid against its OWN schema
 // ===============================================================================================
 
-describe('the combined registry is exactly the 50 channels this chunk migrated', () => {
-  it('READ (21) + ACTION (29) = 50, and the registry agrees', () => {
-    expect(READ_CHANNELS).toHaveLength(21);
-    expect(ACTION_CHANNELS).toHaveLength(29);
-    expect(ALL_CHANNELS).toHaveLength(50);
-    expect(ALL_ENTRIES).toHaveLength(50);
-    expect(new Set(ALL_CHANNELS).size).toBe(50); // no name shared between the two domains
+describe('the combined registry is exactly the 52 channels this chunk migrated', () => {
+  it('READ (22) + ACTION (30) = 52, and the registry agrees', () => {
+    expect(READ_CHANNELS).toHaveLength(22);
+    expect(ACTION_CHANNELS).toHaveLength(30);
+    expect(ALL_CHANNELS).toHaveLength(52);
+    expect(ALL_ENTRIES).toHaveLength(52);
+    expect(new Set(ALL_CHANNELS).size).toBe(52); // no name shared between the two domains
   });
 
-  it('has a valid sample payload for every one of the 50 channels — asserted against its OWN schema', () => {
+  it('has a valid sample payload for every one of the 52 channels — asserted against its OWN schema', () => {
     // This is the correctness detail the task packet calls out explicitly: a payload that fails
     // its own schema would return VALIDATION for every role, which is indistinguishable from a
     // correctly-enforced FORBIDDEN and would make the entire role matrix below pass vacuously.
@@ -299,24 +301,24 @@ describe('the combined registry is exactly the 50 channels this chunk migrated',
 // ===============================================================================================
 
 describe('registry/allowlist symmetry: every registry channel is allowlisted, every non-shell allowlisted channel is registered', () => {
-  it('every one of the 50 registry channels is a member of the real IPC_CHANNELS', () => {
+  it('every one of the 52 registry channels is a member of the real IPC_CHANNELS', () => {
     for (const channel of ALL_CHANNELS) expect(IPC_CHANNELS).toContain(channel);
   });
 
   it('every non-shell IPC_CHANNELS member has a registry entry — nothing is dead surface', () => {
     const nonShell = IPC_CHANNELS.filter((c) => !(SHELL_CHANNELS as readonly string[]).includes(c));
-    expect(nonShell).toHaveLength(50);
+    expect(nonShell).toHaveLength(52);
     for (const channel of nonShell) expect(ALL_CHANNELS).toContain(channel);
   });
 
-  it('IPC_CHANNELS is exactly SHELL_CHANNELS plus the 50 registry channels, set-equal', () => {
+  it('IPC_CHANNELS is exactly SHELL_CHANNELS plus the 52 registry channels, set-equal', () => {
     const expected = new Set([...SHELL_CHANNELS, ...ALL_CHANNELS]);
     expect(new Set(IPC_CHANNELS)).toEqual(expected);
   });
 });
 
 // ===============================================================================================
-// 3. THE ROLE MATRIX — exhaustive over 50 channels × 3 roles, no sampling
+// 3. THE ROLE MATRIX — exhaustive over 52 channels × 3 roles, no sampling
 // ===============================================================================================
 
 describe('the exhaustive role matrix: every channel × every role in ROLES', () => {
@@ -337,13 +339,13 @@ describe('the exhaustive role matrix: every channel × every role in ROLES', () 
 
   it('asserts against exactly the registry size, so a channel cannot silently skip the matrix', () => {
     expect(ALL_ENTRIES.length).toBe(REGISTRY.channels.length);
-    expect(ALL_ENTRIES.length).toBe(50);
+    expect(ALL_ENTRIES.length).toBe(52);
   });
 
   const cells = ALL_ENTRIES.flatMap((entry) => ROLES.map((role) => [`${entry.channel} as ${role}`, entry, role] as const));
 
-  it(`covers exactly ${50 * ROLES.length} cells (50 channels × ${ROLES.length} roles)`, () => {
-    expect(cells).toHaveLength(50 * ROLES.length);
+  it(`covers exactly ${52 * ROLES.length} cells (52 channels × ${ROLES.length} roles)`, () => {
+    expect(cells).toHaveLength(52 * ROLES.length);
   });
 
   it.each(cells)('%s', async (_label, entry, role) => {
@@ -372,7 +374,7 @@ describe('the exhaustive role matrix: every channel × every role in ROLES', () 
 // 4. UNAUTHENTICATED — exhaustive, no session at all
 // ===============================================================================================
 
-describe('every one of the 50 channels answers UNAUTHENTICATED with no session held', () => {
+describe('every one of the 52 channels answers UNAUTHENTICATED with no session held', () => {
   beforeEach(() => clearSessionToken());
 
   it.each(ALL_ENTRIES.map((e) => [e.channel, e] as const))('%s', async (_channel, entry) => {
@@ -392,7 +394,7 @@ describe('every one of the 50 channels answers UNAUTHENTICATED with no session h
 // 5. EXPIRED / CLEARED SESSION — exhaustive
 // ===============================================================================================
 
-describe('every one of the 50 channels refuses once the session is cleared', () => {
+describe('every one of the 52 channels refuses once the session is cleared', () => {
   let tenantId = 0;
 
   beforeAll(async () => {
@@ -421,7 +423,7 @@ describe('every one of the 50 channels refuses once the session is cleared', () 
   );
 
   it('a genuinely expired session (not merely cleared) answers SESSION_EXPIRED, not UNAUTHENTICATED', async () => {
-    // Not claimed exhaustive across all 50 (both codes redirect to /login identically —
+    // Not claimed exhaustive across all 52 (both codes redirect to /login identically —
     // ipc-auth-context.md §4.1 — so this is a spot check of the distinct code, not a second
     // full matrix): create a real session row, then age it past expiry directly.
     const userId = await createUser(tenantId, { role: 'owner_controller' });
@@ -553,7 +555,7 @@ describe('nothing any channel says leaks a channel name, a stack, SQL, a table, 
     expect(dispatcherSource).not.toMatch(/failure\([^)]*channel/);
   });
 
-  it('every one of the 50 channel names is absent from every FORBIDDEN/UNAUTHENTICATED/VALIDATION message text', () => {
+  it('every one of the 52 channel names is absent from every FORBIDDEN/UNAUTHENTICATED/VALIDATION message text', () => {
     for (const code of ['FORBIDDEN', 'UNAUTHENTICATED', 'VALIDATION', 'NOT_FOUND'] as const) {
       const message = plainMessage(code);
       for (const channel of ALL_CHANNELS) expect(message).not.toContain(channel);
@@ -565,7 +567,7 @@ describe('nothing any channel says leaks a channel name, a stack, SQL, a table, 
 // 8. EVERY CHANNEL IS REACHABLE — a well-formed envelope, never an unhandled throw
 // ===============================================================================================
 
-describe('every one of the 50 channels is reachable and returns a well-formed envelope', () => {
+describe('every one of the 52 channels is reachable and returns a well-formed envelope', () => {
   let tenantId = 0;
 
   beforeAll(async () => {
@@ -578,7 +580,7 @@ describe('every one of the 50 channels is reachable and returns a well-formed en
   });
 
   it.each(ALL_ENTRIES.map((e) => [e.channel, e] as const))('%s', async (_channel, entry) => {
-    // owner_controller is admitted by every one of the 50 channels (ipc-auth-context.md §3/§5.1).
+    // owner_controller is admitted by every one of the 52 channels (ipc-auth-context.md §3/§5.1).
     setSessionToken(await sessionFor(tenantId, 'owner_controller'));
     const envelope = await drive(entry, VALID_PAYLOAD[entry.channel]);
     expect(typeof envelope.ok, entry.channel).toBe('boolean');
@@ -598,10 +600,10 @@ describe('every one of the 50 channels is reachable and returns a well-formed en
 //
 // 32 channels take an id (path or query param) that names a specific tenant-scoped row: these
 // get the full F5-style replay — seed the row in tenant B, call as tenant A (owner_controller,
-// which every one of the 50 channels admits), and assert NOT_FOUND with the foreign content
+// which every one of the 52 channels admits), and assert NOT_FOUND with the foreign content
 // absent — never FORBIDDEN (which would leak existence) and never the foreign row.
 //
-// The remaining 18 channels are list/global reads or tenant-wide mutations with NO id-shaped
+// The remaining 20 channels are list/global reads or tenant-wide mutations with NO id-shaped
 // field in their schema at all (`defineChannel`'s own IDENTITY/UNROUTED checks already prove
 // this structurally); for those, isolation is proven by (a) the structural absence of a
 // foreign-row-selecting field, and (b) for every one that queries a real table, a live check
@@ -883,14 +885,14 @@ describe('exhaustive cross-tenant isolation: every id-taking channel', () => {
   });
 });
 
-// --- the remaining 18 channels: no id-shaped field at all, plus a live no-leak check where a
+// --- the remaining 20 channels: no id-shaped field at all, plus a live no-leak check where a
 // real tenant-scoped table backs the read -------------------------------------------------------
 
 const LIST_OR_GLOBAL_CHANNELS = ALL_CHANNELS.filter((c) => !(c in CROSS_TENANT_SEED));
 
-describe('the remaining 18 channels have no id-shaped field that could select a foreign row', () => {
+describe('the remaining 20 channels have no id-shaped field that could select a foreign row', () => {
   it('covers exactly the complement of the 32 id-taking channels', () => {
-    expect(LIST_OR_GLOBAL_CHANNELS).toHaveLength(18);
+    expect(LIST_OR_GLOBAL_CHANNELS).toHaveLength(20);
   });
 
   /** Unwrap to the base `ZodObject`, seeing through the same wrappers `defineChannel` does
@@ -1022,6 +1024,13 @@ const LIST_LEAK_CASES: Readonly<Record<string, ListLeakCase>> = {
       const marker = uniqueMarker('taxcode');
       const connectionId = await createConnection(tenantB);
       await insertMarkedTaxMapping(tenantB, connectionId, { providerTaxCode: marker });
+      return { marker };
+    },
+  },
+  'aphub:connections:status': {
+    seedForeign: async (tenantB) => {
+      const marker = uniqueMarker('company');
+      await createConnection(tenantB, { provider: 'qbo', externalCompany: marker });
       return { marker };
     },
   },

@@ -54,6 +54,11 @@
  * | aphub:dimension-mappings:save-rule         | POST /api/dimension-mappings/:id/save-rule          | runSaveRuleDimensionMapping          | runDimensionMappingAction (dim.:49)     | owner_controller                  |
  * | aphub:dimension-mappings:select-alternate  | POST /api/dimension-mappings/:id/select-alternate   | runSelectAlternateDimensionMapping   | runDimensionMappingAction (dim.:49)     | owner_controller                  |
  * | aphub:provider-jobs:retry                  | POST /api/provider-jobs/:id/retry                   | (none — inline in the route)         | inline requireSession (route.ts:11)     | owner_controller                  |
+ * | aphub:connections:start                    | (new — see below)                                    | runConnectionsStart                  | inline readContext (connections.ts)     | owner_controller                  |
+ *
+ * `aphub:connections:start` replaces `/api/connections/{gmail,qbo}/start` for the desktop shell
+ * (CHUNK_5_CONNECT) — those two redirect-based routes stay registered for the web flow, but are
+ * never turned into IPC channels themselves; see the NOT-registered note directly below.
  *
  * NOT registered, deliberately: `/api/auth/login`, `/api/auth/callback`, `/api/auth/logout` and
  * `/api/connections/{gmail,qbo}/start`. The first three are pre-auth or redirect flows, and
@@ -64,6 +69,7 @@
 import type { ChannelContribution, RegistryEntry } from '../registry.js';
 import { ACTION_CHANNELS } from './channels.js';
 import { accountingDocumentEntries } from './accountingDocuments.js';
+import { connectionsEntries } from './connections.js';
 import { correctionEntries } from './corrections.js';
 import { dimensionMappingEntries } from './dimensionMappings.js';
 import { notificationEntries } from './notifications.js';
@@ -93,6 +99,7 @@ export const ACTION_ENTRIES: readonly RegistryEntry[] = Object.freeze([
   ...taxMappingEntries,
   ...dimensionMappingEntries,
   ...providerJobEntries,
+  ...connectionsEntries,
 ]);
 
 /** The contribution `desktop/main.ts` hands to `createDispatcher`. */

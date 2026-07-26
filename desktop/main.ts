@@ -27,6 +27,9 @@ import { READ_CHANNELS } from './ipc/read/channels.js';
 import { READ_ENTRIES } from './ipc/read/index.js';
 import { ACTION_CHANNELS } from './ipc/action/channels.js';
 import { ACTION_ENTRIES } from './ipc/action/index.js';
+import { createHostAdapter } from '../src/host/index.js';
+import { initializeTokenCredentialAuthority } from '../src/auth/tokens.js';
+import { configureConnectFlowHost } from '../src/auth/connect-loopback.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -338,6 +341,14 @@ async function startDatabaseSupervised(): Promise<void> {
     // and no browser tab. `database.install.osAccountId` is already verified against the
     // running account (`OsAccountMismatch` would have thrown inside `startDatabase()`).
     await establishLocalIdentity(database.install.osAccountId);
+    // CHUNK_5_CONNECT: route every `saveToken`/`loadToken` call through the OS credential
+    // store from here on. Without this, `src/auth/tokens.ts` falls back to legacy
+    // encrypted-in-Postgres storage — the one thing the desktop product must never do with a
+    // provider token. Also resumes any outstanding per-tenant migration off that legacy path.
+    await initializeTokenCredentialAuthority({
+      store: createHostAdapter().secretStore,
+      installId: database.install.installId,
+    });
     databaseProblem = null;
     setEngineState('running');
   } catch (err) {
@@ -457,6 +468,16 @@ if (!app.requestSingleInstanceLock()) {
         { channels: READ_CHANNELS, entries: READ_ENTRIES },
         { channels: ACTION_CHANNELS, entries: ACTION_ENTRIES },
       ],
+    });
+    // CHUNK_5_CONNECT: the only two things `src/auth/connect-loopback.ts` is allowed to do
+    // outside its own module — open a URL and focus the window — routed through the SAME
+    // `isAllowedExternalUrl` guard and `showWindow()` the rest of the shell already uses.
+    configureConnectFlowHost({
+      openExternal: (url) => {
+        if (!isAllowedExternalUrl(url)) return;
+        void shell.openExternal(url);
+      },
+      focusWindow: () => showWindow(),
     });
     mainWindow = createWindow();
     createTray();

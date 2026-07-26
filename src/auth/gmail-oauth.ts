@@ -34,8 +34,16 @@ export function mergeGmailScopes(
     .join(' ') || GMAIL_READONLY_SCOPE;
 }
 
+/**
+ * `codeVerifier`/`redirectUri` are additive, optional overrides for the CHUNK_5 desktop
+ * loopback flow (S256 PKCE, ephemeral `http://127.0.0.1:{port}/callback`). Omitted, `getToken`
+ * is called exactly as before — the plain string form the CHUNK_2 web flow, and its tests,
+ * already depend on.
+ */
 export async function exchangeGmailCode(
   code: string,
+  codeVerifier?: string,
+  redirectUri?: string,
 ): Promise<{ access_token: string; refresh_token?: string; expiry_date?: number; scope?: string }> {
   const cfg = config();
   const { google } = await import('googleapis');
@@ -44,7 +52,13 @@ export async function exchangeGmailCode(
     cfg.GMAIL_CLIENT_SECRET,
     cfg.GMAIL_REDIRECT_URI,
   );
-  const { tokens } = await oauth2.getToken(code);
+  const options: { code: string; codeVerifier?: string; redirect_uri?: string } = { code };
+  if (codeVerifier !== undefined) options.codeVerifier = codeVerifier;
+  if (redirectUri !== undefined) options.redirect_uri = redirectUri;
+  const { tokens } =
+    codeVerifier !== undefined || redirectUri !== undefined
+      ? await oauth2.getToken(options)
+      : await oauth2.getToken(code);
   if (!tokens.access_token) throw new Error('Gmail OAuth: token response missing access_token');
   return {
     access_token: tokens.access_token,

@@ -73,4 +73,7 @@ export const ACTION_CHANNELS = [
 
   // QuickBooks Desktop durable job retry
   'aphub:provider-jobs:retry',
+
+  // system-browser + loopback account connect (CHUNK_5_CONNECT)
+  'aphub:connections:start',
 ] as const;

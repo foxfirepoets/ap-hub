@@ -117,7 +117,7 @@ const MESSAGES: Readonly<Record<IpcErrorCode, string>> = Object.freeze({
   PROVIDER_OFFLINE: 'AP-Hub could not reach that service. Check your internet connection and try again.',
   PROVIDER_REAUTH:
     'AP-Hub needs your permission again before it can continue. Reconnect the account in Settings.',
-  CONNECT_TIMEOUT: 'Connecting took too long and was stopped. Try connecting again.',
+  CONNECT_TIMEOUT: 'That sign-in took too long. Let\'s try again.',
   SECURE_STORE:
     'AP-Hub could not read your saved sign-in details on this computer. Restart AP-Hub and try again.',
   INTERNAL: 'AP-Hub could not complete that action.',

@@ -173,6 +173,7 @@ const VALID_PAYLOAD: Readonly<Record<string, Record<string, unknown>>> = {
   'aphub:dimension-mappings:save-rule': { mappingId: 987654 },
   'aphub:dimension-mappings:select-alternate': { mappingId: 987654, providerId: '42' },
   'aphub:provider-jobs:retry': { jobId: 987654 },
+  'aphub:connections:start': { provider: 'gmail' },
 };
 
 /** The verb each replaced route declared. Asserted, because `method` is never inferred. */
@@ -193,9 +194,9 @@ function admits(entry: RegistryEntry, role: string): boolean {
 // --- 1. the surface itself -------------------------------------------------------------------
 
 describe('the action surface is complete and symmetric', () => {
-  it('registers a channel for every mutation, and 29 of them', () => {
-    expect(ACTION_ENTRIES).toHaveLength(29);
-    expect(ACTION_CHANNELS).toHaveLength(29);
+  it('registers a channel for every mutation, and 30 of them', () => {
+    expect(ACTION_ENTRIES).toHaveLength(30);
+    expect(ACTION_CHANNELS).toHaveLength(30);
   });
 
   it('is set-equal between the zero-import name list and the entries, in both directions', () => {
@@ -559,6 +560,7 @@ function readdirActionModules(): string[] {
   return [
     'accountingDocuments.ts',
     'channels.ts',
+    'connections.ts',
     'corrections.ts',
     'dimensionMappings.ts',
     'fields.ts',
@@ -700,18 +702,18 @@ describe('the role matrix matches the wrapper that actually gates each channel',
     }
   });
 
-  it('refuses bookkeeper on every owner-only channel, and there are 17 of them', async () => {
+  it('refuses bookkeeper on every owner-only channel, and there are 18 of them', async () => {
     const ownerOnly = ACTION_ENTRIES.filter((e) => !admits(e, 'bookkeeper'));
-    expect(ownerOnly).toHaveLength(17);
+    expect(ownerOnly).toHaveLength(18);
     setSessionToken(session.bookkeeper!);
     for (const entry of ownerOnly) {
       expect((await drive(entry, VALID_PAYLOAD[entry.channel])).code, entry.channel).toBe('FORBIDDEN');
     }
   });
 
-  it('refuses cpa on all 28 channels that are not the notification read', async () => {
+  it('refuses cpa on all 29 channels that are not the notification read', async () => {
     const closed = ACTION_ENTRIES.filter((e) => !admits(e, 'cpa'));
-    expect(closed).toHaveLength(28);
+    expect(closed).toHaveLength(29);
     setSessionToken(session.cpa!);
     for (const entry of closed) {
       expect((await drive(entry, VALID_PAYLOAD[entry.channel])).code, entry.channel).toBe('FORBIDDEN');
@@ -1001,6 +1003,8 @@ function surrogate(channel: string): Record<string, unknown> {
       return { mapping: {} };
     case 'aphub:dimension-mappings:save-rule':
       return { rule: {} };
+    case 'aphub:connections:start':
+      return { state: 'browser_opened' };
     default:
       return {};
   }

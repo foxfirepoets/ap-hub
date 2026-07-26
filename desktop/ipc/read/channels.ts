@@ -32,4 +32,5 @@ export const READ_CHANNELS = [
   'aphub:tax-mappings:discover',
   'aphub:tax-mappings:audit',
   'aphub:onboarding:get',
+  'aphub:connections:status',
 ] as const;
