@@ -2,9 +2,28 @@
 
 **Current Iteration:** 1
 
-Current chunk: CHUNK_4_IDENTITY
+Current chunk: CHUNK_5_CONNECT
 Current task: not started
-Last completed: **CHUNK_3_IPC — complete and CLOSED 2026-07-26.** Merge commit `ca39e25` on
+Last completed: **CHUNK_4_IDENTITY — complete and CLOSED 2026-07-26.** Merge commit `4fcdd78` +
+fix commit `7adf1d0` on `feat/local-desktop-p1`, pushed. OS account (Windows SID) is the owner,
+Google SSO removed as entry point, tenant/role auth unchanged, cross-account isolation proven
+with two real bundled PostgreSQL clusters. A genuine bug was caught and fixed during the
+orchestrator's own final gate verification (not by any agent): `ensureSessionCookieSecret`
+trusted any truthy pre-existing env value instead of checking its length, so a short leftover
+dev `.env` value silently blocked real secret generation — see `.ralph/progress.md` 2026-07-26
+CHUNK_4_IDENTITY entry for the full root-cause trace, the two new verification lessons (a
+background task's reported exit code is not the command's own captured exit code; a full-suite
+pass can mask a fresh-boot defect an earlier spec file incidentally papers over), and the
+regression test that proves it (`e2e-desktop/session-secret-recovery.spec.ts`, confirmed failing
+against the pre-fix code before confirming it passes against the fix). Independently re-verified,
+real exit codes: lint:0 noleak:0 typecheck:0 test:0 (77 files/1573) web:build:0 playwright:0
+(48/48, 0 skipped). Kraken read-only security pass: 9/9 clean, one non-blocking ordering note
+recorded for CHUNK_7. CHUNK_5_CONNECT not yet started.
+
+### Historical: CHUNK_3_IPC closure record (superseded by the CHUNK_4 entry above as "last
+completed," left for history per this file's append-only convention)
+
+Merge commit `ca39e25` on
 `feat/local-desktop-p1`, pushed. All 54 routes deleted, static export live, `file://`
 interception proved under real Electron, all 24 legacy journeys migrated to `e2e-desktop/**`
 over real IPC, chromium project removed. Independently re-verified by the integration

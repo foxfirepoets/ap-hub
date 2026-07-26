@@ -411,3 +411,111 @@ Locked forwarder: **exactly one** provider-send call site. Not zero. Merge commi
 on `feat/local-desktop-p1`, pushed to `origin/feat/local-desktop-p1`.
 
 <promise>CHUNK COMPLETE: CHUNK_3_IPC</promise>
+
+### 2026-07-26 — CHUNK_4_IDENTITY — CLOSED
+
+The Windows account that opens AP-Hub becomes its owner, with no password and no browser tab.
+Google SSO removed as the product entry point; tenant/role authorization unchanged.
+
+Built on `agent/identity-chunk4` (merge commit `4fcdd78` on `feat/local-desktop-p1`):
+- `src/auth/local-signin.ts` + `desktop/local-signin.ts`: resolves or creates the OS account's
+  own tenant + owner row, keyed by the Windows SID the host adapter already exposed
+  (`src/host/windows.ts`'s `osAccountId()` — built in CHUNK_2, `WindowsIdentity::GetCurrent()
+  .User.Value`, validated `^S-1-[0-9-]+$` — specifically anticipating this chunk's need). A
+  disabled owner stays disabled. Session-cookie secret generated once into the OS credential
+  store, never a `.env`.
+- `src/db/local-database.ts`: an OS-account mismatch (file-recorded OR database-recovered
+  identity) throws `OsAccountMismatch` and fails closed before any data is returned. A corrupted
+  `install.json` is tolerated and the identity recovered from `local_install` instead of crashing
+  the launch — install-file credential-shape rejection and `dbPort` 1024-65535 validation were
+  already built in CHUNK_2 and reused unchanged.
+- `src/auth/google-sso.ts`: the OAuth-initiating functions (`buildGoogleLoginUrl`,
+  `exchangeCodeForProfile`, `loginWithGoogle`) deleted outright — their only callers were already
+  removed in CHUNK_3. DB-only `activateUserForLogin`/`completeLogin` kept, still exercised by
+  other tests.
+- `app/login/page.tsx`: fallback-only screen for the rare case identity could not be confirmed —
+  no Google button, "Try again" instead of a dead end. `app/components/OnboardingWelcome.tsx`:
+  added the required per-account privacy sentence, verbatim from the spec.
+- `src/config.ts`: previously boot-required env vars (`ENCRYPTION_KEY`, `GMAIL_CLIENT_ID/SECRET`,
+  `GOOGLE_SSO_CLIENT_ID/SECRET`) made optional at boot — the standalone shell ships with no
+  `.env` and must reach a working sign-in with nothing supplied.
+
+**Process note, not a code note:** the authoring agent's own status reports were unreliable
+twice — it ended its turn on an orphaned "I'll wait for the background task notification now"
+message instead of a structured report, apparently after backgrounding its own verification
+commands and then stopping before they returned. The integration orchestrator resumed it once
+for missing acceptance criteria (legitimately still in progress at that point), then took over
+verification directly rather than resuming a third time, per the standing "same delegation 3x
+→ halt" rule. All verification below is the orchestrator's own, independently run.
+
+**A genuine defect was caught during that independent verification, not by the agent or by
+Kraken's read-only pass** — full detail in commit `7adf1d0`: `ensureSessionCookieSecret`'s guard
+checked only truthiness (`if (process.env.SESSION_COOKIE_SECRET) return;`), so this checkout's
+own leftover dev `.env` (`SESSION_COOKIE_SECRET=dev-only-change-me`, 18 characters) was silently
+accepted as "already set." Real secret generation was skipped, and `src/config.ts`'s `min(32)`
+schema validation failed much later, deep inside session creation — surfacing as an opaque
+"database did not start" failure that had nothing to do with the database. Two more hard-won
+verification lessons from this exact catch:
+
+1. **A background task's own "completed, exit code 0" notification is not the command's exit
+   code** — it can be the exit code of the LAST command in a chained invocation (here, `tail`,
+   or a trailing `echo`). The captured `$?` written inside the log by the command itself is the
+   only trustworthy number. This is the same class of error as "never read a gate result through
+   `grep | tail`," one level higher up the tool stack, and it produced a false "green" reading
+   here before the real `PW_EXIT:1` was found inside the log.
+2. **A full-suite pass can mask a fresh-boot defect.** The 47/47 desktop Playwright pass recorded
+   on `agent/identity-chunk4` before merge was real, but it ran the WHOLE suite in one Playwright
+   invocation — an earlier spec file's successful Electron launch generates and persists a valid
+   secret to the (machine-wide, not per-run) Windows Credential Manager, which every later spec
+   file's fresh Electron launch then finds already present, masking a truly-fresh-install failure
+   that only surfaced when `e2e-desktop/database.spec.ts` was run **alone**, first, with the
+   dev `.env`'s bad value as the only thing in the environment. Isolate-and-rerun a subset of a
+   passing suite when something about "first launch" or "fresh state" is being asserted — a
+   full-suite green does not prove every file is independently green from cold.
+
+Fixed with a length check (`>= 32`, not mere truthiness). A new regression test,
+`e2e-desktop/session-secret-recovery.spec.ts`, forces a too-short `SESSION_COOKIE_SECRET`
+directly into the launched Electron process's environment — independent of whatever this
+checkout's own `.env` happens to contain — so the regression is caught in a clean environment
+that never had the original triggering value, not merely in this one. Confirmed failing against
+the pre-fix code (real repro: reverted the fix, rebuilt, reran, got the identical `ConfigError`
+and exit 1) before confirming it passes against the fix.
+
+**Independent verification, final state, real captured exit codes:** `lint:0` `lint:noleak:0`
+`typecheck:0` `test:0` (77 test files, 1573 tests — was 76/1557 before this chunk) `web:build:0`
+`playwright --project=desktop:0` (**48 passed, 0 skipped** — 47 plus the new regression test).
+Real two-cluster cross-account isolation proof: `npx vitest run --mode integration
+test/local-install.int.test.ts` exit 0, 34.7 s, two genuinely separate bundled PostgreSQL data
+directories on two different ports, not two schemas in one cluster, not mocked.
+`git diff --stat checkpoint/chunk3-complete-4aece2c -- src/services/`: empty. No safety test
+touched (`lockdown`, `gatekeeper`, `posting`, `f5-cross-tenant-isolation`, `anchor-whitelabel`,
+`architecture-connector-path`, `desktop-shell`, `desktop-packaging`, `local-database.test`,
+`e2e-desktop/shell.spec.ts` all confirmed unchanged).
+
+**Kraken read-only security pass, 9/9 clean:** no live path into Google OAuth remains (the two
+routes `src/auth/routes.ts` still registers are Gmail/QBO connector callbacks, unrelated to human
+login); OS-account mismatch fails closed before any side effect on the file-read path; install.json
+credential/port validation unweakened; `src/auth/guard.ts`/`session.ts` untouched, `localSignIn`
+produces a session through the identical `createSession` SSO used; session-cookie secret never
+touches disk outside the credential store; no OS-identifier leak outside `src/host/**`; the
+cross-account isolation tests exercise the real tenant-scoping mechanism and two real clusters,
+not a bare column comparison; every new user-facing string is plain language; `src/host/macos.ts`
+untouched, still a deliberate out-of-scope stub.
+
+**One finding recorded, not fixed, and deliberately NOT blocking this promise:** in the
+database-recovered-identity path (`src/db/local-database.ts`, corrupted/absent `install.json`
+but an existing cluster), migrations run against the cluster at `dataDir` **before** the
+`OsAccountMismatch` throw, unlike the file-read path which checks before any side effect. This
+does not expose cross-account data — nothing is ever returned to the mismatched caller, and
+`dataDir` already sits under the current OS account's own `%LOCALAPPDATA%` profile, which a
+different Windows account cannot normally reach or have written to in the first place. It is a
+narrower ordering guarantee than the file-read path, worth closing in CHUNK_7 (backup/restore)
+when that path is next touched, not urgent enough to reopen this chunk for.
+
+Standing environment blockers restated (not dropped): no macOS machine, no signing identities, no
+clean VMs.
+
+Locked forwarder: **exactly one** provider-send call site, unchanged. Merge commit: `4fcdd78`,
+fix commit `7adf1d0`, both on `feat/local-desktop-p1`, pushed to `origin/feat/local-desktop-p1`.
+
+<promise>CHUNK COMPLETE: CHUNK_4_IDENTITY</promise>
