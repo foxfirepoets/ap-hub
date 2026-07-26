@@ -2,12 +2,14 @@
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
+import { apiGet } from './api';
 import type { Me } from './types';
 
-// Client-side session guard + provider. On mount it resolves identity via GET /api/me
-// (which enforces the session cookie server-side). Unauthenticated → redirect to /login.
-// Authenticated → the resolved Me (email + role) is exposed to the shell so pages can gate
-// action buttons by role. Real authorization is always enforced by the API routes.
+// Client-side session guard + provider. On mount it resolves identity via the aphub:me:get
+// channel (which enforces the session cookie/token server-side, same as the old GET /api/me).
+// Unauthenticated, or any other failure → redirect to /login. Authenticated → the resolved Me
+// (email + role) is exposed to the shell so pages can gate action buttons by role. Real
+// authorization is always enforced server-side, never by this guard.
 
 const SessionContext = createContext<Me | null>(null);
 
@@ -28,16 +30,10 @@ export function SessionGuard({ children }: { children: ReactNode }) {
     let active = true;
     void (async () => {
       try {
-        const res = await fetch('/api/me', { credentials: 'same-origin', cache: 'no-store' });
+        const me = await apiGet<Me>('/api/me');
         if (!active) return;
-        if (res.status === 200) {
-          const body = (await res.json()) as { data: Me };
-          setMe(body.data);
-          setState('authed');
-        } else {
-          setState('anon');
-          router.replace('/login');
-        }
+        setMe(me);
+        setState('authed');
       } catch {
         if (!active) return;
         setState('anon');

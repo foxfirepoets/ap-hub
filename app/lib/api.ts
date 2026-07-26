@@ -1,6 +1,16 @@
-// Thin browser fetch helpers. The API wraps success as `{ data }` and failure as
-// `{ error: { code, message } }` (see src/services/read/http.ts). Reads throw on non-2xx;
-// actions return the raw status so callers can branch on 201/202/409/400 explicitly.
+// Renderer transport. Resolves the caller's HTTP-shaped path into an IPC channel + payload
+// (app/lib/ipc-routes.ts) and calls it through the sandboxed bridge (desktop/preload.ts) via
+// `window.aphub.invoke`. No network call, no `fetch` — CHUNK_3_IPC (B5).
+//
+// The throw/no-throw asymmetry from the old fetch-based helpers is preserved exactly: `apiGet`
+// throws `ApiError` on a non-ok envelope; the mutation helpers never throw and return an
+// `ActionResult` the caller branches on (201/202/409/400 — see
+// docs/build/interfaces/ipc-envelope.md). `ok` comes from the envelope's own `ok` field, never
+// from "no code present": a 202 carrying `QBO_RETRY` is `ok: true` with `error` still populated,
+// exactly as it was over HTTP.
+
+import { resolveRoute, type IpcMethod } from './ipc-routes';
+import type { AphubBridge, IpcResult } from './aphub-bridge';
 
 export class ApiError extends Error {
   readonly code: string;
@@ -13,13 +23,44 @@ export class ApiError extends Error {
   }
 }
 
-export async function apiGet<T>(path: string): Promise<T> {
-  const res = await fetch(path, { credentials: 'same-origin', cache: 'no-store' });
-  const body = (await res.json().catch(() => ({}))) as { data?: T; error?: { code?: string; message?: string } };
-  if (!res.ok) {
-    throw new ApiError(body?.error?.code ?? 'INTERNAL', body?.error?.message ?? res.statusText, res.status);
+// Plain language only — never "IPC", "channel", "invoke", a channel name, or a code. The user
+// is non-technical (CLAUDE.md).
+const BRIDGE_UNAVAILABLE_MESSAGE =
+  'AP-Hub could not reach the program running on this computer. Restart AP-Hub and try again.';
+const ROUTE_UNAVAILABLE_MESSAGE = 'AP-Hub could not complete that action.';
+
+// Accessed through `globalThis` rather than the bare `window` identifier: this module is
+// imported by `test/ipc-renderer-transport.test.ts`, which compiles under the repo's root
+// tsconfig (no DOM lib, unlike `tsconfig.web.json`) — a bare `window` reference would not
+// resolve there even though the runtime behavior is identical in the renderer.
+function getBridge(): AphubBridge | null {
+  const globalWindow = (globalThis as { window?: { aphub?: AphubBridge } }).window;
+  return globalWindow?.aphub ?? null;
+}
+
+async function callChannel(
+  method: IpcMethod,
+  path: string,
+  body?: Record<string, unknown>,
+): Promise<IpcResult> {
+  const resolved = resolveRoute(method, path, body);
+  if (resolved === null) {
+    return { ok: false, status: 500, code: 'INTERNAL', message: ROUTE_UNAVAILABLE_MESSAGE };
   }
-  return body.data as T;
+  const bridge = getBridge();
+  if (!bridge) {
+    return { ok: false, status: 500, code: 'INTERNAL', message: BRIDGE_UNAVAILABLE_MESSAGE };
+  }
+  return bridge.invoke(resolved.channel, resolved.payload);
+}
+
+export async function apiGet<T>(path: string): Promise<T> {
+  const result = await callChannel('GET', path);
+  const status = result.status ?? (result.ok ? 200 : 500);
+  if (!result.ok) {
+    throw new ApiError(result.code ?? 'INTERNAL', result.message ?? ROUTE_UNAVAILABLE_MESSAGE, status);
+  }
+  return result.data as T;
 }
 
 export interface ActionResult<T> {
@@ -29,41 +70,25 @@ export interface ActionResult<T> {
   error?: { code: string; message: string };
 }
 
+function toActionResult<T>(result: IpcResult): ActionResult<T> {
+  const status = result.status ?? (result.ok ? 200 : 500);
+  const error = result.code !== undefined ? { code: result.code, message: result.message ?? '' } : undefined;
+  return { ok: result.ok, status, data: result.data as T | undefined, error };
+}
+
 export async function apiPost<T>(path: string, payload?: unknown): Promise<ActionResult<T>> {
-  const res = await fetch(path, {
-    method: 'POST',
-    credentials: 'same-origin',
-    headers: { 'content-type': 'application/json' },
-    body: payload !== undefined ? JSON.stringify(payload) : undefined,
-  });
-  const body = (await res.json().catch(() => ({}))) as { data?: T; error?: { code: string; message: string } };
-  return { ok: res.ok, status: res.status, data: body?.data, error: body?.error };
+  const result = await callChannel('POST', path, (payload as Record<string, unknown> | undefined) ?? {});
+  return toActionResult<T>(result);
 }
 
-async function apiMutation<T>(
-  method: 'PATCH' | 'DELETE',
-  path: string,
-  payload?: unknown,
-): Promise<ActionResult<T>> {
-  const res = await fetch(path, {
-    method,
-    credentials: 'same-origin',
-    headers: payload === undefined ? undefined : { 'content-type': 'application/json' },
-    body: payload === undefined ? undefined : JSON.stringify(payload),
-  });
-  const body = (await res.json().catch(() => ({}))) as {
-    data?: T;
-    error?: { code: string; message: string };
-  };
-  return { ok: res.ok, status: res.status, data: body.data, error: body.error };
+export async function apiPatch<T>(path: string, payload: unknown): Promise<ActionResult<T>> {
+  const result = await callChannel('PATCH', path, (payload as Record<string, unknown> | undefined) ?? {});
+  return toActionResult<T>(result);
 }
 
-export function apiPatch<T>(path: string, payload: unknown): Promise<ActionResult<T>> {
-  return apiMutation<T>('PATCH', path, payload);
-}
-
-export function apiDelete<T>(path: string): Promise<ActionResult<T>> {
-  return apiMutation<T>('DELETE', path);
+export async function apiDelete<T>(path: string): Promise<ActionResult<T>> {
+  const result = await callChannel('DELETE', path, {});
+  return toActionResult<T>(result);
 }
 
 /** Extract a numeric proposal id from an exception's entity_ref (e.g. "proposal:501" → 501). */
