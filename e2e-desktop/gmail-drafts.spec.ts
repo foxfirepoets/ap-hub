@@ -144,7 +144,7 @@ test.describe('Gmail reply-draft lifecycle', () => {
     await stubExceptionsQueue();
 
     await app.evaluate(({ ipcMain }, seed) => {
-      let proposed: (typeof seed & Record<string, unknown>) | null = null;
+      let proposed: Record<string, unknown> | null = null;
       ipcMain.removeHandler('aphub:reply-drafts:get');
       ipcMain.removeHandler('aphub:reply-drafts:create');
       ipcMain.handle('aphub:reply-drafts:get', () =>
