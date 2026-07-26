@@ -59,3 +59,79 @@ the spec's exit criterion, and the spec governs.
 `settings/tax-mapping/[id]`) take runtime ids that `generateStaticParams` cannot enumerate.
 They are the leading candidates for the per-route embedded-Next fallback (packet §3) and must
 be reported explicitly there, whichever way they resolve.
+
+## 5. CHUNK_3 — the static export costs 13 lines in 3 page components, and there are 54 route handlers, not 52
+
+Two findings from the throwaway spike on `spike/static-export` (commit `2194f92`, not merged —
+the knowledge is the product, not the code). Recorded here because
+`specs/03_CHUNK_3_IPC.md` says silent scope widening is a failure.
+
+### 5a. Acceptance criterion "Zero page components are changed (14 of 14)" cannot be met
+
+`specs/03_CHUNK_3_IPC.md` requires zero page-component changes. That is **not achievable**, and
+the reason is a Next.js property, not a shortcut:
+
+Three page routes take runtime database ids — `statements/[id]`, `transactions/[id]`,
+`settings/tax-mapping/[id]`. All three are `'use client'` pages that read the id with
+`useParams()`. Under `output: 'export'` a dynamic segment must be enumerated by
+`generateStaticParams`, and **the enumerated value is baked in: `useParams()` returns the
+build-time sentinel, not the runtime id.** Proven live in a real browser against the real
+exported artifacts: `/statements/999123` yielded `useParams id = sentinel` while
+`window.location.pathname` held the true `/statements/999123`.
+
+Options tested empirically, not reasoned about:
+
+| Option | Result |
+|---|---|
+| A — sentinel `generateStaticParams` + read id from `window.location` | works; 0 link changes |
+| B — query-param routes (`/transactions/detail?id=…`) | works, but rewrites 3 pages **and 5 link call sites** |
+| C — catch-all `[...slug]` | same baking limitation as A, plus structural complexity |
+
+**Decision: option A, in its `layout.tsx` variant.** `generateStaticParams` can be exported from
+a `layout.tsx` rather than forcing each page into a server wrapper with its body forked into a
+new `PageClient.tsx`. Measured against `53c4d9b`:
+
+- 3 new files, 10 lines each: `app/(app)/{statements,transactions,settings/tax-mapping}/[id]/layout.tsx`
+- 3 existing pages changed **+5/-1, +6/-1, +5/-1** — 13 insertions, 3 deletions total. Every
+  other line (imports, JSX, handlers, helpers) byte-identical. The only semantic change is the
+  id read.
+- **Zero** `href` / `router.push` call sites change: the URL shape stays exactly as it is today.
+- **Zero** security relaxation. Interception is on the built-in `file:` protocol, so
+  `isAllowedNavigation` (`desktop/channels.ts:79-86`, which only accepts `protocol === 'file:'`),
+  `contextIsolation`, `sandbox`, `nodeIntegration` and the CSP are all untouched.
+- The existing `(app)` layout chain and `SessionGuard` still compose correctly (verified: one
+  `nav`, one `#main-content`, `/api/me` resolves, no redirect to `/login`, no hydration warning).
+
+The rejected alternative for the record: the server-wrapper split reaches the same outcome with
+386 deletions and three new 80–170-line files. Same behaviour, far worse reviewability.
+
+**Still open — `[UNVERIFIED in real Electron]`:** the `file://` path interception that serves the
+exported sentinel HTML for an arbitrary `/statements/<id>` path is **not yet built**.
+`desktop/main.ts` currently does a single fixed `win.loadFile(rendererEntry())` with no protocol
+interception. The client-hydration half — the part actually in question — was proved through an
+HTTP stand-in serving the identical exported artifacts, which is protocol-agnostic browser
+behaviour. The Electron wiring must still be built and proved end-to-end under a real Electron
+process before CHUNK_3 closes.
+
+### 5b. There are 54 route handlers, not 52
+
+`app/api/**` holds 52, and the inventory in `docs/build/route-to-service-map.md` and
+`docs/audits/electron-migration-inventory-2026-07-25.md` counts only those. Two more exist
+outside that tree and **also** block `output: 'export'`
+(`Route ... couldn't be rendered statically because it used request.url`):
+
+- `app/oauth/gmail/callback/route.ts`
+- `app/oauth/qbo/callback/route.ts`
+
+Both are three-line wrappers delegating to `runGmailOAuthCallback` / `runQboOAuthCallback`.
+They are **redundant**: `src/auth/routes.ts:21,26` already serves those two paths on the engine's
+own listener, and `test/oauth-callback.test.ts` exercises the service directly rather than the
+Next route, so deleting the wrappers leaves those tests green.
+
+**Decision:** CHUNK_3 deletes both alongside the 52, taking the total to 54. Neither becomes an
+IPC channel — consistent with the existing rule that `/api/auth/callback` must not
+(`route-to-service-map.md` carry-forward warning 2). CHUNK_5 replaces the provider return path
+with the single-use ephemeral loopback callback. **Consequence to state plainly: between CHUNK_3
+and CHUNK_5 there is no working provider OAuth return path.** That is acceptable only because
+CHUNK_5 is the chunk that builds the desktop connect flow in the first place — the deleted
+surface belongs to the retired hosted/dev web mode, not to the desktop product.

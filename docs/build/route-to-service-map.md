@@ -8,7 +8,19 @@ quietly dropping an authorization check.
 
 ## Scale
 
-- **52 route files**, **528 lines total** (~10 lines each).
+> **Correction (2026-07-26, integration lead):** this document undercounts. `app/` contains
+> **54** `route.ts` files, not 52. The two omitted are `app/oauth/gmail/callback/route.ts` and
+> `app/oauth/qbo/callback/route.ts`, which sit outside `app/api/**` and also block
+> `next build --output export`. They are redundant wrappers — `src/auth/routes.ts:21,26` already
+> serves both paths on the engine's own listener — and neither becomes an IPC channel.
+> See DEVIATIONS.md §5b. The 52-file figure below, and everything derived from it, refers to
+> `app/api/**` only.
+>
+> This document also **omits two owner-only READ wrappers** — see §5.1 of
+> `docs/build/interfaces/ipc-auth-context.md`. Treat the inventory below as a starting point to
+> verify against the code, never as complete.
+
+- **52 route files** under `app/api/**`, **528 lines total** (~10 lines each).
 - Route files are pure wiring: import, then a 3–8 line handler forwarding to a `run*` function.
 - Two exceptions carry inline logic: `app/api/auth/callback/route.ts` (58 lines, SSO) and
   `app/api/provider-jobs/[id]/retry/route.ts` (inline `requireSession` + try/catch).
