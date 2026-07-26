@@ -17,6 +17,10 @@ export function OnboardingWelcome({ onGetStarted }: OnboardingWelcomeProps) {
         prepares reviewable transactions in QuickBooks Online — nothing posts until you approve
         it (or turn on automation later).
       </p>
+      <p className="muted">
+        This is your own AP-Hub. It doesn&apos;t share information with other people who use this
+        computer.
+      </p>
       <p className="muted">Before you start, you&apos;ll need to connect two things:</p>
       <ul className="muted">
         <li>Gmail — the mailbox AP Hub should read and, when enabled, use for unsent drafts.</li>

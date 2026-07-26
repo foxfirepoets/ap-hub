@@ -93,7 +93,7 @@ test.describe('Today + session gate', () => {
     await stubMe(app, null);
     await win.goto('file:///today');
     await expect.poll(() => win.url()).toMatch(/\/login$/);
-    await expect(win.getByTestId('google-signin')).toBeVisible();
+    await expect(win.getByTestId('retry-signin')).toBeVisible();
   });
 
   test('owner: Today → open exception → view evidence → approve → Posted + QBO link', async () => {

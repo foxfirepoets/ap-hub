@@ -54,6 +54,21 @@ export class DatabasePasswordLost extends Error {
   }
 }
 
+/**
+ * Raised when the identity recorded for this install — in `install.json`, or recovered from
+ * the database when that file was unreadable — belongs to a DIFFERENT OS account than the one
+ * currently running (CHUNK_4_IDENTITY). This must fail closed: proceeding would open one
+ * account's information under another account's name. There is no repair path here, because
+ * there is nothing wrong to repair — the running account is simply not the owner.
+ */
+export class OsAccountMismatch extends Error {
+  readonly code = 'OS_ACCOUNT_MISMATCH';
+  constructor() {
+    super('This install belongs to a different OS account than the one currently running');
+    this.name = 'OsAccountMismatch';
+  }
+}
+
 export interface LocalDatabaseOptions {
   /** Directory holding `initdb`, `postgres`, `pg_ctl`, `pg_isready`. */
   binDir: string;
@@ -87,6 +102,14 @@ export interface LocalDatabaseOptions {
   migrate?: (connectionString: string) => Promise<string[]>;
   createDatabaseIfMissing?: (adminUrl: string, database: string) => Promise<boolean>;
   recordInstallRow?: (connectionString: string, row: InstallFile) => Promise<void>;
+  /** Recover an identity from the `local_install` row when install.json could not be read. */
+  fetchRecordedInstall?: (connectionString: string) => Promise<RecordedInstall | null>;
+}
+
+/** The slice of the `local_install` row CHUNK_4's corrupted-file recovery needs. */
+export interface RecordedInstall {
+  installId: string;
+  osAccountId: string;
 }
 
 /** The slice of `PostgresRuntime` this orchestrator depends on. */
@@ -113,6 +136,39 @@ export interface StartedLocalDatabase {
 export function readInstallFile(path: string): InstallFile | null {
   if (!existsSync(path)) return null;
   return parseInstallFile(readFileSync(path, 'utf8'));
+}
+
+/**
+ * `readInstallFile`, but a bad file never crashes the launch (CHUNK_4_IDENTITY spec's edge
+ * case). "Bad" covers everything `readInstallFile` throws on: truncated JSON, a missing field,
+ * a credential-shaped key or value, or a `dbPort` outside 1024-65535. Every one of those is
+ * treated as ABSENT here — the caller recovers the identity from the database instead (see
+ * `fetchRecordedInstall` in `startLocalDatabase`) or mints a fresh one, and a clean
+ * `install.json` is written at the end of the same launch either way.
+ *
+ * `readInstallFile` itself keeps throwing for callers that inspect it directly — this
+ * tolerance lives only at the one call site that must never let a bad file abort startup.
+ */
+function readInstallFileTolerantly(path: string): InstallFile | null {
+  try {
+    return readInstallFile(path);
+  } catch {
+    return null;
+  }
+}
+
+/** Recover install identity from the database when install.json could not supply it. */
+async function defaultFetchRecordedInstall(connectionString: string): Promise<RecordedInstall | null> {
+  const pool = new Pool({ connectionString });
+  try {
+    const { rows } = await pool.query<{ install_id: string; os_account_id: string }>(
+      'SELECT install_id, os_account_id FROM local_install WHERE id = 1',
+    );
+    const row = rows[0];
+    return row ? { installId: row.install_id, osAccountId: row.os_account_id } : null;
+  } finally {
+    await pool.end();
+  }
 }
 
 /**
@@ -182,7 +238,16 @@ async function defaultRecordInstallRow(connectionString: string, row: InstallFil
  * `local_install` upsert are each idempotent.
  */
 export async function startLocalDatabase(opts: LocalDatabaseOptions): Promise<StartedLocalDatabase> {
-  const existing = readInstallFile(opts.installFilePath);
+  const existing = readInstallFileTolerantly(opts.installFilePath);
+
+  // Fail closed, before anything else — before even the password is looked up. A readable
+  // install.json naming a different OS account than the one running now must never be treated
+  // as this account's own: opening it would show one account's information under another
+  // account's name (CHUNK_4_IDENTITY).
+  if (existing !== null && existing.osAccountId !== opts.osAccountId) {
+    throw new OsAccountMismatch();
+  }
+
   const clusterExists = isInitialisedCluster(opts.dataDir);
 
   // 1. The password, before anything is created. A cluster that exists without one cannot be
@@ -234,9 +299,23 @@ export async function startLocalDatabase(opts: LocalDatabaseOptions): Promise<St
   }
 
   // 6. Identity. Reuse the recorded install id so the install keeps one identity for life.
+  //    When install.json could not supply one (absent, or tolerated-away as corrupt above) but
+  //    a cluster already exists, recover it from the database instead of minting a fresh one —
+  //    "regenerated from the database and the OS account", not from nothing. A recovered
+  //    identity is fail-closed the same way a file-supplied one is: a different account's row
+  //    must never be adopted as this account's.
+  let recovered: RecordedInstall | null = null;
+  if (existing === null && clusterExists) {
+    const fetchRecorded = opts.fetchRecordedInstall ?? defaultFetchRecordedInstall;
+    recovered = await fetchRecorded(connectionString);
+    if (recovered !== null && recovered.osAccountId !== opts.osAccountId) {
+      throw new OsAccountMismatch();
+    }
+  }
+
   mkdirSync(opts.logDir, { recursive: true });
   const install: InstallFile = {
-    installId: existing?.installId ?? randomUUID(),
+    installId: existing?.installId ?? recovered?.installId ?? randomUUID(),
     osAccountId: opts.osAccountId,
     platform: opts.platform,
     appVersion: opts.appVersion,

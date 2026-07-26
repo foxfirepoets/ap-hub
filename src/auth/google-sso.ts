@@ -1,67 +1,29 @@
-import { config } from '../config.js';
 import { query } from '../db/pool.js';
 import { createSession, type NewSession } from './session.js';
 import { writeAudit } from '../audit.js';
 
 /**
- * Google SSO (CHUNK_1_AUTH). Reuses the existing Google OAuth client pattern
- * (`google.auth.OAuth2`, as in gmail-oauth.ts) at the `openid email profile` scopes.
- * On callback we verify the id_token, upsert the tenant's `users` row (matched by
- * email within the tenant), and mint a session. No Gmail/QBO scope is requested here.
+ * Google SSO (CHUNK_1_AUTH) — REMOVED as the product entry point by CHUNK_4_IDENTITY. The OS
+ * account that already authenticated the user is the product's identity now
+ * (`src/auth/local-signin.ts`); there is no browser tab, no consent screen, and no code the
+ * user clicks through.
  *
- * The pipeline is never modified; this only creates human-identity rows.
+ * The two functions that actually STARTED a Google OAuth round trip —
+ * `buildGoogleLoginUrl` (the consent-screen redirect) and `loginWithGoogle` /
+ * `exchangeCodeForProfile` (the code-for-profile exchange) — are deleted outright: CHUNK_3_IPC
+ * already deleted the `app/api/auth/login` and `app/api/auth/callback` routes that were their
+ * only callers, so nothing in the product could reach them before this chunk either.
+ *
+ * `activateUserForLogin` / `completeLogin` remain: they are the DB-only "activate an
+ * already-invited user from an already-verified profile" half, still exercised by
+ * `test/auth-guard.test.ts` and `test/provisioning.test.ts`, and are not themselves an entry
+ * point — nothing produces a `GoogleProfile` to hand them anymore.
  */
-
-const SSO_SCOPES = ['openid', 'email', 'profile'];
 
 export interface GoogleProfile {
   sub: string;
   email: string;
   name?: string;
-}
-
-function redirectUri(): string {
-  return `${config().WEB_BASE_URL}/api/auth/callback`;
-}
-
-/** Build the Google consent-screen URL. `state` carries the tenant id (see callback). */
-export async function buildGoogleLoginUrl(state: string): Promise<string> {
-  const cfg = config();
-  const { google } = await import('googleapis');
-  const oauth2 = new google.auth.OAuth2(
-    cfg.GOOGLE_SSO_CLIENT_ID,
-    cfg.GOOGLE_SSO_CLIENT_SECRET,
-    redirectUri(),
-  );
-  return oauth2.generateAuthUrl({
-    access_type: 'online',
-    scope: SSO_SCOPES,
-    include_granted_scopes: true,
-    state,
-    prompt: 'select_account',
-  });
-}
-
-/** Exchange an auth code for a verified Google profile (sub/email/name). */
-export async function exchangeCodeForProfile(code: string): Promise<GoogleProfile> {
-  const cfg = config();
-  const { google } = await import('googleapis');
-  const oauth2 = new google.auth.OAuth2(
-    cfg.GOOGLE_SSO_CLIENT_ID,
-    cfg.GOOGLE_SSO_CLIENT_SECRET,
-    redirectUri(),
-  );
-  const { tokens } = await oauth2.getToken(code);
-  if (!tokens.id_token) throw new Error('Google SSO: no id_token in token response');
-  const ticket = await oauth2.verifyIdToken({
-    idToken: tokens.id_token,
-    audience: cfg.GOOGLE_SSO_CLIENT_ID,
-  });
-  const payload = ticket.getPayload();
-  if (!payload?.sub || !payload.email) {
-    throw new Error('Google SSO: id_token missing sub/email');
-  }
-  return { sub: payload.sub, email: payload.email, name: payload.name };
 }
 
 export interface UpsertedUser {
@@ -103,12 +65,6 @@ export interface LoginResult {
   tenantId: number;
   role: string;
   session: NewSession;
-}
-
-/** Full callback flow: verified profile → upsert user → create session. */
-export async function loginWithGoogle(code: string, tenantId: number): Promise<LoginResult> {
-  const profile = await exchangeCodeForProfile(code);
-  return completeLogin(tenantId, profile);
 }
 
 /**

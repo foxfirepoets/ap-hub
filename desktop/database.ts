@@ -24,6 +24,7 @@ import { SUPPORTED_PLATFORMS, type SupportedPlatform } from '../src/host/types.j
 import {
   startLocalDatabase,
   DatabasePasswordLost,
+  OsAccountMismatch,
   type LocalPostgres,
   type StartedLocalDatabase,
 } from '../src/db/local-database.js';
@@ -79,6 +80,16 @@ export function describeDatabaseFailure(err: unknown): DatabaseFailure {
         'AP-Hub found your information but could not unlock it on this Windows account. ' +
         'Restoring from a backup will recover it.',
       repairable: true,
+    };
+  }
+  if (err instanceof OsAccountMismatch) {
+    return {
+      code: 'DB_FAILED',
+      message:
+        'AP-Hub found information saved under a different Windows account on this computer. ' +
+        'To keep everyone’s information private, it will not open here. Sign in to Windows ' +
+        'as that original account to see it again.',
+      repairable: false,
     };
   }
   return {

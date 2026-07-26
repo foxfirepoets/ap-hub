@@ -20,9 +20,11 @@ const boolish = (def: boolean) =>
 const RawSchema = z.object({
   // --- Core ---
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
-  ENCRYPTION_KEY: z
-    .string()
-    .min(64, 'ENCRYPTION_KEY must be a 32-byte hex string (64 hex chars). Generate: openssl rand -hex 32'),
+  // Legacy OAuth-ciphertext-at-rest key (CHUNK_4_IDENTITY: no longer boot-required — the
+  // standalone desktop shell has no `.env` and must reach a working local sign-in with
+  // nothing supplied). Optional at boot; `src/crypto.ts` still refuses to encrypt/decrypt with
+  // anything but a real 32-byte hex value at the point anything actually needs one.
+  ENCRYPTION_KEY: z.string().default(''),
 
   // --- LLM backend (provider-agnostic) ---
   // ap-hub works with WHATEVER LLM the operator has: a local runtime (Ollama /
@@ -38,8 +40,11 @@ const RawSchema = z.object({
   LLM_MODEL: z.string().default(''), // model id; blank = provider default / first available
 
   // --- Gmail (read plus optional compose-only draft access) ---
-  GMAIL_CLIENT_ID: z.string().min(1, 'GMAIL_CLIENT_ID is required'),
-  GMAIL_CLIENT_SECRET: z.string().min(1, 'GMAIL_CLIENT_SECRET is required'),
+  // Not boot-required (CHUNK_4_IDENTITY): connecting Gmail is an onboarding step that happens
+  // AFTER the app is open, never a condition for opening it at all. Left blank, the Gmail
+  // connect flow itself fails with an actionable message when actually attempted.
+  GMAIL_CLIENT_ID: z.string().default(''),
+  GMAIL_CLIENT_SECRET: z.string().default(''),
   GMAIL_REDIRECT_URI: z.string().url().default('http://localhost:3001/oauth/gmail/callback'),
   WATCHED_LABEL: z.string().default('AP-Inbox'),
   // Compose permits draft CRUD. AP Hub deliberately exposes no reply send action.
@@ -104,9 +109,12 @@ const RawSchema = z.object({
   REVIEW_THRESHOLD: z.coerce.number().min(0).max(1).default(0.6),
   AMOUNT_CEILING: z.coerce.number().nonnegative().default(10000),
 
-  // --- Human UX auth (CHUNK_1_AUTH): Google SSO + tenant-scoped sessions ---
-  GOOGLE_SSO_CLIENT_ID: z.string().min(1, 'GOOGLE_SSO_CLIENT_ID is required'),
-  GOOGLE_SSO_CLIENT_SECRET: z.string().min(1, 'GOOGLE_SSO_CLIENT_SECRET is required'),
+  // --- Human UX auth: tenant-scoped sessions ---
+  // Google SSO is no longer the product entry point (CHUNK_4_IDENTITY) — the OS account is.
+  // These two stay only so the pre-existing SSO code (src/auth/google-sso.ts) keeps compiling
+  // and its tests keep passing; nothing on the product's boot or sign-in path needs them.
+  GOOGLE_SSO_CLIENT_ID: z.string().default(''),
+  GOOGLE_SSO_CLIENT_SECRET: z.string().default(''),
   SESSION_COOKIE_SECRET: z
     .string()
     .min(32, 'SESSION_COOKIE_SECRET must be at least 32 characters; generate a random value'),

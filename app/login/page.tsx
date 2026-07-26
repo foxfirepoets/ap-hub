@@ -1,17 +1,23 @@
 'use client';
 
-// Login page (outside the app shell — no nav, no session guard). The only action is to
-// start Google SSO, which is handled entirely by the existing CHUNK_1 auth routes.
+// CHUNK_4_IDENTITY — fallback screen only (outside the app shell, no nav, no session guard).
+// AP-Hub no longer has a sign-in step: the Windows account that opened it becomes its owner
+// automatically, before this screen would ever be reached. This page only appears if that
+// could not be confirmed — never a Google button, never a dead end.
 export default function LoginPage() {
   return (
     <div className="login-wrap">
       <div className="login-card">
         <h1>AP Hub</h1>
-        <p className="muted">Sign in to review and approve accounting activity.</p>
+        <p className="muted">AP-Hub could not confirm your account on this computer.</p>
         <p style={{ marginTop: 24 }}>
-          <a className="btn primary" href="/api/auth/login" data-testid="google-signin">
-            Sign in with Google
-          </a>
+          <button
+            className="btn primary"
+            data-testid="retry-signin"
+            onClick={() => window.location.reload()}
+          >
+            Try again
+          </button>
         </p>
       </div>
     </div>
