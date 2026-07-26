@@ -17,6 +17,7 @@ import { isAllowedChannel, isAllowedExternalUrl, isAllowedNavigation } from './c
 import { RENDERER_WEB_PREFERENCES, RENDERER_CSP } from './security.js';
 import { engineStateLabel, type EngineState } from './status.js';
 import { startDatabase, describeDatabaseFailure, type StartedLocalDatabase } from './database.js';
+import { registerProductHandlers } from './ipc/dispatcher.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -262,6 +263,22 @@ if (!app.requestSingleInstanceLock()) {
     applyContentSecurityPolicy();
     denyAllPermissions();
     registerShellHandlers();
+    /*
+     * CHUNK_3_IPC. `databaseState` is read per call rather than captured, so a database that
+     * comes up mid-session starts serving without a restart. It reads the same two variables
+     * `aphub:shell:status` reports from, so the renderer can never see the bridge and the
+     * status line disagree.
+     *
+     * `contributions` is empty until B3 (read domains) and B4 (action domains) land, which
+     * makes this call inert: it registers no channel and changes no behaviour. It is wired
+     * now so the seam is proven under a real Electron process before 50 channels depend on it.
+     */
+    registerProductHandlers({
+      ipcMain,
+      databaseState: () =>
+        database !== null ? 'ready' : databaseProblem === null ? 'starting' : 'failed',
+      contributions: [],
+    });
     mainWindow = createWindow();
     createTray();
     // Not awaited: the window and tray must appear immediately, showing DB_STARTING, rather
