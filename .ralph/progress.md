@@ -706,3 +706,84 @@ Locked forwarder: **exactly one** provider-send call site, unchanged. Merge comm
 into `feat/local-desktop-p1`, pushed to `origin/feat/local-desktop-p1`.
 
 <promise>CHUNK COMPLETE: CHUNK_6_CLEANUP</promise>
+
+### 2026-07-27 — CHUNK_7_BACKUP Wave 1 in progress (not yet complete — no promise line)
+
+**This is P0** ("a backup that appears to work and turns out to be unrestorable" is the exact
+failure mode this chunk exists to prevent — `specs/07_CHUNK_7_BACKUP.md`), so the review bar for
+this chunk is higher than usual and every merge got its own dedicated Kraken pass rather than a
+single end-of-chunk pass. Three pieces landed so far; still needed before the chunk can close:
+rotation policy, restore + repair mode, `aphub:backup:{list,restore,export}` IPC channels + the
+Settings UI plain-language panel, and the destroy-and-restore-drill integration test
+(`test/backup-restore.int.test.ts` per spec). Do not read this entry as chunk completion.
+
+**1 — Backup creation + encryption + verification core** (`agent/chunk7-backup-core`, commit
+`591b2b2`). New `src/backup/` module: `pg_dump` against the live bundled instance (MVCC gives a
+consistent snapshot without stopping anything); AES-256-GCM encryption with a 32-byte key held
+only in the OS credential store (`APHub/backup/encryption-key`, same pattern as
+`DATABASE_PASSWORD_TARGET`); immediate verify-by-re-reading — decrypt, restore into a genuinely
+separate scratch database (`aphub_backup_verify_<random>`, never touching the live `aphub` DB),
+re-query real row counts, compare against a manifest hash taken over the **plaintext** dump (so
+the check proves decrypt(encrypt(dump)) == dump, not merely that the ciphertext is unchanged).
+`backups.verified_at` is set only after that full cycle passes. Confirmed the "document store" is
+entirely inside Postgres (`attachment_blobs`, no filesystem document storage exists), so a
+database dump is a complete backup. Tests run against a **real** bundled PostgreSQL instance, not
+mocked — including two tests that flip real bytes / truncate the real encrypted file and confirm
+GCM authentication genuinely rejects it rather than silently returning corrupted plaintext.
+
+**2 — CHUNK_4-deferred identity-ordering fix** (`agent/chunk7-identity-ordering-fix`, commit
+`6127254`). Closed the ordering asymmetry between the file-read identity check (already checked
+before any side effect) and the DB-recovered identity check (previously ran after `migrate()`).
+Investigated the real chicken-and-egg constraint first: `local_install` is created by migration
+014, so a cluster older than that genuinely has no table to check against pre-migration — this
+is a real constraint, not sloppy ordering. Fix: a cheap `to_regclass('public.local_install')`
+catalog probe runs before `migrate()`; if the table already exists (true for any cluster that
+ever completed migration 014 — which covers every backup-restore scenario CHUNK_7 will exercise
+repeatedly), the recovered identity is checked and mismatch throws **before** any migration
+touches the cluster. Only a cluster older than migration 014 that also lost its `install.json`
+still falls back to the old post-migration check — unavoidable, since that check depends on a
+table the migration itself creates. File-read path confirmed byte-identical. Regression tests
+prove real call-order (not just call-count): `migrate` provably never invoked on the fast-path
+mismatch; the fallback path's three-call order is asserted directly.
+
+**3 — `.pgpass` ACL hardening — a real BLOCKING Kraken finding, found and fixed within this
+session, not silently accepted.** Kraken's dedicated security pass on item 1 (elevated bar,
+explicitly requested given P0 stakes) found that `src/backup/pg-tools.ts` wrote the
+`pg_dump`/`pg_restore` password file to `os.tmpdir()` protected only by a `{ mode: 0o600 }` flag —
+which has no real ACL effect on NTFS, unlike the codebase's own established pattern
+(`src/db/postgres-runtime.ts`'s `initdb` pwfile, which sits inside a directory genuinely hardened
+by `host.fsPermissions.restrictToCurrentUser`'s real `icacls /inheritance:r /grant:r` call). The
+code's own comment overstated the parity with that pattern. Fixed (`agent/chunk7-pgpass-hardening`,
+commit `26a0665`): `.pgpass` now writes inside a directory `restrictToCurrentUser` is called on
+*before* the secret is written, for both the dump and the verify-path's `createdb`/`pg_restore`/
+`dropdb` calls. New test wraps the **real** `createWindowsHostAdapter().fsPermissions.restrictToCurrentUser`
+(genuine `icacls`, not a stub) with a recording spy and independently checks real ACL state via
+`icacls` output (no inherited ACEs survive, explicit current-user grant) — re-verified by a second,
+independent Kraken pass with the same elevated bar: **CONFIRMED SAFE AS MERGED**.
+
+**Independent verification, current state, real captured exit codes:** `lint:0` `lint:noleak:0`
+`typecheck:0` `test:0` (**82 test files, 1669 tests** — was 81/1623 before this chunk's work)
+`web:build:0` `desktop:build:0` `playwright --project=desktop:0` (**48 passed, 0 skipped**).
+Additionally, all four `.int.test.ts` integration files (excluded from the standard gate by
+`vitest.config.ts`, run separately with `--mode integration`) pass: `backup-create.int.test.ts`
+(4/4, including the new ACL-hardening proof), `local-database.int.test.ts`,
+`local-install.int.test.ts` (the real two-cluster cross-account isolation test — confirms the
+identity-ordering fix didn't regress this), `windows-credential-manager.int.test.ts` (11/11 total).
+
+`git diff --stat 284c3b0..HEAD` for the shared/frozen list (`package.json`, `tsconfig*`,
+`electron-builder.yml`, `scripts/build-desktop.mjs`, `desktop/main.ts`, `desktop/channels.ts`,
+`playwright.config.ts`, `migrations/`, `.ralph/*`, `IMPLEMENTATION_PLAN.md`, `CLAUDE.md`,
+`AGENTS.md`): empty at every merge. No new npm dependency (`pg` is pre-existing). No safety test
+touched. Locked forwarder: **exactly one** provider-send call site, `src/gmail/adapter.ts:142`,
+unchanged throughout.
+
+**Known non-blocking gap, tracked for Wave 2:** `createBackup`/`verifyBackup` have no production
+caller yet — not wired into `desktop/main.ts`, a scheduler, or IPC. This is expected; Wave 1 built
+the core library, Wave 2 wires scheduling, restore, repair mode, IPC, and the Settings UI panel.
+
+Standing environment blockers restated (not dropped): no macOS machine, no signing identities, no
+clean VMs.
+
+Merge commits so far: `591b2b2` (backup-core), `6127254` (identity-ordering-fix), `26a0665`
+(pgpass ACL hardening), all on `feat/local-desktop-p1`, pushed to `origin/feat/local-desktop-p1`.
+CHUNK_7_BACKUP continues with Wave 2. **No promise line yet — chunk not complete.**

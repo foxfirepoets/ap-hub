@@ -3,7 +3,16 @@
 **Current Iteration:** 1
 
 Current chunk: CHUNK_7_BACKUP
-Current task: not started
+Current task: Wave 1 complete (backup core, CHUNK_4-deferred identity-ordering fix, pgpass ACL
+hardening) — Wave 2 next (rotation, restore, repair mode, IPC channels + Settings UI panel,
+destroy-and-restore-drill integration test). CHUNK_7 is P0 and NOT yet complete — no promise line.
+Merge commits `591b2b2`, `6127254`, `26a0665` on `feat/local-desktop-p1`, pushed. A real BLOCKING
+Kraken finding (pgpass temp file lacked real Windows ACL protection, only a cosmetic mode bit) was
+found and fixed within this session — see `.ralph/progress.md` 2026-07-27 CHUNK_7_BACKUP Wave 1
+entry for full detail. Independently re-verified, real exit codes: lint:0 noleak:0 typecheck:0
+test:0 (82 files/1669 tests) web:build:0 desktop:build:0 playwright:0 (48/48, 0 skipped), plus all
+4 `.int.test.ts` integration files (11/11).
+
 Last completed: **CHUNK_6_CLEANUP — complete and CLOSED 2026-07-27.** Merge commits `359cf56`
 (hosted-key-broker removal), `3e0f2c9` (exhaustive onboarding error mapping), `808cc08`
 (SwarmSync three-rule policy fix) on `feat/local-desktop-p1`, pushed, tagged
