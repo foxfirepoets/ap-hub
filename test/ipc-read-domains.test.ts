@@ -24,7 +24,7 @@ import {
 } from './helpers.js';
 
 /**
- * B3 — contract tests for the 21 read-domain channels. `test/ipc-foundation.test.ts` already
+ * B3 — contract tests for the read-domain channels. `test/ipc-foundation.test.ts` already
  * covers the shared machinery (synthesis, decoding, code normalization, token custody); these
  * tests cover THIS agent's wiring: every route listed for B3 has exactly one channel, the two
  * owner-only read wrappers (`runTaxMappingRead` / `runDimensionMappingRead`) are not
@@ -96,7 +96,7 @@ async function sessionFor(tenantId: number, role: string): Promise<string> {
 
 // --- registry shape: every listed route has exactly one channel, both directions ----------
 
-describe('the 21 read channels are registered exactly once, symmetrically', () => {
+describe('the read channels are registered exactly once, symmetrically', () => {
   it('builds without throwing: READ_CHANNELS and READ_ENTRIES are set-equal', () => {
     expect(() => buildRegistry([{ channels: READ_CHANNELS, entries: READ_ENTRIES }])).not.toThrow();
     expect(READ_ENTRIES).toHaveLength(READ_CHANNELS.length);
@@ -150,7 +150,7 @@ describe('the 21 read channels are registered exactly once, symmetrically', () =
 
 // --- a malformed payload never reaches the service, across every channel ------------------
 
-describe('a malformed payload never reaches the service, on every one of the 21 channels', () => {
+describe('a malformed payload never reaches the service, on every read channel', () => {
   for (const entry of READ_ENTRIES) {
     it(`${entry.channel}: an unrecognized field is rejected and the service is never called`, async () => {
       const { dispatch, callCount } = viaDispatchWithSpy(entry);

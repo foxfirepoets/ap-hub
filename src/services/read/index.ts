@@ -12,4 +12,5 @@ export * from './audit.js';
 export * from './notifications.js';
 export * from './providerCapabilities.js';
 export * from './providerJobs.js';
+export * from './connections.js';
 export { listStatements, getStatement } from '../../statements/review.js';

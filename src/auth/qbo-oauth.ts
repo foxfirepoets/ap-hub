@@ -25,10 +25,15 @@ export function assertExpectedCompany(actualName: string, expectedName: string):
   }
 }
 
+/**
+ * `codeVerifier` is an additive, optional override for the CHUNK_5 desktop loopback flow's
+ * S256 PKCE. Omitted, the request body is byte-identical to the CHUNK_2 web flow's.
+ */
 export async function exchangeQboCode(
   code: string,
   redirectUri: string,
   fetchImpl: typeof fetch = globalThis.fetch,
+  codeVerifier?: string,
 ): Promise<{ access_token: string; refresh_token: string; expires_in: number }> {
   const cfg = config();
   const clientId = cfg.QBO_ENV === 'production' ? cfg.QBO_PRODUCTION_CLIENT_ID : cfg.QBO_SANDBOX_CLIENT_ID;
@@ -37,11 +42,13 @@ export async function exchangeQboCode(
   const basic = Buffer.from(`${clientId}:${clientSecret}`).toString(
     'base64',
   );
-  const body = new URLSearchParams({
+  const bodyFields: Record<string, string> = {
     grant_type: 'authorization_code',
     code,
     redirect_uri: redirectUri,
-  });
+  };
+  if (codeVerifier !== undefined) bodyFields.code_verifier = codeVerifier;
+  const body = new URLSearchParams(bodyFields);
   const res = await fetchImpl(TOKEN_URL, {
     method: 'POST',
     headers: {

@@ -34,6 +34,17 @@ export function configureTokenSecretAuthority(authority: TokenSecretAuthority | 
   tokenSecretAuthority = authority;
 }
 
+/**
+ * Whether a credential-store authority is wired up. CHUNK_5's connect flow checks this BEFORE
+ * opening the system browser: a desktop install always configures one at boot
+ * (`initializeTokenCredentialAuthority`), so `false` here means the credential store itself
+ * could not be reached — surfaced as `SECURE_STORE`, never a raw Win32 error, and never after
+ * the user has already gone through consent.
+ */
+export function hasTokenCredentialAuthority(): boolean {
+  return tokenSecretAuthority !== null;
+}
+
 function credentialTarget(
   authority: TokenSecretAuthority,
   tenantId: number,

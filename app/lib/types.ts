@@ -314,6 +314,16 @@ export interface ProviderCapabilityConnection {
   gaps: string[];
 }
 
+export interface ConnectionStatus {
+  id: number;
+  provider: string;
+  connectionClass: string;
+  displayName: string | null;
+  externalCompany: string | null;
+  status: string;
+  updatedAt: string;
+}
+
 export interface ProviderJob {
   id: number;
   connectionId: number;

@@ -9,6 +9,7 @@ import { friendlyOnboardingError } from '../../lib/onboardingErrors.js';
 import { AUTOMATION_LEVELS, type AutomationLevel } from '../../lib/automationLevels';
 import type { OnboardingState } from '../../lib/types';
 import { ProviderConnections } from './ProviderConnections';
+import { ConnectAccounts } from './ConnectAccounts';
 
 type Notice = { kind: 'good' | 'bad'; text: string };
 
@@ -64,6 +65,12 @@ export default function SettingsPage() {
     <div data-testid="settings-page">
       <h1>Settings</h1>
       <p className="page-sub">Signed in as {me.email} · role {me.role}</p>
+
+      <div className="panel">
+        <h2>Connected accounts</h2>
+        <p className="muted">Sign in to Gmail or QuickBooks Online in your own browser — AP-Hub never asks for a password.</p>
+        <ConnectAccounts owner={owner} />
+      </div>
 
       <div className="panel">
         <h2>QuickBooks connections</h2>
