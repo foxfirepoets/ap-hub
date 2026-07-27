@@ -2,8 +2,28 @@
 
 **Current Iteration:** 1
 
-Current chunk: CHUNK_6_CLEANUP
+Current chunk: CHUNK_7_BACKUP
 Current task: not started
+Last completed: **CHUNK_6_CLEANUP — complete and CLOSED 2026-07-27.** Merge commits `359cf56`
+(hosted-key-broker removal), `3e0f2c9` (exhaustive onboarding error mapping), `808cc08`
+(SwarmSync three-rule policy fix) on `feat/local-desktop-p1`, pushed, tagged
+`checkpoint/chunk6-complete`. Zero `BROKER_` references remain; `SWARMSYNC_ENABLED` defaults
+false; `friendlyOnboardingError` is now a `never`-typed exhaustive switch over the real closed
+15-code IPC error set, no raw fallback. A real regression was found and fixed during the
+orchestrator's own gate rerun (not by an agent): flipping `SWARMSYNC_ENABLED`'s default activated
+a dead code path in `postOnce`/`gatekeepHandler` that held every posting unconditionally,
+because the ADP §5 "three disabled/unavailable rules" (optional→noop, required→review+typed
+exception) were never implemented — fixed via a new `connections.metadata.swarmSyncPolicy` field
+(no migration). Independently re-verified, real exit codes: lint:0 noleak:0 typecheck:0 test:0
+(81 files/1623 tests) web:build:0 desktop:build:0 playwright:0 (48/48, 0 skipped). Kraken:
+two passes, both clean with only non-blocking findings (stale `.env.example` doc comment, fixed;
+`normalizePolicy`'s silent-collapse-to-optional on malformed input, latent; raw `reasonCode`
+leak in the pre-existing Exceptions review page, queued as an immediate follow-up). Archiving
+`src/index.ts`/`src/http.ts` was correctly BLOCKED and deferred to CHUNK_8_SUPERVISION — Alex
+found `desktop/main.ts` never wires up the pg-boss pipeline workers, so archiving now would
+silently stop all job processing. See `.ralph/progress.md` 2026-07-27 CHUNK_6_CLEANUP entry for
+full detail. CHUNK_7_BACKUP not yet started.
+
 Last completed: **CHUNK_5_CONNECT — complete and CLOSED 2026-07-27.** Merge commit `db62713` on
 `feat/local-desktop-p1`, pushed, tagged `checkpoint/chunk5-complete`. System-browser OAuth +
 single-use loopback callback listener for Gmail/QBO connect flows. Independently re-verified,

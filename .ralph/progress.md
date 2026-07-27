@@ -597,3 +597,112 @@ Merge commit: `db62713`, on `feat/local-desktop-p1`, pushed to `origin/feat/loca
 tagged `checkpoint/chunk5-complete`.
 
 <promise>CHUNK COMPLETE: CHUNK_5_CONNECT</promise>
+
+### 2026-07-27 — CHUNK_6_CLEANUP complete
+
+Removed every hosted-dependency surface and the raw technical-vocabulary leak in the onboarding
+error path, per `specs/06_CHUNK_6_CLEANUP.md`. Built as three parallel agent worktrees off
+`feat/local-desktop-p1` at `21ff1d0`, merged sequentially, plus one unplanned fourth task (below)
+after the merged gate surfaced a real regression.
+
+**1 — Hosted key-broker removal** (`agent/chunk6-hosted-dep-removal`, commit `359cf56`, merge
+`ca4...`→ see git log). `BROKER_BASE_URL`/`BROKER_INSTALL_TOKEN` removed from `src/config.ts` and
+`.env.example`; broker branches removed from `src/extract/model.ts` (`getBrokerExtractor`) and
+`src/services.ts`; `src/telemetry.ts` rewritten as a genuine local-only no-op (no `fetch` call
+anywhere in the file, confirmed by grep and by Kraken). `SWARMSYNC_ENABLED` now defaults `false`.
+New `test/no-hosted-dependency.test.ts` proves — with a live `fetchSpy`, not a static-shape check —
+that `SwarmSyncClient` always targets the operator's own configured API base even with legacy
+`BROKER_*` env vars present. `grep -rn "BROKER_" src/ app/`: zero results.
+
+**2 — Exhaustive onboarding error mapping** (`agent/chunk6-onboarding-errors`, commit `3e0f2c9`).
+Discovered the real, complete vocabulary reaching `friendlyOnboardingError` is a **closed 15-code
+set** — every error crossing the IPC bridge is already forced through `desktop/ipc/errors.ts`'s
+`normalizeCode()`, so the raw service/provider message never crosses the bridge at all. Rewrote
+the function as a `never`-typed exhaustive switch over those 15 codes (verified byte-identical to
+`IPC_ERROR_CODES` by Kraken's own side-by-side diff, not just the agent's claim), deleting the old
+`Details: ${fallbackMessage}` raw-string fallback entirely; the fallback parameter is now
+prefixed `_` and never interpolated anywhere. Adding a code to the real set without a case here
+now fails `tsc --noEmit`, not just at runtime. `test/error-mapping.test.ts` proves no raw/unmapped
+text can reach the UI.
+
+**3 — Archive the pre-pivot HTTP service — BLOCKED, correctly, and deferred to CHUNK_8.**
+`agent/chunk6-archive-legacy-http` (Alex) investigated archiving `src/index.ts`/`src/http.ts`
+(the pre-Electron-pivot HTTP service, deferred from CHUNK_3's Kraken finding) and found real
+evidence it would be unsafe: `desktop/main.ts`'s `app.whenReady()` sequence never calls
+`startQueue`/`registerPipelineJobs`/`registerQbDesktop` — only `src/index.ts::boot()` (via
+`npm run dev`) and `src/cli.ts`'s one-shot manual `poll` command touch the pg-boss queue at all.
+Archiving now would silently stop all automatic job processing (poll → gatekeep → classify →
+extract → map → propose → post, plus the daily audit anchor) in the packaged Electron app. No
+files were changed. Correctly deferred to CHUNK_8_SUPERVISION, which already frames wiring the
+engine into the Electron boot sequence as its own job — tracked as an explicit task for that
+chunk.
+
+**4 — Unplanned: SwarmSync three-rule policy fix, found by the gate itself.**
+The orchestrator's own task decomposition for this chunk missed an acceptance criterion:
+`specs/06_CHUNK_6_CLEANUP.md` requires "the three disabled/unavailable rules" (optional-for-company
+→ `noop`; required-by-policy → review + typed exception; unscanned-never-labelled-verified) and
+`proof_fail_safe` extended for the latter two — see architecture-decision-packet §5, the binding
+design. Flipping `SWARMSYNC_ENABLED`'s default to `false` (task 1, correct and required) activated
+a previously-dead code path: `src/pipeline/posting.ts`'s `postOnce()` and
+`src/pipeline/gatekeep.ts`'s `gatekeepHandler()` both unconditionally held/no-oped on
+"SwarmSync off" with **no concept of per-company policy at all** — a real product-correctness gap,
+not merely a test artifact, since it means every company would silently have every posting held
+forever the moment SwarmSync defaults off. Caught by the integration lead's own full-gate rerun
+(`test/dry-run-lock-pipeline.test.ts`, 2/3 failing), reproduced in isolation first per the
+standing DB-contention guardrail before treating it as real (it was).
+
+Dispatched a dedicated fix (`agent/chunk6-swarmsync-policy`, commit `808cc08`): added
+`connections.metadata.swarmSyncPolicy: 'optional'|'required'` (no migration — reuses the same
+JSONB column `ownerWriteGate` already lives in), made both `postOnce` and `gatekeepHandler`
+policy-aware, and extended `src/services/digest.ts`'s `proof_fail_safe` logic with the two new
+rule cases (a required-but-unavailable item routes to `MATERIAL_RISK_REASONS` as a `high`-severity
+alert, never silently absorbed; confirmed by grep — independently by both the agent and Kraken —
+that zero UI currently renders "independently verified" language, so rule 3's labelling guarantee
+is vacuously satisfied today with the enforcement point noted in `digest.ts` for when that UI is
+built). `test/gatekeeper.test.ts` was deliberately left untouched (treated as safety-test-adjacent
+out of caution, even though not on the literal forbidden list) and needed no fixture change.
+
+**Independent verification, final state, real captured exit codes, full gate rerun from scratch
+after the fix (the first full-suite run this chunk had 2 real failures, both now fixed and
+reproduced-then-resolved, not contention):** `lint:0` `lint:noleak:0` `typecheck:0` `test:0`
+(**81 test files, 1623 tests** — was 78/1611 before this chunk) `web:build:0` `desktop:build:0`
+`playwright --project=desktop:0` (**48 passed, 0 skipped**).
+
+`git diff --stat 21ff1d0..HEAD -- src/`: touches only `src/config.ts`, `src/extract/model.ts`,
+`src/services.ts`, `src/telemetry.ts`, `src/accounting/swarmsync-policy.ts` (new),
+`src/exceptions.ts`, `src/pipeline/gatekeep.ts`, `src/pipeline/posting.ts`,
+`src/services/digest.ts` — no other `src/` directory drifted, no migration added. Locked
+forwarder: **exactly one** provider-send call site, `src/gmail/adapter.ts:142`, unchanged. No
+safety test touched (`lockdown`, `gatekeeper`, `posting`, `f5-cross-tenant-isolation`,
+`anchor-whitelabel`, `architecture-connector-path`, `desktop-shell`, `desktop-packaging`,
+`database.spec`, `shell.spec` — all confirmed unchanged by diff, and Kraken additionally **ran**
+all of them live rather than just diffing, all passing).
+
+**Kraken read-only security/correctness passes, one per merge (three total this chunk):**
+(a) hosted-dep-removal + onboarding-errors merge — 10/10 clean, **CONFIRMED SAFE AS MERGED**, one
+non-blocking finding: a stale `.env.example:15` doc-comment still said "model/proof/broker keys"
+— fixed directly by the integration lead in this closing commit. (b) SwarmSync-policy-fix merge —
+**CLEAR WITH NON-BLOCKING FINDINGS**: (i) `normalizePolicy()` in `src/accounting/swarmsync-policy.ts`
+silently collapses any malformed/unexpected `swarmSyncPolicy` value to `'optional'` with no log or
+alert — latent, not live-exploitable today since nothing currently writes this field, worth a
+defensive fix later; (ii) `app/(app)/exceptions/page.tsx` renders raw `reasonCode`/`detail` verbatim
+to the non-technical bookkeeper end user across the **entire** 30+ code exception-reason taxonomy
+— a **pre-existing** gap this fix's one new code (`swarmsync_required_unavailable`) merely joins,
+not introduced by this chunk, but squarely within CHUNK_6's own "no technical vocabulary in the UI"
+mission. Queued as an immediate follow-up task (not gate-blocking — no automated test currently
+asserts it), to be done right after this chunk closes, mirroring the `friendlyOnboardingError`
+exhaustive-mapping pattern from task 2 above.
+
+**Deferred to CHUNK_8_SUPERVISION (tracked explicitly):** wire `startQueue`/`registerPipelineJobs`
+into `desktop/main.ts`'s boot sequence, then archive `src/index.ts`/`src/http.ts` (task 3 above);
+also decide whether `registerQbDesktop`'s SOAP listener needs a loopback HTTP server or should
+move to IPC.
+
+Standing environment blockers restated (not dropped): no macOS machine, no signing identities, no
+clean VMs.
+
+Locked forwarder: **exactly one** provider-send call site, unchanged. Merge commits: `359cf56`
+(hosted-dep-removal), `3e0f2c9` (onboarding-errors), `808cc08` (swarmsync-policy-fix), all merged
+into `feat/local-desktop-p1`, pushed to `origin/feat/local-desktop-p1`.
+
+<promise>CHUNK COMPLETE: CHUNK_6_CLEANUP</promise>
