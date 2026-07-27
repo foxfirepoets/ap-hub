@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, truncateSync } from 'node:fs';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,10 +10,14 @@ import pg from 'pg';
 import { startLocalDatabase } from '../src/db/local-database';
 import { migrateUp } from '../src/db/migrate';
 import type { SecretStore } from '../src/host/types';
+import { createWindowsHostAdapter } from '../src/host/windows';
 import { createBackup } from '../src/backup/create';
 import { BACKUP_ENCRYPTION_KEY_TARGET } from '../src/backup/key';
 import { verifyBackup } from '../src/backup/verify';
 import { BACKUP_TABLES } from '../src/backup/manifest';
+import type { SecurePgPassDir } from '../src/backup/pg-tools';
+
+const execFileAsync = promisify(execFile);
 
 /**
  * CHUNK_7_BACKUP — proves the whole point of the chunk: a real encrypted backup, made from a
@@ -48,6 +54,10 @@ class MemorySecretStore implements SecretStore {
 }
 
 const describeIf = AVAILABLE ? describe : describe.skip;
+
+// The real Windows `restrictToCurrentUser` primitive (icacls), not a stub — proves the pgpass
+// directory actually gets ACL-hardened, the same way `desktop/database.ts` hardens the data root.
+const windowsHost = createWindowsHostAdapter();
 
 describeIf('createBackup — real bundled PostgreSQL, real pg_dump/pg_restore', () => {
   let root: string;
@@ -132,6 +142,7 @@ describeIf('createBackup — real bundled PostgreSQL, real pg_dump/pg_restore', 
       pgBinDir: BIN,
       exeSuffix: EXE,
       backupDir,
+      restrictToCurrentUser: windowsHost.fsPermissions.restrictToCurrentUser,
       secretStore,
     });
 
@@ -178,6 +189,7 @@ describeIf('createBackup — real bundled PostgreSQL, real pg_dump/pg_restore', 
       pgBinDir: BIN,
       exeSuffix: EXE,
       backupDir,
+      restrictToCurrentUser: windowsHost.fsPermissions.restrictToCurrentUser,
       secretStore,
     });
     expect(created.verified).toBe(true);
@@ -190,6 +202,7 @@ describeIf('createBackup — real bundled PostgreSQL, real pg_dump/pg_restore', 
 
     const key = Buffer.from(secretStore.values.get(BACKUP_ENCRYPTION_KEY_TARGET)!, 'base64url');
     const bin = (name: string) => join(BIN, `${name}${EXE}`);
+    const secureDir: SecurePgPassDir = { dir: join(backupDir, '.pgpass'), restrictToCurrentUser: windowsHost.fsPermissions.restrictToCurrentUser };
     const result = await verifyBackup({
       encPath: created.path,
       key,
@@ -197,6 +210,7 @@ describeIf('createBackup — real bundled PostgreSQL, real pg_dump/pg_restore', 
       expectedRowCounts: created.rowCounts,
       bin,
       conn: connection,
+      secureDir,
     });
 
     expect(result.ok).toBe(false);
@@ -211,6 +225,7 @@ describeIf('createBackup — real bundled PostgreSQL, real pg_dump/pg_restore', 
       pgBinDir: BIN,
       exeSuffix: EXE,
       backupDir,
+      restrictToCurrentUser: windowsHost.fsPermissions.restrictToCurrentUser,
       secretStore,
     });
     expect(created.verified).toBe(true);
@@ -219,6 +234,7 @@ describeIf('createBackup — real bundled PostgreSQL, real pg_dump/pg_restore', 
 
     const key = Buffer.from(secretStore.values.get(BACKUP_ENCRYPTION_KEY_TARGET)!, 'base64url');
     const bin = (name: string) => join(BIN, `${name}${EXE}`);
+    const secureDir: SecurePgPassDir = { dir: join(backupDir, '.pgpass'), restrictToCurrentUser: windowsHost.fsPermissions.restrictToCurrentUser };
     const result = await verifyBackup({
       encPath: created.path,
       key,
@@ -226,9 +242,51 @@ describeIf('createBackup — real bundled PostgreSQL, real pg_dump/pg_restore', 
       expectedRowCounts: created.rowCounts,
       bin,
       conn: connection,
+      secureDir,
     });
 
     expect(result.ok).toBe(false);
     expect(result.reason).toMatch(/shorter than the encryption header/);
+  }, 180_000);
+
+  it('ACL-hardens the pgpass directory before writing the secret into it, not just a mode bit in os.tmpdir()', async () => {
+    const backupDir = join(root, 'backups-acl');
+    const expectedDir = join(backupDir, '.pgpass');
+    const calls: string[] = [];
+    // Wraps the REAL Windows icacls-based primitive (not a stub) so this test proves genuine
+    // ACL state, while also recording that pg-tools.ts actually invokes it with the right path.
+    const restrictToCurrentUser = async (dir: string): Promise<void> => {
+      calls.push(dir);
+      await windowsHost.fsPermissions.restrictToCurrentUser(dir);
+    };
+
+    const result = await createBackup({
+      kind: 'manual',
+      connection,
+      pgBinDir: BIN,
+      exeSuffix: EXE,
+      backupDir,
+      restrictToCurrentUser,
+      secretStore,
+    });
+    expect(result.verified).toBe(true);
+
+    // Invoked for pg_dump (createBackup) and again for createdb/pg_restore/dropdb (verifyBackup),
+    // always against the one directory under this backup's own root — never os.tmpdir().
+    expect(calls.length).toBeGreaterThanOrEqual(2);
+    for (const dir of calls) {
+      expect(dir).toBe(expectedDir);
+    }
+    expect(existsSync(expectedDir)).toBe(true);
+
+    // Real ACL state on the directory: inheritance must be broken (no "(I)" inherited ACEs
+    // survive `/inheritance:r`) and the current user must hold an explicit Full Control grant.
+    // This is the property `os.tmpdir()` + `{ mode: 0o600 }` never provided on NTFS.
+    const { stdout } = await execFileAsync('icacls', [expectedDir]);
+    expect(stdout).not.toMatch(/\(I\)/);
+    const username = process.env.USERNAME ?? '';
+    expect(username.length).toBeGreaterThan(0);
+    expect(stdout.toUpperCase()).toContain(username.toUpperCase());
+    expect(stdout).toMatch(/\(F\)/);
   }, 180_000);
 });

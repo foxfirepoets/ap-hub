@@ -4,7 +4,7 @@ import pg from 'pg';
 import { buildConnectionString } from '../db/postgres-runtime.js';
 import { decryptFile, BackupCorrupted } from './crypto.js';
 import { hashFile, captureRowCounts, rowCountsMatch, BACKUP_TABLES } from './manifest.js';
-import { runPgTool, type PgConnection } from './pg-tools.js';
+import { runPgTool, type PgConnection, type SecurePgPassDir } from './pg-tools.js';
 
 const { Pool } = pg;
 
@@ -15,6 +15,8 @@ export interface VerifyBackupOptions {
   expectedRowCounts: Record<string, number>;
   bin: (name: string) => string;
   conn: PgConnection;
+  /** Where `createdb`/`pg_restore`/`dropdb` write their short-lived, ACL-hardened `.pgpass` file. */
+  secureDir: SecurePgPassDir;
   tables?: readonly string[];
 }
 
@@ -56,10 +58,10 @@ export async function verifyBackup(opts: VerifyBackupOptions): Promise<VerifyBac
     }
 
     const scratchDb = `aphub_backup_verify_${randomBytes(6).toString('hex')}`;
-    await runPgTool(opts.bin, 'createdb', [scratchDb], opts.conn);
+    await runPgTool(opts.bin, 'createdb', [scratchDb], opts.conn, opts.secureDir);
     try {
       try {
-        await runPgTool(opts.bin, 'pg_restore', ['-d', scratchDb, decPath], opts.conn, 300_000);
+        await runPgTool(opts.bin, 'pg_restore', ['-d', scratchDb, decPath], opts.conn, opts.secureDir, 300_000);
       } catch (err) {
         return {
           ok: false,
@@ -85,7 +87,7 @@ export async function verifyBackup(opts: VerifyBackupOptions): Promise<VerifyBac
         await scratchPool.end();
       }
     } finally {
-      await runPgTool(opts.bin, 'dropdb', ['--if-exists', scratchDb], opts.conn);
+      await runPgTool(opts.bin, 'dropdb', ['--if-exists', scratchDb], opts.conn, opts.secureDir);
     }
   } finally {
     await rm(decPath, { force: true });
