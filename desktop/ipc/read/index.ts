@@ -1,5 +1,6 @@
 import { accountingDocumentsEntries } from './accounting-documents.js';
 import { auditEntries } from './audit.js';
+import { backupReadEntries } from './backup.js';
 import { connectionsReadEntries } from './connections.js';
 import { dimensionMappingsEntries } from './dimension-mappings.js';
 import { evidenceEntries } from './evidence.js';
@@ -39,4 +40,5 @@ export const READ_ENTRIES: readonly RegistryEntry[] = [
   ...taxMappingsEntries,
   ...onboardingEntries,
   ...connectionsReadEntries,
+  ...backupReadEntries,
 ];

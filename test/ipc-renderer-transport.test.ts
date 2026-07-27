@@ -34,9 +34,9 @@ function entryKey(entry: { method: string; pathTemplate: string }): string {
 // --- 1. registry parity, both directions ----------------------------------------------------
 
 describe('ipc-routes table vs the registry', () => {
-  it('has exactly 52 entries on both sides', () => {
-    expect(ALL_ENTRIES.length).toBe(52);
-    expect(allRoutes().length).toBe(52);
+  it('has exactly 55 entries on both sides', () => {
+    expect(ALL_ENTRIES.length).toBe(55);
+    expect(allRoutes().length).toBe(55);
   });
 
   it('every registry entry has exactly one matching table route', () => {
