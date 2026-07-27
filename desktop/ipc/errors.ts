@@ -41,6 +41,10 @@ export const IPC_ERROR_CODES = [
   'PROVIDER_REAUTH',
   'CONNECT_TIMEOUT',
   'SECURE_STORE',
+  'RESTORE_FAILED',
+  'BACKUP_KEY_MISSING',
+  'BACKUP_FAILED',
+  'DISK_FULL',
   'INTERNAL',
 ] as const;
 
@@ -120,6 +124,11 @@ const MESSAGES: Readonly<Record<IpcErrorCode, string>> = Object.freeze({
   CONNECT_TIMEOUT: 'That sign-in took too long. Let\'s try again.',
   SECURE_STORE:
     'AP-Hub could not read your saved sign-in details on this computer. Restart AP-Hub and try again.',
+  RESTORE_FAILED: 'AP-Hub could not restore that backup. Your current data was not changed.',
+  BACKUP_KEY_MISSING:
+    'AP-Hub could not find the secure key needed to read your backups on this computer.',
+  BACKUP_FAILED: 'AP-Hub could not complete that backup.',
+  DISK_FULL: 'AP-Hub paused because your disk is full. Free up space and try again.',
   INTERNAL: 'AP-Hub could not complete that action.',
 });
 

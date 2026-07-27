@@ -76,4 +76,8 @@ export const ACTION_CHANNELS = [
 
   // system-browser + loopback account connect (CHUNK_5_CONNECT)
   'aphub:connections:start',
+
+  // encrypted backup restore + single-file export (CHUNK_7_BACKUP, owner only)
+  'aphub:backup:restore',
+  'aphub:backup:export',
 ] as const;

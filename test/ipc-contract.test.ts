@@ -117,6 +117,7 @@ const VALID_PAYLOAD: Readonly<Record<string, Record<string, unknown>>> = {
   'aphub:tax-mappings:audit': { id: 987654 },
   'aphub:onboarding:get': {},
   'aphub:connections:status': {},
+  'aphub:backup:list': {},
 
   // --- actions --------------------------------------------------------------------------------
   'aphub:proposals:approve': { proposalId: 987654 },
@@ -191,6 +192,11 @@ const VALID_PAYLOAD: Readonly<Record<string, Record<string, unknown>>> = {
   'aphub:dimension-mappings:select-alternate': { mappingId: 987654, providerId: '42' },
   'aphub:provider-jobs:retry': { jobId: 987654 },
   'aphub:connections:start': { provider: 'gmail' },
+  // Sentinel id: no such backup row exists, so both channels answer NOT_FOUND without ever
+  // touching the credential store or the filesystem (`src/backup/http.ts`'s existence
+  // pre-check runs before `restoreBackup`'s own `getOrCreateBackupKey`/`mkdir`).
+  'aphub:backup:restore': { backupId: 987654 },
+  'aphub:backup:export': { backupId: 987654, destination: 'C:\\Users\\Public\\aphub-export-test.aphubbak' },
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -270,16 +276,16 @@ function assertNoLeakage(envelope: unknown, entry?: RegistryEntry): void {
 // 1. THE SURFACE: exactly 52 channels, every sample payload valid against its OWN schema
 // ===============================================================================================
 
-describe('the combined registry is exactly the 52 channels this chunk migrated', () => {
-  it('READ (22) + ACTION (30) = 52, and the registry agrees', () => {
-    expect(READ_CHANNELS).toHaveLength(22);
-    expect(ACTION_CHANNELS).toHaveLength(30);
-    expect(ALL_CHANNELS).toHaveLength(52);
-    expect(ALL_ENTRIES).toHaveLength(52);
-    expect(new Set(ALL_CHANNELS).size).toBe(52); // no name shared between the two domains
+describe('the combined registry is exactly the 55 channels this chunk migrated (52 original + 3 CHUNK_7_BACKUP)', () => {
+  it('READ (23) + ACTION (32) = 55, and the registry agrees', () => {
+    expect(READ_CHANNELS).toHaveLength(23);
+    expect(ACTION_CHANNELS).toHaveLength(32);
+    expect(ALL_CHANNELS).toHaveLength(55);
+    expect(ALL_ENTRIES).toHaveLength(55);
+    expect(new Set(ALL_CHANNELS).size).toBe(55); // no name shared between the two domains
   });
 
-  it('has a valid sample payload for every one of the 52 channels — asserted against its OWN schema', () => {
+  it('has a valid sample payload for every one of the 55 channels — asserted against its OWN schema', () => {
     // This is the correctness detail the task packet calls out explicitly: a payload that fails
     // its own schema would return VALIDATION for every role, which is indistinguishable from a
     // correctly-enforced FORBIDDEN and would make the entire role matrix below pass vacuously.
@@ -301,24 +307,24 @@ describe('the combined registry is exactly the 52 channels this chunk migrated',
 // ===============================================================================================
 
 describe('registry/allowlist symmetry: every registry channel is allowlisted, every non-shell allowlisted channel is registered', () => {
-  it('every one of the 52 registry channels is a member of the real IPC_CHANNELS', () => {
+  it('every one of the 55 registry channels is a member of the real IPC_CHANNELS', () => {
     for (const channel of ALL_CHANNELS) expect(IPC_CHANNELS).toContain(channel);
   });
 
   it('every non-shell IPC_CHANNELS member has a registry entry — nothing is dead surface', () => {
     const nonShell = IPC_CHANNELS.filter((c) => !(SHELL_CHANNELS as readonly string[]).includes(c));
-    expect(nonShell).toHaveLength(52);
+    expect(nonShell).toHaveLength(55);
     for (const channel of nonShell) expect(ALL_CHANNELS).toContain(channel);
   });
 
-  it('IPC_CHANNELS is exactly SHELL_CHANNELS plus the 52 registry channels, set-equal', () => {
+  it('IPC_CHANNELS is exactly SHELL_CHANNELS plus the 55 registry channels, set-equal', () => {
     const expected = new Set([...SHELL_CHANNELS, ...ALL_CHANNELS]);
     expect(new Set(IPC_CHANNELS)).toEqual(expected);
   });
 });
 
 // ===============================================================================================
-// 3. THE ROLE MATRIX — exhaustive over 52 channels × 3 roles, no sampling
+// 3. THE ROLE MATRIX — exhaustive over 55 channels × 3 roles, no sampling
 // ===============================================================================================
 
 describe('the exhaustive role matrix: every channel × every role in ROLES', () => {
@@ -339,13 +345,13 @@ describe('the exhaustive role matrix: every channel × every role in ROLES', () 
 
   it('asserts against exactly the registry size, so a channel cannot silently skip the matrix', () => {
     expect(ALL_ENTRIES.length).toBe(REGISTRY.channels.length);
-    expect(ALL_ENTRIES.length).toBe(52);
+    expect(ALL_ENTRIES.length).toBe(55);
   });
 
   const cells = ALL_ENTRIES.flatMap((entry) => ROLES.map((role) => [`${entry.channel} as ${role}`, entry, role] as const));
 
-  it(`covers exactly ${52 * ROLES.length} cells (52 channels × ${ROLES.length} roles)`, () => {
-    expect(cells).toHaveLength(52 * ROLES.length);
+  it(`covers exactly ${55 * ROLES.length} cells (55 channels × ${ROLES.length} roles)`, () => {
+    expect(cells).toHaveLength(55 * ROLES.length);
   });
 
   it.each(cells)('%s', async (_label, entry, role) => {
@@ -374,7 +380,7 @@ describe('the exhaustive role matrix: every channel × every role in ROLES', () 
 // 4. UNAUTHENTICATED — exhaustive, no session at all
 // ===============================================================================================
 
-describe('every one of the 52 channels answers UNAUTHENTICATED with no session held', () => {
+describe('every one of the 55 channels answers UNAUTHENTICATED with no session held', () => {
   beforeEach(() => clearSessionToken());
 
   it.each(ALL_ENTRIES.map((e) => [e.channel, e] as const))('%s', async (_channel, entry) => {
@@ -394,7 +400,7 @@ describe('every one of the 52 channels answers UNAUTHENTICATED with no session h
 // 5. EXPIRED / CLEARED SESSION — exhaustive
 // ===============================================================================================
 
-describe('every one of the 52 channels refuses once the session is cleared', () => {
+describe('every one of the 55 channels refuses once the session is cleared', () => {
   let tenantId = 0;
 
   beforeAll(async () => {
@@ -423,7 +429,7 @@ describe('every one of the 52 channels refuses once the session is cleared', () 
   );
 
   it('a genuinely expired session (not merely cleared) answers SESSION_EXPIRED, not UNAUTHENTICATED', async () => {
-    // Not claimed exhaustive across all 52 (both codes redirect to /login identically —
+    // Not claimed exhaustive across all 55 (both codes redirect to /login identically —
     // ipc-auth-context.md §4.1 — so this is a spot check of the distinct code, not a second
     // full matrix): create a real session row, then age it past expiry directly.
     const userId = await createUser(tenantId, { role: 'owner_controller' });
@@ -555,7 +561,7 @@ describe('nothing any channel says leaks a channel name, a stack, SQL, a table, 
     expect(dispatcherSource).not.toMatch(/failure\([^)]*channel/);
   });
 
-  it('every one of the 52 channel names is absent from every FORBIDDEN/UNAUTHENTICATED/VALIDATION message text', () => {
+  it('every one of the 55 channel names is absent from every FORBIDDEN/UNAUTHENTICATED/VALIDATION message text', () => {
     for (const code of ['FORBIDDEN', 'UNAUTHENTICATED', 'VALIDATION', 'NOT_FOUND'] as const) {
       const message = plainMessage(code);
       for (const channel of ALL_CHANNELS) expect(message).not.toContain(channel);
@@ -567,7 +573,7 @@ describe('nothing any channel says leaks a channel name, a stack, SQL, a table, 
 // 8. EVERY CHANNEL IS REACHABLE — a well-formed envelope, never an unhandled throw
 // ===============================================================================================
 
-describe('every one of the 52 channels is reachable and returns a well-formed envelope', () => {
+describe('every one of the 55 channels is reachable and returns a well-formed envelope', () => {
   let tenantId = 0;
 
   beforeAll(async () => {
@@ -580,7 +586,7 @@ describe('every one of the 52 channels is reachable and returns a well-formed en
   });
 
   it.each(ALL_ENTRIES.map((e) => [e.channel, e] as const))('%s', async (_channel, entry) => {
-    // owner_controller is admitted by every one of the 52 channels (ipc-auth-context.md §3/§5.1).
+    // owner_controller is admitted by every one of the 55 channels (ipc-auth-context.md §3/§5.1).
     setSessionToken(await sessionFor(tenantId, 'owner_controller'));
     const envelope = await drive(entry, VALID_PAYLOAD[entry.channel]);
     expect(typeof envelope.ok, entry.channel).toBe('boolean');
@@ -600,10 +606,18 @@ describe('every one of the 52 channels is reachable and returns a well-formed en
 //
 // 32 channels take an id (path or query param) that names a specific tenant-scoped row: these
 // get the full F5-style replay — seed the row in tenant B, call as tenant A (owner_controller,
-// which every one of the 52 channels admits), and assert NOT_FOUND with the foreign content
+// which every one of the 55 channels admits), and assert NOT_FOUND with the foreign content
 // absent — never FORBIDDEN (which would leak existence) and never the foreign row.
 //
-// The remaining 20 channels are list/global reads or tenant-wide mutations with NO id-shaped
+// 2 more channels (`aphub:backup:restore`, `aphub:backup:export`, CHUNK_7_BACKUP) also take a
+// required id but are deliberately EXCLUDED from that replay: `backups` has no `tenant_id`
+// column at all (`migrations/015_backups.sql`) — it covers the whole local install, not a
+// tenant, so there is no "tenant B's row" for a tenant-A caller to be denied. These get their
+// own describe block below instead, proving the opposite invariant on purpose: any tenant's
+// owner_controller can see and act on the SAME backup, which is the intended shared-visibility
+// design, not a leak.
+//
+// The remaining 21 channels are list/global reads or tenant-wide mutations with NO id-shaped
 // field in their schema at all (`defineChannel`'s own IDENTITY/UNROUTED checks already prove
 // this structurally); for those, isolation is proven by (a) the structural absence of a
 // foreign-row-selecting field, and (b) for every one that queries a real table, a live check
@@ -885,14 +899,70 @@ describe('exhaustive cross-tenant isolation: every id-taking channel', () => {
   });
 });
 
-// --- the remaining 20 channels: no id-shaped field at all, plus a live no-leak check where a
+// --- the 2 whole-install id-taking channels: CHUNK_7_BACKUP, deliberately NOT tenant-scoped ----
+
+const WHOLE_INSTALL_ID_CHANNELS = ['aphub:backup:restore', 'aphub:backup:export'] as const;
+
+describe('the 2 whole-install id-taking channels (CHUNK_7_BACKUP) are not tenant-scoped by design', () => {
+  it('covers exactly the 2 documented exceptions, both real registry channels', () => {
+    expect(WHOLE_INSTALL_ID_CHANNELS).toHaveLength(2);
+    for (const channel of WHOLE_INSTALL_ID_CHANNELS) expect(ALL_CHANNELS).toContain(channel);
+  });
+
+  it.each(WHOLE_INSTALL_ID_CHANNELS.map((c) => [c, entryFor(c)] as const))(
+    '%s: a nonexistent id answers NOT_FOUND for any tenant\'s owner, never FORBIDDEN',
+    async (channel, entry) => {
+      await resetTables();
+      const tenantId = await createTenant(uniqueMarker('whole-install'));
+      setSessionToken(await sessionFor(tenantId, 'owner_controller'));
+      const envelope = await drive(entry, VALID_PAYLOAD[channel]);
+      expect(envelope.code, JSON.stringify(envelope)).toBe('NOT_FOUND');
+      expect(envelope.status).toBe(404);
+      expect(envelope.data).toBeUndefined();
+    },
+  );
+
+  it("aphub:backup:list is intentionally visible to every tenant's owner alike (backups has no tenant_id column)", async () => {
+    await resetTables();
+    const tenantA = await createTenant(uniqueMarker('shared-a'));
+    const tenantB = await createTenant(uniqueMarker('shared-b'));
+    const marker = uniqueMarker('backup-kind');
+    const seeded = await query<{ id: number }>(
+      `INSERT INTO backups (kind, path, size_bytes, manifest_hash, row_counts, verified_at)
+       VALUES ('manual', $1, 100, 'deadbeef', '{}'::jsonb, now()) RETURNING id`,
+      [`C:\\aphub-test\\${marker}.aphubbak`],
+    );
+    const backupId = Number(seeded.rows[0]!.id);
+
+    setSessionToken(await sessionFor(tenantA, 'owner_controller'));
+    const asA = await drive(entryFor('aphub:backup:list'), {});
+    setSessionToken(await sessionFor(tenantB, 'owner_controller'));
+    const asB = await drive(entryFor('aphub:backup:list'), {});
+
+    expect(asA.ok).toBe(true);
+    expect(asB.ok).toBe(true);
+    const idsSeenByA = (asA.data as Array<{ id: number | string }>).map((r) => Number(r.id));
+    const idsSeenByB = (asB.data as Array<{ id: number | string }>).map((r) => Number(r.id));
+    expect(idsSeenByA).toContain(backupId);
+    expect(idsSeenByB).toContain(backupId);
+  });
+
+  afterAll(async () => {
+    clearSessionToken();
+    await closeAll();
+  });
+});
+
+// --- the remaining 21 channels: no id-shaped field at all, plus a live no-leak check where a
 // real tenant-scoped table backs the read -------------------------------------------------------
 
-const LIST_OR_GLOBAL_CHANNELS = ALL_CHANNELS.filter((c) => !(c in CROSS_TENANT_SEED));
+const LIST_OR_GLOBAL_CHANNELS = ALL_CHANNELS.filter(
+  (c) => !(c in CROSS_TENANT_SEED) && !(WHOLE_INSTALL_ID_CHANNELS as readonly string[]).includes(c),
+);
 
-describe('the remaining 20 channels have no id-shaped field that could select a foreign row', () => {
-  it('covers exactly the complement of the 32 id-taking channels', () => {
-    expect(LIST_OR_GLOBAL_CHANNELS).toHaveLength(20);
+describe('the remaining 21 channels have no id-shaped field that could select a foreign row', () => {
+  it('covers exactly the complement of the 32 id-taking + 2 whole-install channels', () => {
+    expect(LIST_OR_GLOBAL_CHANNELS).toHaveLength(21);
   });
 
   /** Unwrap to the base `ZodObject`, seeing through the same wrappers `defineChannel` does
@@ -938,7 +1008,10 @@ interface ListLeakCase {
  * row in tenant B and prove tenant A's call never contains it. Channels that return only the
  * CALLER's own identity/state (`me:get`, `onboarding:get`) or call an external provider
  * (`tax-mappings:discover`) have no "other tenant's row" to leak by construction and are
- * covered by the structural check above instead. */
+ * covered by the structural check above instead. `aphub:backup:list` is excluded for a
+ * different reason — `backups` is not tenant-scoped at all, so "seeded in tenant B, must not
+ * leak to tenant A" is the wrong invariant for it; its intentional shared-visibility is proven
+ * separately, in the whole-install describe block above. */
 const LIST_LEAK_CASES: Readonly<Record<string, ListLeakCase>> = {
   'aphub:today:get': {
     seedForeign: async (tenantB) => {

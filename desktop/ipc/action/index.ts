@@ -69,6 +69,7 @@
 import type { ChannelContribution, RegistryEntry } from '../registry.js';
 import { ACTION_CHANNELS } from './channels.js';
 import { accountingDocumentEntries } from './accountingDocuments.js';
+import { backupActionEntries } from './backup.js';
 import { connectionsEntries } from './connections.js';
 import { correctionEntries } from './corrections.js';
 import { dimensionMappingEntries } from './dimensionMappings.js';
@@ -100,6 +101,7 @@ export const ACTION_ENTRIES: readonly RegistryEntry[] = Object.freeze([
   ...dimensionMappingEntries,
   ...providerJobEntries,
   ...connectionsEntries,
+  ...backupActionEntries,
 ]);
 
 /** The contribution `desktop/main.ts` hands to `createDispatcher`. */

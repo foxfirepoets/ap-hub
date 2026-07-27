@@ -130,6 +130,7 @@ const ROUTES: readonly RouteSpec[] = [
   { method: 'GET', pathTemplate: '/api/tax-mappings/:id/audit', channel: 'aphub:tax-mappings:audit' },
   { method: 'GET', pathTemplate: '/api/onboarding', channel: 'aphub:onboarding:get' },
   { method: 'GET', pathTemplate: '/api/connections/status', channel: 'aphub:connections:status' },
+  { method: 'GET', pathTemplate: '/api/backup/list', channel: 'aphub:backup:list' },
 
   // --- action domains (desktop/ipc/action/*.ts) ----------------------------------------------
   { method: 'POST', pathTemplate: '/api/proposals/:proposalId/approve', channel: 'aphub:proposals:approve' },
@@ -218,6 +219,8 @@ const ROUTES: readonly RouteSpec[] = [
   },
   { method: 'POST', pathTemplate: '/api/provider-jobs/:jobId/retry', channel: 'aphub:provider-jobs:retry' },
   { method: 'POST', pathTemplate: '/api/connections/start', channel: 'aphub:connections:start' },
+  { method: 'POST', pathTemplate: '/api/backup/:backupId/restore', channel: 'aphub:backup:restore' },
+  { method: 'POST', pathTemplate: '/api/backup/:backupId/export', channel: 'aphub:backup:export' },
 ];
 
 /** Exported so the parity test can walk every declared route without re-deriving this table. */

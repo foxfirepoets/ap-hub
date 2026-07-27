@@ -45,6 +45,10 @@ export const ONBOARDING_ERROR_CODES = [
   'PROVIDER_REAUTH',
   'CONNECT_TIMEOUT',
   'SECURE_STORE',
+  'RESTORE_FAILED',
+  'BACKUP_KEY_MISSING',
+  'BACKUP_FAILED',
+  'DISK_FULL',
   'INTERNAL',
 ] as const;
 
@@ -138,6 +142,26 @@ function mapKnownCode(code: OnboardingErrorCode): FriendlyOnboardingError {
       return {
         text: 'AP-Hub could not read your saved sign-in details on this computer. Restart AP-Hub and try again.',
         retryable: false,
+      };
+    case 'RESTORE_FAILED':
+      return {
+        text: 'AP-Hub could not restore that backup. Your current data was not changed.',
+        retryable: true,
+      };
+    case 'BACKUP_KEY_MISSING':
+      return {
+        text: 'AP-Hub could not find the secure key needed to read your backups on this computer.',
+        retryable: false,
+      };
+    case 'BACKUP_FAILED':
+      return {
+        text: 'AP-Hub could not complete that backup.',
+        retryable: true,
+      };
+    case 'DISK_FULL':
+      return {
+        text: 'AP-Hub paused because your disk is full. Free up space, then try again.',
+        retryable: true,
       };
     case 'INTERNAL':
       return {
