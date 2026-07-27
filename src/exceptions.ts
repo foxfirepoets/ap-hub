@@ -66,6 +66,10 @@ export const REASON_CODES = [
   // job throw (fail-closed; see src/pipeline/extract.ts extractHandler).
   'extractor_not_configured',
   'statement_unreadable',
+  // CHUNK_6_SWARMSYNC_POLICY (architecture-decision-packet §5, rule 2): a company whose
+  // own policy requires SwarmSync verification, raised when SwarmSync is disabled or
+  // unavailable — the item holds instead of posting/forwarding silently.
+  'swarmsync_required_unavailable',
 ] as const;
 
 export type ReasonCode = (typeof REASON_CODES)[number];
