@@ -84,6 +84,10 @@ function harness(overrides: Record<string, unknown> = {}) {
       recordInstallRow: async (_url: string, row: unknown) => {
         recorded.push(row);
       },
+      // Default: behave as if `local_install` is not yet on the cluster, matching every test
+      // below that does not care about the pre/post-migrate ordering — they still exercise the
+      // (unavoidable) post-migration fallback check. The ordering itself is proved separately.
+      recordedInstallTableExists: async () => false,
       ...overrides,
     },
   };
@@ -210,6 +214,68 @@ describe('an OS-account mismatch fails closed', () => {
 
     await expect(startLocalDatabase(h.opts)).rejects.toBeInstanceOf(OsAccountMismatch);
   });
+
+  it(
+    'checks a database-recovered identity BEFORE migrating, when local_install already exists ' +
+      'on the cluster (CHUNK_7 ordering fix)',
+    async () => {
+      let migrateCalled = false;
+      const h = harness({
+        // Simulates a cluster that already completed migration 014 — e.g. a restored backup,
+        // or a filesystem copy of another account's dataDir. This is the case the ordering fix
+        // closes: the mismatch must be caught before `migrate()` touches this cluster at all.
+        recordedInstallTableExists: async () => true,
+        fetchRecordedInstall: async () => ({
+          installId: '55555555-5555-4555-8555-555555555555',
+          osAccountId: 'S-1-5-21-SOMEONE-ELSE-9999',
+        }),
+        migrate: async () => {
+          migrateCalled = true;
+          return ['014_local_install.sql'];
+        },
+      });
+      mkdirSync(h.opts.dataDir, { recursive: true });
+      writeFileSync(join(h.opts.dataDir, 'PG_VERSION'), '16');
+      // No install.json — forces the database-recovery path.
+      await h.secretStore.put(DATABASE_PASSWORD_TARGET, 'carried-over');
+
+      await expect(startLocalDatabase(h.opts)).rejects.toBeInstanceOf(OsAccountMismatch);
+      expect(migrateCalled).toBe(false);
+    },
+  );
+
+  it(
+    'still falls back to a post-migration check when local_install does not exist yet ' +
+      '(a cluster older than migration 014, the one case pre-migration checking cannot reach)',
+    async () => {
+      const callOrder: string[] = [];
+      const h = harness({
+        recordedInstallTableExists: async () => {
+          callOrder.push('tableExistsCheck');
+          return false;
+        },
+        fetchRecordedInstall: async () => {
+          callOrder.push('fetchRecordedInstall');
+          return {
+            installId: '66666666-6666-4666-8666-666666666666',
+            osAccountId: 'S-1-5-21-SOMEONE-ELSE-9999',
+          };
+        },
+        migrate: async () => {
+          callOrder.push('migrate');
+          return ['014_local_install.sql'];
+        },
+      });
+      mkdirSync(h.opts.dataDir, { recursive: true });
+      writeFileSync(join(h.opts.dataDir, 'PG_VERSION'), '16');
+      await h.secretStore.put(DATABASE_PASSWORD_TARGET, 'carried-over');
+
+      await expect(startLocalDatabase(h.opts)).rejects.toBeInstanceOf(OsAccountMismatch);
+      // migrate necessarily ran before the identity could be fetched, because the table it
+      // lives in did not exist until migrate() created it.
+      expect(callOrder).toEqual(['tableExistsCheck', 'migrate', 'fetchRecordedInstall']);
+    },
+  );
 
   it('the matching account proceeds normally (control case)', async () => {
     const h = harness();

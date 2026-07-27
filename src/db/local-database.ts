@@ -104,6 +104,12 @@ export interface LocalDatabaseOptions {
   recordInstallRow?: (connectionString: string, row: InstallFile) => Promise<void>;
   /** Recover an identity from the `local_install` row when install.json could not be read. */
   fetchRecordedInstall?: (connectionString: string) => Promise<RecordedInstall | null>;
+  /**
+   * Whether `local_install` already exists on this connection (CHUNK_7 ordering fix). Lets the
+   * recovered-identity check run BEFORE `migrate()` on any cluster that has already reached
+   * migration 014_local_install.sql or later — see the comment at the call site.
+   */
+  recordedInstallTableExists?: (connectionString: string) => Promise<boolean>;
 }
 
 /** The slice of the `local_install` row CHUNK_4's corrupted-file recovery needs. */
@@ -166,6 +172,22 @@ async function defaultFetchRecordedInstall(connectionString: string): Promise<Re
     );
     const row = rows[0];
     return row ? { installId: row.install_id, osAccountId: row.os_account_id } : null;
+  } finally {
+    await pool.end();
+  }
+}
+
+/**
+ * Whether `local_install` already exists — a targeted, read-only catalog lookup, safe to run
+ * before `migrate()` because it does not depend on the schema being at any particular version.
+ */
+async function defaultRecordedInstallTableExists(connectionString: string): Promise<boolean> {
+  const pool = new Pool({ connectionString });
+  try {
+    const { rows } = await pool.query<{ exists: boolean }>(
+      "SELECT to_regclass('public.local_install') IS NOT NULL AS exists",
+    );
+    return rows[0]?.exists ?? false;
   } finally {
     await pool.end();
   }
@@ -287,7 +309,44 @@ export async function startLocalDatabase(opts: LocalDatabaseOptions): Promise<St
 
   const connectionString = postgres.connectionString(password);
 
-  // 5. Migrations. The runner already wraps each file in a transaction, so a failure leaves
+  // 5. Identity, recovered path — checked BEFORE migrating, when that is possible (CHUNK_7
+  //    ordering fix, closing a gap deferred from CHUNK_4_IDENTITY). When install.json could not
+  //    supply an identity (absent, or tolerated-away as corrupt above) but a cluster already
+  //    exists, the identity is recovered from `local_install` instead of minting a fresh one.
+  //    That recovery must fail closed exactly like the file-read path above: a different
+  //    account's row must never be adopted as this account's.
+  //
+  //    The genuine constraint: `local_install` was introduced by migration
+  //    014_local_install.sql, so it does not exist on a cluster whose schema has never reached
+  //    that point — querying it any earlier is not "checking early", it is a query against a
+  //    table that is not there yet. There is no way to check an identity that the schema has
+  //    not yet been given anywhere to store.
+  //
+  //    So: ask first whether the table already exists (a read-only catalog lookup, valid at any
+  //    schema version). If it does — true for any cluster that has ever completed migration 014,
+  //    which covers every backup restore or filesystem copy of a previously-working install,
+  //    the exact case CHUNK_7's backup/restore work is about to exercise repeatedly — the
+  //    mismatch is caught here, before `migrate()` touches this cluster at all. Only a cluster
+  //    that both predates migration 014 AND lost its install.json falls through to the
+  //    post-migration fallback check below; for that narrow case, checking pre-migration is not
+  //    achievable, because the table the check depends on is created BY that migration.
+  let recovered: RecordedInstall | null = null;
+  let recoveredCheckedBeforeMigrate = false;
+  const fetchRecorded = opts.fetchRecordedInstall ?? defaultFetchRecordedInstall;
+  if (existing === null && clusterExists) {
+    const tableExists = opts.recordedInstallTableExists
+      ? await opts.recordedInstallTableExists(connectionString)
+      : await defaultRecordedInstallTableExists(connectionString);
+    if (tableExists) {
+      recovered = await fetchRecorded(connectionString);
+      if (recovered !== null && recovered.osAccountId !== opts.osAccountId) {
+        throw new OsAccountMismatch();
+      }
+      recoveredCheckedBeforeMigrate = true;
+    }
+  }
+
+  // 6. Migrations. The runner already wraps each file in a transaction, so a failure leaves
   //    the previous schema version usable rather than half-applied.
   const migrate = opts.migrate ?? migrateUp;
   let appliedMigrations: string[];
@@ -298,15 +357,12 @@ export async function startLocalDatabase(opts: LocalDatabaseOptions): Promise<St
     throw new PostgresStartFailed('the database could not be prepared');
   }
 
-  // 6. Identity. Reuse the recorded install id so the install keeps one identity for life.
-  //    When install.json could not supply one (absent, or tolerated-away as corrupt above) but
-  //    a cluster already exists, recover it from the database instead of minting a fresh one —
-  //    "regenerated from the database and the OS account", not from nothing. A recovered
-  //    identity is fail-closed the same way a file-supplied one is: a different account's row
-  //    must never be adopted as this account's.
-  let recovered: RecordedInstall | null = null;
-  if (existing === null && clusterExists) {
-    const fetchRecorded = opts.fetchRecordedInstall ?? defaultFetchRecordedInstall;
+  // 7. Identity, recovered path fallback. Reached only when `local_install` did not exist
+  //    before the migrations above ran — a cluster older than migration 014 with no
+  //    install.json. The table now exists (having just been created), so the identity it
+  //    records can finally be checked; a mismatch here is caught before install.json is
+  //    written, even though it could not be caught before the migration itself.
+  if (existing === null && clusterExists && !recoveredCheckedBeforeMigrate) {
     recovered = await fetchRecorded(connectionString);
     if (recovered !== null && recovered.osAccountId !== opts.osAccountId) {
       throw new OsAccountMismatch();
@@ -327,7 +383,7 @@ export async function startLocalDatabase(opts: LocalDatabaseOptions): Promise<St
   const record = opts.recordInstallRow ?? defaultRecordInstallRow;
   await record(connectionString, install);
 
-  // 7. Last, and atomically: the file the next launch will trust.
+  // 8. Last, and atomically: the file the next launch will trust.
   writeInstallFile(opts.installFilePath, install);
 
   return {
