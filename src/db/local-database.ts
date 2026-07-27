@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { dirname } from 'node:path';
 import pg from 'pg';
 import type { SecretStore, SupportedPlatform } from '../host/types.js';
+import { childLogger } from '../logger.js';
 import { probeFreePort, isPortFree, PORT_PROBE_START } from './bootstrap.js';
 import {
   PostgresRuntime,
@@ -13,6 +14,11 @@ import {
 } from './postgres-runtime.js';
 import { migrateUp } from './migrate.js';
 import { parseInstallFile, serializeInstallFile, type InstallFile } from '../install/install-file.js';
+import {
+  clearRestoreSwapMarker,
+  readRestoreSwapMarker,
+  renameDatabaseWithRetry,
+} from '../backup/restore.js';
 
 /**
  * CHUNK_2_DATABASE — first launch, every launch.
@@ -38,6 +44,8 @@ import { parseInstallFile, serializeInstallFile, type InstallFile } from '../ins
  */
 
 const { Pool } = pg;
+
+const log = childLogger({ module: 'local-database' });
 
 /** Credential-store target for the bundled cluster's superuser password. */
 export const DATABASE_PASSWORD_TARGET = 'APHub/database/superuser';
@@ -66,6 +74,26 @@ export class OsAccountMismatch extends Error {
   constructor() {
     super('This install belongs to a different OS account than the one currently running');
     this.name = 'OsAccountMismatch';
+  }
+}
+
+/**
+ * Raised when a restore's rename-swap (`src/backup/restore.ts`) was interrupted by a hard crash
+ * — the live-named database is missing and the pre-restore database was found retired under a
+ * `_pre_restore_` name — but renaming that retired database back to the live name itself fails.
+ * This is the one case this chunk cannot resolve automatically: both the orphaned pre-restore
+ * data and (usually) a fully-restored copy still exist on disk, but neither can be put back
+ * under the live name without help. It must fail loudly, never silently create an empty database.
+ */
+export class RestoreSwapRecoveryFailed extends Error {
+  readonly code = 'DB_FAILED';
+  constructor(readonly pending: PendingRestoreSwap, readonly detail?: string) {
+    super(
+      `A previous restore was interrupted mid-swap and automatic recovery failed. The database ` +
+        `currently named "${pending.retiredDb}" holds your pre-restore data and must be renamed ` +
+        `to "${pending.liveDb}" manually before AP-Hub can start.`,
+    );
+    this.name = 'RestoreSwapRecoveryFailed';
   }
 }
 
@@ -101,6 +129,16 @@ export interface LocalDatabaseOptions {
   portIsFree?: (port: number) => Promise<boolean>;
   migrate?: (connectionString: string) => Promise<string[]>;
   createDatabaseIfMissing?: (adminUrl: string, database: string) => Promise<boolean>;
+  /**
+   * Detects an interrupted restore rename-swap: the live-named database missing while a
+   * `<liveDb>_pre_restore_*` database is still present. Must be checked, and resolved via
+   * `recoverInterruptedRestoreSwap`, BEFORE `createDatabaseIfMissing` runs — that function
+   * would otherwise silently create a fresh empty database and the interrupted swap's orphaned
+   * data would never be looked for again.
+   */
+  detectInterruptedRestoreSwap?: (adminUrl: string, liveDb: string) => Promise<PendingRestoreSwap | null>;
+  /** Renames the retired (pre-restore) database back to the live name. */
+  recoverInterruptedRestoreSwap?: (adminUrl: string, pending: PendingRestoreSwap) => Promise<void>;
   recordInstallRow?: (connectionString: string, row: InstallFile) => Promise<void>;
   /** Recover an identity from the `local_install` row when install.json could not be read. */
   fetchRecordedInstall?: (connectionString: string) => Promise<RecordedInstall | null>;
@@ -116,6 +154,12 @@ export interface LocalDatabaseOptions {
 export interface RecordedInstall {
   installId: string;
   osAccountId: string;
+}
+
+/** An interrupted restore rename-swap, detected at boot — enough to recover from. */
+export interface PendingRestoreSwap {
+  liveDb: string;
+  retiredDb: string;
 }
 
 /** The slice of `PostgresRuntime` this orchestrator depends on. */
@@ -218,6 +262,73 @@ export async function choosePort(
   return probe(PORT_PROBE_START);
 }
 
+/** Escape a value for a Postgres `LIKE` pattern, so a literal name with `_` or `%` in it cannot
+ *  match more broadly than intended. */
+function escapeLikeLiteral(value: string): string {
+  return value.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
+/**
+ * Detect an interrupted restore rename-swap (`src/backup/restore.ts`'s two-statement swap,
+ * killed between the renames). Two signals are checked, in order:
+ *
+ *   1. The marker `restoreBackup` writes before the swap begins, naming the exact retired
+ *      database it created. This is the precise, preferred signal.
+ *   2. A `pg_database` scan for a `<liveDb>_pre_restore_*` name, as a defense-in-depth backstop
+ *      for the case where the marker file itself was lost (e.g. the same disk-full event that
+ *      interrupted the swap). If more than one is found (multiple interrupted restores over
+ *      time, never cleaned up), the most recent by its timestamp suffix is used.
+ *
+ * Either way, this only fires when the live-named database is ACTUALLY missing — a stale marker
+ * sitting beside a perfectly live database (the swap finished but the marker's own deletion
+ * lost the race with a crash) is not this function's problem; it means nothing to recover.
+ */
+async function defaultDetectInterruptedRestoreSwap(
+  adminUrl: string,
+  liveDb: string,
+  dataDir: string,
+): Promise<PendingRestoreSwap | null> {
+  const pool = new Pool({ connectionString: adminUrl });
+  try {
+    const live = await pool.query('SELECT 1 FROM pg_database WHERE datname = $1', [liveDb]);
+    if ((live.rowCount ?? 0) > 0) return null; // live database exists — nothing interrupted
+
+    const marker = readRestoreSwapMarker(dataDir);
+    if (marker && marker.liveDb === liveDb) {
+      const retired = await pool.query('SELECT 1 FROM pg_database WHERE datname = $1', [marker.retiredDb]);
+      if ((retired.rowCount ?? 0) > 0) {
+        return { liveDb, retiredDb: marker.retiredDb };
+      }
+    }
+
+    // Backstop: no usable marker. Scan for an orphaned retired database by name; the timestamp
+    // suffix (`digitStamp` in restore.ts) is fixed-width digits, so lexicographic DESC order is
+    // also chronological order.
+    const pattern = `${escapeLikeLiteral(liveDb)}${escapeLikeLiteral('_pre_restore_')}%`;
+    const { rows } = await pool.query<{ datname: string }>(
+      `SELECT datname FROM pg_database WHERE datname LIKE $1 ESCAPE '\\' ORDER BY datname DESC`,
+      [pattern],
+    );
+    const retiredDb = rows[0]?.datname;
+    return retiredDb ? { liveDb, retiredDb } : null;
+  } finally {
+    await pool.end();
+  }
+}
+
+/** Rename the retired (pre-restore) database back to the live name — the safest possible
+ *  recovery, since it means "the restore attempt effectively didn't happen" rather than
+ *  inventing a new empty database. The fully-restored copy (`aphub_restore_*`, if it still
+ *  exists) is intentionally left in place; cleaning it up automatically is a follow-up. */
+async function defaultRecoverInterruptedRestoreSwap(adminUrl: string, pending: PendingRestoreSwap): Promise<void> {
+  const pool = new Pool({ connectionString: adminUrl });
+  try {
+    await renameDatabaseWithRetry(pool, pending.retiredDb, pending.liveDb);
+  } finally {
+    await pool.end();
+  }
+}
+
 /** Create the application database if `initdb` did not (it never does). Idempotent. */
 async function defaultCreateDatabase(adminUrl: string, database: string): Promise<boolean> {
   const pool = new Pool({ connectionString: adminUrl });
@@ -297,13 +408,44 @@ export async function startLocalDatabase(opts: LocalDatabaseOptions): Promise<St
   await postgres.initialise(password);
   await postgres.start();
 
-  // 4. The application database. `initdb` creates only postgres/template0/template1.
   const adminUrl = buildConnectionString({
     user: postgres.user,
     password,
     port,
     database: 'postgres',
   });
+
+  // 3.5. Crash-recovery: an interrupted restore rename-swap (`src/backup/restore.ts`) must
+  //      never be resolved by silently creating an empty live-named database. Checked BEFORE
+  //      `createDatabaseIfMissing` below — that function's own "missing means create fresh"
+  //      logic is exactly the silent-data-loss path this closes. When triggered, the retired
+  //      (pre-restore) database is renamed back to the live name, restoring the safest possible
+  //      state — "the restore attempt effectively didn't happen" — and the swap marker is
+  //      cleared. A fully-restored copy from that same restore attempt, if one exists, is left
+  //      in place untouched (see `defaultRecoverInterruptedRestoreSwap`).
+  const detectSwap = opts.detectInterruptedRestoreSwap ?? defaultDetectInterruptedRestoreSwap;
+  const pendingSwap = clusterExists
+    ? await detectSwap(adminUrl, postgres.database, opts.dataDir)
+    : null;
+  if (pendingSwap) {
+    const recoverSwap = opts.recoverInterruptedRestoreSwap ?? defaultRecoverInterruptedRestoreSwap;
+    try {
+      await recoverSwap(adminUrl, pendingSwap);
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      throw new RestoreSwapRecoveryFailed(pendingSwap, detail);
+    }
+    await clearRestoreSwapMarker(opts.dataDir).catch(() => {
+      // The rename already succeeded — a marker that fails to clear is stale-but-harmless
+      // noise, not a reason to fail a launch that just recovered real data.
+    });
+    log.warn(
+      { liveDb: pendingSwap.liveDb, retiredDb: pendingSwap.retiredDb },
+      'recovered from an interrupted restore: renamed the pre-restore database back to the live name',
+    );
+  }
+
+  // 4. The application database. `initdb` creates only postgres/template0/template1.
   const createDb = opts.createDatabaseIfMissing ?? defaultCreateDatabase;
   await createDb(adminUrl, postgres.database);
 

@@ -8,8 +8,10 @@ import {
   readInstallFile,
   writeInstallFile,
   DatabasePasswordLost,
+  RestoreSwapRecoveryFailed,
   DATABASE_PASSWORD_TARGET,
   type LocalPostgres,
+  type PendingRestoreSwap,
 } from '../src/db/local-database';
 import {
   classifyDataDirectory,
@@ -95,6 +97,16 @@ function harness(overrides: Record<string, unknown> = {}) {
         trace.push('migrate');
         return ['014_local_install.sql'];
       },
+      // No real Postgres backs these tests (FakePostgres) — without this override, any test
+      // that simulates an already-existing cluster would have the real crash-recovery check
+      // (CHUNK_7) try a genuine network connection and fail. The ordering/behaviour of that
+      // check itself is proved separately, in the "interrupted restore rename-swap" tests below.
+      detectInterruptedRestoreSwap: async () => null,
+      // Same reasoning for CHUNK_4_IDENTITY's recovered-identity check (also a real query when
+      // a test simulates an already-existing cluster with no install.json on disk); that check's
+      // own behaviour is proved separately, in test/local-install.test.ts.
+      recordedInstallTableExists: async () => false,
+      fetchRecordedInstall: async () => null,
       createDatabaseIfMissing: async () => {
         trace.push('createdb');
         return true;
@@ -335,6 +347,75 @@ describe('startLocalDatabase', () => {
     await h2.secretStore.put(DATABASE_PASSWORD_TARGET, 'carried-over');
     await startLocalDatabase(h2.opts);
     expect(readInstallFile(h2.opts.installFilePath)?.dbPort).toBe(55439);
+  });
+});
+
+describe('interrupted restore rename-swap — crash recovery at boot (CHUNK_7)', () => {
+  /** Fakes a cluster that already exists, so `startLocalDatabase` reaches the crash-recovery
+   *  check (gated on `clusterExists`) instead of skipping it as a brand-new install. */
+  function withExistingCluster(h: ReturnType<typeof harness>) {
+    mkdirSync(join(root, 'pgdata'), { recursive: true });
+    writeFileSync(join(root, 'pgdata', 'PG_VERSION'), '16');
+    return h.secretStore.put(DATABASE_PASSWORD_TARGET, 'carried-over');
+  }
+
+  it(
+    'recovers automatically before creating a database, when a pending swap is detected',
+    async () => {
+      const h = harness({
+        detectInterruptedRestoreSwap: async () => ({ liveDb: 'aphub', retiredDb: 'aphub_pre_restore_123' }),
+        recoverInterruptedRestoreSwap: async (_url: string, pending: PendingRestoreSwap) => {
+          h.trace.push(`recover:${pending.retiredDb}`);
+        },
+      });
+      await withExistingCluster(h);
+
+      const started = await startLocalDatabase(h.opts);
+
+      expect(started.initialised).toBe(false);
+      expect(h.trace).toEqual(['initialise', 'start', 'recover:aphub_pre_restore_123', 'createdb', 'migrate', 'record']);
+    },
+  );
+
+  it(
+    'fails loudly instead of silently creating an empty database when recovery itself fails',
+    async () => {
+      const h = harness({
+        detectInterruptedRestoreSwap: async () => ({ liveDb: 'aphub', retiredDb: 'aphub_pre_restore_999' }),
+        recoverInterruptedRestoreSwap: async () => {
+          throw new Error('rename failed: database is being accessed by other users');
+        },
+      });
+      await withExistingCluster(h);
+
+      await expect(startLocalDatabase(h.opts)).rejects.toBeInstanceOf(RestoreSwapRecoveryFailed);
+      // The one property that matters most: no empty database was silently created.
+      expect(h.trace).not.toContain('createdb');
+    },
+  );
+
+  it('does nothing when no pending swap is detected — the common case on every ordinary launch', async () => {
+    const h = harness({
+      detectInterruptedRestoreSwap: async () => null,
+    });
+    await withExistingCluster(h);
+
+    await startLocalDatabase(h.opts);
+    expect(h.trace).toEqual(['initialise', 'start', 'createdb', 'migrate', 'record']);
+  });
+
+  it('is skipped entirely on a brand-new install — there is no cluster yet to have an interrupted swap', async () => {
+    let detectCalled = false;
+    const h = harness({
+      detectInterruptedRestoreSwap: async () => {
+        detectCalled = true;
+        return null;
+      },
+    });
+    // No PG_VERSION written: this is a genuinely fresh dataDir (clusterExists === false).
+
+    await startLocalDatabase(h.opts);
+    expect(detectCalled).toBe(false);
   });
 });
 
