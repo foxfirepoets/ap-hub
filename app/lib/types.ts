@@ -385,5 +385,5 @@ export interface BackupRecord {
   createdAt: string;
   sizeBytes: number;
   verifiedAt: string | null;
-  externalCopy: boolean;
+  externalCopy: string | null;
 }

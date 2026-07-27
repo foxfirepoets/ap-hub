@@ -176,6 +176,7 @@ const VALID_PAYLOAD: Readonly<Record<string, Record<string, unknown>>> = {
   'aphub:connections:start': { provider: 'gmail' },
   // CHUNK_7_BACKUP: sentinel id, no such backup row exists — both answer NOT_FOUND without
   // touching the credential store or the filesystem (`src/backup/http.ts`'s existence check).
+  'aphub:backup:create': {},
   'aphub:backup:restore': { backupId: 987654 },
   'aphub:backup:export': { backupId: 987654, destination: 'C:\\Users\\Public\\aphub-export-test.aphubbak' },
 };
@@ -198,9 +199,9 @@ function admits(entry: RegistryEntry, role: string): boolean {
 // --- 1. the surface itself -------------------------------------------------------------------
 
 describe('the action surface is complete and symmetric', () => {
-  it('registers a channel for every mutation, and 32 of them', () => {
-    expect(ACTION_ENTRIES).toHaveLength(32);
-    expect(ACTION_CHANNELS).toHaveLength(32);
+  it('registers a channel for every mutation, and 33 of them', () => {
+    expect(ACTION_ENTRIES).toHaveLength(33);
+    expect(ACTION_CHANNELS).toHaveLength(33);
   });
 
   it('is set-equal between the zero-import name list and the entries, in both directions', () => {
@@ -681,7 +682,7 @@ describe('the role matrix matches the wrapper that actually gates each channel',
     }
   });
 
-  // Exhaustive: every channel × every non-owner role. 32 × 2 = 64 cells, none sampled.
+  // Exhaustive: every channel × every non-owner role. 33 × 2 = 66 cells, none sampled.
   const cells = ACTION_ENTRIES.flatMap((entry) =>
     ['bookkeeper', 'cpa'].map((role) => [`${entry.channel} as ${role}`, entry, role] as const),
   );
@@ -706,18 +707,18 @@ describe('the role matrix matches the wrapper that actually gates each channel',
     }
   });
 
-  it('refuses bookkeeper on every owner-only channel, and there are 20 of them', async () => {
+  it('refuses bookkeeper on every owner-only channel, and there are 21 of them', async () => {
     const ownerOnly = ACTION_ENTRIES.filter((e) => !admits(e, 'bookkeeper'));
-    expect(ownerOnly).toHaveLength(20);
+    expect(ownerOnly).toHaveLength(21);
     setSessionToken(session.bookkeeper!);
     for (const entry of ownerOnly) {
       expect((await drive(entry, VALID_PAYLOAD[entry.channel])).code, entry.channel).toBe('FORBIDDEN');
     }
   });
 
-  it('refuses cpa on all 31 channels that are not the notification read', async () => {
+  it('refuses cpa on all 32 channels that are not the notification read', async () => {
     const closed = ACTION_ENTRIES.filter((e) => !admits(e, 'cpa'));
-    expect(closed).toHaveLength(31);
+    expect(closed).toHaveLength(32);
     setSessionToken(session.cpa!);
     for (const entry of closed) {
       expect((await drive(entry, VALID_PAYLOAD[entry.channel])).code, entry.channel).toBe('FORBIDDEN');
@@ -1009,6 +1010,8 @@ function surrogate(channel: string): Record<string, unknown> {
       return { rule: {} };
     case 'aphub:connections:start':
       return { state: 'browser_opened' };
+    case 'aphub:backup:create':
+      return { id: 1, verified: true, sizeBytes: 100 };
     case 'aphub:backup:restore':
       return { restored: true, rowCounts: {} };
     case 'aphub:backup:export':

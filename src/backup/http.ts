@@ -4,7 +4,7 @@ import { AuthError } from '../auth/guard.js';
 import { errorResponse, jsonResponse, readContext } from '../services/read/http.js';
 import { query as poolQuery } from '../db/pool.js';
 import { createHostAdapter } from '../host/index.js';
-import type { BackupKind } from './create.js';
+import { createBackup, BackupCreateFailed, type BackupKind } from './create.js';
 import { restoreBackup, RestoreFailed, BackupKeyMissing } from './restore.js';
 
 /**
@@ -72,14 +72,70 @@ export async function runListBackups(request: Request): Promise<Response> {
       rows.map((row) => ({
         id: row.id,
         kind: row.kind,
-        createdAt: row.created_at,
+        createdAt:
+          row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
         sizeBytes: row.size_bytes,
-        verifiedAt: row.verified_at,
+        verifiedAt:
+          row.verified_at === null
+            ? null
+            : row.verified_at instanceof Date
+              ? row.verified_at.toISOString()
+              : String(row.verified_at),
         externalCopy: row.external_copy,
       })),
     );
   } catch {
     return errorResponse('BACKUP_FAILED', 'AP-Hub could not load your backup history.', 500);
+  }
+}
+
+/** `aphub:backup:create` — owner only. Manual "Back up now" (kind=`manual`). Never returns the key. */
+export async function runCreateBackup(request: Request): Promise<Response> {
+  try {
+    await readContext(request, 'owner_controller');
+  } catch (err) {
+    if (err instanceof AuthError) return errorResponse(err.code, err.message, err.status);
+    return errorResponse('INTERNAL', 'auth failed', 500);
+  }
+
+  const conn = resolveConnection();
+  if (!conn) return errorResponse('BACKUP_FAILED', 'AP-Hub could not reach its database to back up.', 500);
+
+  const host = createHostAdapter();
+  const dataRoot = host.dataDir();
+  try {
+    const result = await createBackup({
+      kind: 'manual',
+      connection: conn,
+      pgBinDir: process.env.APHUB_PG_BIN_DIR ?? join(process.cwd(), 'vendor', 'pgsql', 'bin'),
+      exeSuffix: host.exeSuffix,
+      backupDir: process.env.APHUB_BACKUP_DIR ?? join(dataRoot, 'backups'),
+      restrictToCurrentUser: host.fsPermissions.restrictToCurrentUser,
+      secretStore: host.secretStore,
+    });
+    if (!result.verified) {
+      return errorResponse(
+        'BACKUP_FAILED',
+        'AP-Hub made a backup copy but could not confirm it is readable. It was not counted.',
+        500,
+      );
+    }
+    return jsonResponse({
+      id: result.backupId,
+      verified: true,
+      sizeBytes: result.sizeBytes,
+    });
+  } catch (err) {
+    if (err instanceof BackupCreateFailed) {
+      if (isDiskFullError(err) || /disk|ENOSPC|no space/i.test(err.message + (err.detail ?? ''))) {
+        return errorResponse('DISK_FULL', 'AP-Hub paused: your disk is full. Free up space and try again.', 507);
+      }
+      return errorResponse('BACKUP_FAILED', 'AP-Hub could not create a backup.', 500);
+    }
+    if (isDiskFullError(err)) {
+      return errorResponse('DISK_FULL', 'AP-Hub paused: your disk is full. Free up space and try again.', 507);
+    }
+    return errorResponse('BACKUP_FAILED', 'AP-Hub could not create a backup.', 500);
   }
 }
 

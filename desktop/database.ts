@@ -156,6 +156,15 @@ export async function startDatabase(opts: StartDatabaseOptions = {}): Promise<St
 
   await host.fsPermissions.restrictToCurrentUser(dataRoot);
 
+  /**
+   * Packaged-path wiring for backup create/restore/nightly. `src/backup/{http,rotation}.ts`
+   * read these the same way they read `DATABASE_URL` — set here so they resolve the real
+   * bundled `pg_dump`/`pg_restore` binaries and the install's backup directory, not the
+   * checkout `vendor/pgsql` fallback that only works under `npm run dev`.
+   */
+  process.env.APHUB_PG_BIN_DIR = binDir;
+  process.env.APHUB_BACKUP_DIR = join(dataRoot, 'backups');
+
   return startLocalDatabase({
     binDir,
     dataDir: join(dataRoot, 'pgdata'),

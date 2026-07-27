@@ -4,12 +4,9 @@ import { useCallback, useEffect, useState } from 'react';
 import { ApiError, apiGet, apiPost } from '../../lib/api';
 import type { BackupRecord } from '../../lib/types';
 
-// CHUNK_7_BACKUP UI. Backend IPC channels (aphub:backup:list/create/export/restore) are wired
-// by CHUNK_3/CHUNK_7 backend work, not this chunk — until that registration lands, these calls
-// surface the existing "AP-Hub could not complete that action" fallback from app/lib/api.ts
-// rather than crashing. Paths mirror the REST shape other Settings panels already use.
-const LIST_PATH = '/api/backups';
-const CREATE_PATH = '/api/backups';
+// CHUNK_7_BACKUP UI — HTTP-shaped paths mapped to aphub:backup:* via app/lib/ipc-routes.ts.
+const LIST_PATH = '/api/backup/list';
+const CREATE_PATH = '/api/backup/create';
 const RESTORE_CONFIRMATION = 'RESTORE';
 
 function formatWhen(iso: string): string {
@@ -47,8 +44,8 @@ export function BackupPanel({ owner }: { owner: boolean }) {
     setLoading(true);
     setError(null);
     try {
-      const data = await apiGet<{ backups: BackupRecord[] }>(LIST_PATH);
-      setBackups(data.backups ?? []);
+      const data = await apiGet<BackupRecord[]>(LIST_PATH);
+      setBackups(Array.isArray(data) ? data : []);
     } catch (cause) {
       setError(cause instanceof ApiError ? cause.message : 'Backup status is temporarily unavailable.');
     } finally {
@@ -82,7 +79,7 @@ export function BackupPanel({ owner }: { owner: boolean }) {
     }
     setExportBusyId(backup.id);
     setNotice(null);
-    const result = await apiPost<{ exported: boolean }>(`/api/backups/${backup.id}/export`, {
+    const result = await apiPost<{ exported: boolean }>(`/api/backup/${backup.id}/export`, {
       destination: exportDestination.trim(),
     });
     setExportBusyId(null);
@@ -97,7 +94,7 @@ export function BackupPanel({ owner }: { owner: boolean }) {
     if (!restoreTarget) return;
     setRestoreBusy(true);
     setNotice(null);
-    const result = await apiPost<{ restored: boolean }>(`/api/backups/${restoreTarget.id}/restore`, {
+    const result = await apiPost<{ restored: boolean }>(`/api/backup/${restoreTarget.id}/restore`, {
       backupId: restoreTarget.id,
     });
     setRestoreBusy(false);
