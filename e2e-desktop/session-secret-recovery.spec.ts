@@ -1,6 +1,12 @@
-import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
+import { test, expect, type ElectronApplication, type Page } from '@playwright/test';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import {
+  closeElectron,
+  isolatedLocalAppData,
+  isolatedUserDataDir,
+  launchElectron,
+} from './support/electron-lifecycle';
 
 /**
  * CHUNK_4_IDENTITY — regression test for a real defect caught during integration verification.
@@ -17,10 +23,18 @@ import { join } from 'node:path';
  * `SESSION_COOKIE_SECRET` forced into its environment, independent of whatever this checkout's
  * own `.env` happens to contain, so the regression is caught even in a clean environment that
  * never had the original triggering `.env` value.
+ *
+ * Harness notes: each run uses an isolated Electron user-data profile and `%LOCALAPPDATA%` root
+ * under `test-results/` so it never contends with the product install or a prior launch that has
+ * not yet released `requestSingleInstanceLock()`. Teardown waits for the main process to exit
+ * after `close()` — see `support/electron-lifecycle.ts`.
  */
 
 const MAIN = join(process.cwd(), 'dist-desktop', 'main.mjs');
 const BUNDLE_PRESENT = existsSync(join(process.cwd(), 'vendor', 'pgsql', 'bin', 'initdb.exe'));
+const SPEC = 'session-secret-recovery';
+const LOCAL_APPDATA = isolatedLocalAppData(SPEC);
+const USER_DATA = isolatedUserDataDir(SPEC);
 
 interface ShellStatus {
   ok: boolean;
@@ -35,9 +49,14 @@ test.describe('a too-short pre-existing SESSION_COOKIE_SECRET is overwritten, no
   test.setTimeout(240_000);
 
   test.beforeAll(async () => {
-    app = await electron.launch({
+    app = await launchElectron({
       args: [MAIN],
-      env: { ...process.env, SESSION_COOKIE_SECRET: 'too-short' },
+      userDataDir: USER_DATA,
+      env: {
+        ...process.env,
+        LOCALAPPDATA: LOCAL_APPDATA,
+        SESSION_COOKIE_SECRET: 'too-short',
+      },
     });
     app.process().stdout?.on('data', (d) => process.stdout.write(`[main] ${d}`));
     app.process().stderr?.on('data', (d) => process.stdout.write(`[main:err] ${d}`));
@@ -46,7 +65,7 @@ test.describe('a too-short pre-existing SESSION_COOKIE_SECRET is overwritten, no
   });
 
   test.afterAll(async () => {
-    await app?.close();
+    await closeElectron(app);
   });
 
   test('the shell still reaches "running" — the short value is replaced, not accepted', async () => {
