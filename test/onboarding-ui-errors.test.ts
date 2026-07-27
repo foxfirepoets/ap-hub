@@ -39,9 +39,12 @@ describe('friendlyOnboardingError', () => {
     expect(new Set(texts).size).toBe(texts.length);
   });
 
-  it('unrecognized code: generic fallback that still includes fallbackMessage, retryable', () => {
+  // CHUNK_6_CLEANUP: the raw `Details: ${fallbackMessage}` leak is deleted (see
+  // test/error-mapping.test.ts for the exhaustive proof) — an unrecognized code now gets a
+  // fixed, generic, non-raw sentence instead of echoing the caller's fallback message.
+  it('unrecognized code: generic fallback that never echoes fallbackMessage, retryable', () => {
     const r = friendlyOnboardingError('SOME_UNKNOWN_CODE', 'the original raw error text');
-    expect(r.text).toContain('the original raw error text');
+    expect(r.text).not.toContain('the original raw error text');
     expect(r.text).not.toBe('SOME_UNKNOWN_CODE');
     expect(r.retryable).toBe(true);
   });
