@@ -21,15 +21,37 @@ import { JOBS } from '../queue.js';
  *     `classifyFindings` itself produced (see pipeline/mapping.ts,
  *     gatekeeper/gatekeep.ts) — so this never forks a second severity judgement.
  *     Routine reason codes (low_confidence, unmapped_account, ...) raise nothing.
+ *
+ * CHUNK_6_SWARMSYNC_POLICY (architecture-decision-packet §5) extends proof_fail_safe
+ * with two more cases, both enforced right here:
+ *  - Rule 2: `swarmsync_required_unavailable` (raised by src/pipeline/posting.ts and
+ *    src/pipeline/gatekeep.ts when a company's policy requires SwarmSync verification
+ *    but it is disabled/unavailable) is treated as material risk — it must be
+ *    reported immediately, never silently buried until the next daily digest.
+ *  - Rule 3: the digest emits only structured counts (see TodayCounts / DigestResult)
+ *    — it has no natural-language "independently verified" labelling to get wrong.
+ *    No verification-status UI exists yet in this codebase (confirmed empty grep for
+ *    "independently verified" across app/ and src/). When such a UI is built, it must
+ *    never render that phrase for an item without a stored proof reference for that
+ *    specific item (src/swarmsync/proof.ts `hasProofRef`) — see test/digest.test.ts
+ *    for a guard test enforcing this on every payload this module writes today.
  */
 
-/** Reason codes that only ever originate from `classifyFindings`' critical/high path. */
-const MATERIAL_RISK_REASONS = new Set(['bank_change_warning', 'duplicate', 'fraud_flag']);
+/** Reason codes that only ever originate from `classifyFindings`' critical/high path,
+ *  plus `swarmsync_required_unavailable` (a company-mandated control that could not
+ *  run — rule 2 above). */
+const MATERIAL_RISK_REASONS = new Set([
+  'bank_change_warning',
+  'duplicate',
+  'fraud_flag',
+  'swarmsync_required_unavailable',
+]);
 
 const RISK_SEVERITY: Record<string, string> = {
   bank_change_warning: 'critical',
   duplicate: 'critical',
   fraud_flag: 'high',
+  swarmsync_required_unavailable: 'high',
 };
 
 /** Insert an immediate `risk_alert` notification iff `reasonCode` is material risk. No-op otherwise. */

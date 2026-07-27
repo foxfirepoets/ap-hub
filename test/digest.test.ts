@@ -109,6 +109,36 @@ describe('CHUNK_7 digest — risk_alert (reuses the severity classifier, no fork
     expect(await countRows('notifications', "tenant_id=$1 AND kind='risk_alert' AND severity='high'", [t])).toBe(1);
   });
 
+  it('proof_fail_safe rule 2: swarmsync_required_unavailable raises an immediate risk_alert, never silently skipped', async () => {
+    const t = await createTenant();
+    await raiseException({
+      tenantId: t,
+      reasonCode: 'swarmsync_required_unavailable',
+      entityRef: 'proposal:1',
+      detail: 'company policy requires SwarmSync verification, but SwarmSync is disabled/unavailable',
+    });
+    expect(
+      await countRows('notifications', "tenant_id=$1 AND kind='risk_alert' AND severity='high'", [t]),
+    ).toBe(1);
+    // The digest's own exceptions count (CHUNK_3 getTodayCounts) must also reflect it -
+    // never zero-filled just because SwarmSync itself made no call.
+    const day = '2026-07-15';
+    const res = await generateDailyDigest(t, day);
+    if (res.status === 'created') expect(res.counts.exceptions).toBeGreaterThanOrEqual(1);
+  });
+
+  it('proof_fail_safe rule 3: no notification this module writes ever claims "independently verified"', async () => {
+    const t = await createTenant();
+    await raiseException({ tenantId: t, reasonCode: 'swarmsync_required_unavailable', entityRef: 'proposal:1' });
+    await raiseException({ tenantId: t, reasonCode: 'fraud_flag', entityRef: 'extraction:1' });
+    await generateDailyDigest(t, '2026-07-15');
+    const rows = await listNotifications(t);
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      expect(JSON.stringify(row.payload).toLowerCase()).not.toContain('independently verified');
+    }
+  });
+
   it('integration: gatekeeper bank-change hold produces exactly one risk_alert (same classifier, no second list)', async () => {
     const t = await createTenant();
     const m = await insertMessage(t);

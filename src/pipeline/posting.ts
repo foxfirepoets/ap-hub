@@ -10,6 +10,7 @@ import type { AccountingConnector } from '../connectors/types.js';
 import type { VerifyResult } from '../swarmsync/client.js';
 import type { CanonicalDimension } from '../canonical/model.js';
 import type { SwarmSyncMode } from '../config.js';
+import { getSwarmSyncPolicyForConnection } from '../accounting/swarmsync-policy.js';
 
 export interface PostJob {
   tenantId: number;
@@ -27,9 +28,18 @@ export interface PostDeps {
   // Wrong-company guard: when an expected company name is configured, identity is
   // verified through the connector before any write; 'mismatch' holds, never creates.
   expectedCompanyName?: string;
-  /** The proof-coverage gate applies only when SwarmSync is enabled (default true). */
+  /** Gates the AuditProof anchor call after posting only; the proof-coverage gate above
+   *  (hasInvoiceProof/hasVerify) is unconditional regardless of this flag. Default false
+   *  (CHUNK_6: SwarmSync is off by default on a fresh install). */
   swarmSyncEnabled?: boolean;
-  /** SwarmSync mode; 'off_review' must never post (defense-in-depth). Default 'on'. */
+  /**
+   * SwarmSync mode; default 'off_review' (SWARMSYNC_ENABLED defaults false — CHUNK_6).
+   * When 'off_review', whether a proposal may still post depends on the company's own
+   * swarmSyncPolicy (connections.metadata.swarmSyncPolicy — see
+   * src/accounting/swarmsync-policy.ts): 'optional' (default) proceeds unaffected (rule
+   * 1 — noop), 'required' holds and raises a typed exception (rule 2 —
+   * swarmsync_required_unavailable). architecture-decision-packet §5.
+   */
   swarmSyncMode?: SwarmSyncMode;
   accountingMode?: 'sandbox' | 'production';
 }
@@ -75,9 +85,23 @@ export async function postOnce(tenantId: number, proposalId: number, deps: PostD
 
   // --- Gate ---
   if (p.status !== 'ready') return { status: 'held', reason: `status=${p.status}` };
-  // Defense-in-depth: in off_review mode nothing auto-posts, no matter how a
-  // proposal reached 'ready' (mapping already caps it; this is the backstop).
-  if (deps.swarmSyncMode === 'off_review') return { status: 'held', reason: 'swarmsync_off_review' };
+  // SwarmSync off_review: policy-aware (architecture-decision-packet §5). A company's
+  // own swarmSyncPolicy decides the outcome, not SwarmSync's availability alone —
+  // 'optional' (default) proceeds exactly as if this check passed (rule 1, noop);
+  // 'required' holds and raises a typed exception (rule 2), defense-in-depth no matter
+  // how a proposal reached 'ready' (mapping already caps it; this is the backstop).
+  if (deps.swarmSyncMode === 'off_review') {
+    const policy = await getSwarmSyncPolicyForConnection(tenantId, deps.connector.provider, deps.connector.companyId);
+    if (policy === 'required') {
+      await raiseException({
+        tenantId,
+        reasonCode: 'swarmsync_required_unavailable',
+        entityRef: `proposal:${proposalId}`,
+        detail: 'company policy requires SwarmSync verification, but SwarmSync is disabled/unavailable',
+      });
+      return { status: 'held', reason: 'swarmsync_required_unavailable' };
+    }
+  }
   if (Number(p.confidence) < deps.autoThreshold) return { status: 'held', reason: 'below_auto_threshold' };
   const total = Number(p.proposed_txn?.TotalAmt ?? 0);
   if (total > deps.amountCeiling) return { status: 'held', reason: 'over_ceiling' };
