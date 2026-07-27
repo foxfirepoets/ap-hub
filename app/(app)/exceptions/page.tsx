@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { apiGet, apiPost, ApiError, proposalRefId } from '../../lib/api';
 import { when } from '../../lib/format';
 import { friendlyOnboardingError } from '../../lib/onboardingErrors.js';
+import { friendlyExceptionReason } from '../../lib/exceptionReasons.js';
 import { EvidencePanel } from '../../components/EvidencePanel';
 import { ActionBar } from '../../components/ActionBar';
 import { RemapForm, type RemapValues } from '../../components/RemapForm';
@@ -217,7 +218,7 @@ export default function ExceptionsPage() {
               onClick={() => navigate(() => idx)}
               data-testid={`exception-row-${it.id}`}
             >
-              <div className="qtitle">{it.reasonCode}</div>
+              <div className="qtitle">{friendlyExceptionReason(it.reasonCode).title}</div>
               <div className="qmeta">
                 {it.entityRef ?? '—'} · {when(it.createdAt)}
               </div>
@@ -230,8 +231,8 @@ export default function ExceptionsPage() {
           {selected ? (
             <>
               <div className="panel">
-                <h2>{selected.reasonCode}</h2>
-                <p className="muted">{selected.detail ?? 'No detail.'}</p>
+                <h2>{friendlyExceptionReason(selected.reasonCode).title}</h2>
+                <p className="muted">{friendlyExceptionReason(selected.reasonCode).text}</p>
                 <ActionBar
                   hasProposal={proposalId != null}
                   busy={busy}
