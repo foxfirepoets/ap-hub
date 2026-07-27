@@ -378,3 +378,12 @@ export interface ClassificationReviewItem {
   holdReason: string | null;
   createdAt: string;
 }
+
+export interface BackupRecord {
+  id: number;
+  kind: string;
+  createdAt: string;
+  sizeBytes: number;
+  verifiedAt: string | null;
+  externalCopy: boolean;
+}
