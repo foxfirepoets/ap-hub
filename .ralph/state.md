@@ -2,8 +2,19 @@
 
 **Current Iteration:** 1
 
-Current chunk: CHUNK_5_CONNECT
+Current chunk: CHUNK_6_CLEANUP
 Current task: not started
+Last completed: **CHUNK_5_CONNECT — complete and CLOSED 2026-07-27.** Merge commit `db62713` on
+`feat/local-desktop-p1`, pushed, tagged `checkpoint/chunk5-complete`. System-browser OAuth +
+single-use loopback callback listener for Gmail/QBO connect flows. Independently re-verified,
+real exit codes: lint:0 noleak:0 typecheck:0 test:0 (78 files/1611 tests) web:build:0
+desktop:build:0 playwright:0 (48/48, 0 skipped); `test/connect-loopback.test.ts` also re-run
+standalone in isolation (11/11). Kraken read-only security pass: 10/10 clean, CLEAR TO MERGE, two
+non-blocking coverage-depth notes (no concurrent-duplicate-callback stress test; two refusal
+reasons share an untested-independently code path). Locked forwarder unchanged, exactly one send
+site. No safety test touched. See `.ralph/progress.md` 2026-07-27 CHUNK_5_CONNECT entry for full
+detail. CHUNK_6_CLEANUP not yet started.
+
 Last completed: **CHUNK_4_IDENTITY — complete and CLOSED 2026-07-26.** Merge commit `4fcdd78` +
 fix commit `7adf1d0` on `feat/local-desktop-p1`, pushed. OS account (Windows SID) is the owner,
 Google SSO removed as entry point, tenant/role auth unchanged, cross-account isolation proven

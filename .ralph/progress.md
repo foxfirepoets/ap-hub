@@ -519,3 +519,81 @@ Locked forwarder: **exactly one** provider-send call site, unchanged. Merge comm
 fix commit `7adf1d0`, both on `feat/local-desktop-p1`, pushed to `origin/feat/local-desktop-p1`.
 
 <promise>CHUNK COMPLETE: CHUNK_4_IDENTITY</promise>
+
+### 2026-07-27 — CHUNK_5_CONNECT complete
+
+System-browser OAuth + loopback HTTP callback for the Gmail/QBO "connect" flows, replacing the
+web-session bootstrap-nonce model that does not apply once Electron IPC removes the listening
+socket it was built to defend. Implemented on `agent/connect-chunk5` (commit `64a43e1`), merged
+into `feat/local-desktop-p1` as `db62713` (no-ff merge, clean, `ort` strategy).
+
+**Note on process:** this chunk was implemented and fully gated by a prior orchestrator turn in
+this same session before a context handoff. This entry is written by the orchestrator that
+resumed after that handoff, and independently re-verified everything below rather than trusting
+the handoff notes — including re-running Kraken's read-only security pass, which the prior turn
+could not complete because Kraken hit a weekly rate limit ("resets 7pm America/Phoenix"). That
+limit had reset by the time this turn ran Kraken; the pass completed cleanly (below). No step in
+this closure was taken on faith from the handoff — every exit code, invariant, and file diff was
+re-measured directly against this checkout.
+
+**New capability:** `src/auth/connect-loopback.ts` (319 lines) — a single-use loopback HTTP
+listener (`127.0.0.1`, port 0 → OS-assigned) that receives exactly one OAuth callback, verifies
+PKCE S256 (real challenge/verifier pair, cryptographically re-derived and checked in tests), and
+closes on every outcome path (success, state-mismatch, provider-denied, timeout), including an
+explicit `closeIdleConnections()` to defeat keep-alive connections that would otherwise block
+teardown. Two new IPC channels: `aphub:connections:start` (action, owner-only) and
+`aphub:connections:status` (read, all three roles) — the only two additions to
+`desktop/ipc/{action,read}/channels.ts`. `desktop/channels.ts` (the provider-domain
+`isAllowedNavigation`/`isAllowedExternalUrl` allowlist) does not appear in the diff at all — not
+widened. No `BrowserWindow`/webview is created for provider login; the flow opens the system
+browser via the existing `shell.openExternal` path. Tokens route through the existing
+`tokenSecretAuthority` (Windows Credential Manager); only a non-secret `connections` row
+(provider/external_company/status) and a non-secret `credential_refs` row reach Postgres.
+
+**Independent verification, real captured exit codes, gate run serially with no agent suites in
+flight:** `lint:0` `lint:noleak:0` `typecheck:0` `test:0` (**78 test files, 1611 tests** — was
+77/1573 before this chunk) `web:build:0` `desktop:build:0` `playwright (full desktop project):0`
+(**48 passed, 0 skipped**). `test/connect-loopback.test.ts` (11 tests) re-run in isolation,
+separately from the full suite: exit 0, all 11 pass standalone — no fresh-boot/cross-process
+credential-store masking risk applies here (unlike CHUNK_4's finding), since this chunk has no
+dedicated cold-start Playwright spec and its unit tests do not touch the real Windows Credential
+Manager.
+
+`git diff --stat 7013eae..HEAD -- src/`: exactly `src/auth/`, `src/services/action/`,
+`src/services/read/` touched — no other `src/` directory drifted. Locked forwarder: **exactly
+one** provider-send call site, `src/gmail/adapter.ts:142`, unchanged. No safety test touched
+(`lockdown`, `gatekeeper`, `posting`, `f5-cross-tenant-isolation`, `anchor-whitelabel`,
+`architecture-connector-path`, `desktop-shell`, `desktop-packaging`, `database.spec`, `shell.spec`
+all confirmed unchanged by diff).
+
+**Kraken read-only security pass, 10/10 clean, CLEAR TO MERGE.** All items passed: loopback-only
+bind: `server.listen(0, '127.0.0.1', ...)`; single-use close on all four outcome paths with
+`closeIdleConnections()`; no exploitable duplicate-callback race (settled-flag set synchronously
+before any `await`, Node run-to-completion semantics — verified by code reasoning, not by a
+concurrent-hit test, see non-blocking note below); real PKCE S256 with cryptographic
+verifier/challenge match asserted in tests; no secret material reaches Postgres/logs/install.json
+(`src/services/read/connections.ts`, read in full, is a clean tenant-scoped
+`listConnectionStatuses`); no embedded webview; channel/navigation allowlists not widened; role
+gating on the new wrappers matches sibling wrappers exactly, re-derived against the full 52-channel
+× 3-role matrix in `test/ipc-contract.test.ts`; every refusal and the success path write an audit
+event; all new user-facing strings are plain language, tested to exclude
+`/access_denied|stack|Error:/i`. Kraken also independently resolved the discrepancy the prior turn
+flagged — a pre-merge report allegedly listed 2 changed `src/services/` files when 3 changed
+(`connections.ts` action, `connections.ts` read [new], `read/index.ts`); Kraken confirmed 3 files
+via its own `git diff --stat`, matching the orchestrator's own count, and confirmed
+`src/services/read/connections.ts`'s content directly — clean.
+
+**Two non-blocking findings, recorded not fixed:** (1) no test drives two genuinely concurrent
+requests at a still-open listener to empirically prove the duplicate-callback race is closed —
+the code-reasoning argument is sound but untested under real concurrency; (2) `missing_code` and
+`exchange_failed` refusal reasons share a code path with tested reasons but aren't independently
+asserted by a dedicated test. Neither blocks merge; both are coverage-depth notes for a future
+hardening pass, not defects in current behavior.
+
+Standing environment blockers restated (not dropped): no macOS machine, no signing identities, no
+clean VMs.
+
+Merge commit: `db62713`, on `feat/local-desktop-p1`, pushed to `origin/feat/local-desktop-p1`,
+tagged `checkpoint/chunk5-complete`.
+
+<promise>CHUNK COMPLETE: CHUNK_5_CONNECT</promise>
