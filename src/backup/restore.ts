@@ -1,5 +1,6 @@
-import { mkdir, rm } from 'node:fs/promises';
-import { join } from 'node:path';
+import { mkdir, rm, writeFile, rename } from 'node:fs/promises';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, basename, join } from 'node:path';
 import pg from 'pg';
 import { buildConnectionString } from '../db/postgres-runtime.js';
 import type { SecretStore } from '../host/types.js';
@@ -23,6 +24,13 @@ export interface RestoreBackupOptions {
   exeSuffix: string;
   /** Directory the decrypted staging dump and the short-lived `.pgpass` file are written into. */
   backupDir: string;
+  /**
+   * The private Postgres cluster's data directory. Not connected to, only used to place the
+   * crash-recovery marker (see `restoreSwapMarkerPath`) beside it — the same convention
+   * `src/db/postgres-runtime.ts` uses for its own interrupted-initialisation sentinel — so
+   * `src/db/local-database.ts`'s boot path can find it without being told a separate location.
+   */
+  dataDir: string;
   /** Same ACL-hardening primitive `create.ts` uses for its `.pgpass` directory. */
   restrictToCurrentUser: (dir: string) => Promise<void>;
   secretStore: SecretStore;
@@ -93,8 +101,10 @@ async function terminateConnections(adminPool: pg.Pool, datname: string): Promis
 }
 
 /** Terminate + rename, retried a few times to absorb a connection racing back in right after
- *  termination and before the rename lands. */
-async function renameDatabaseWithRetry(
+ *  termination and before the rename lands. Exported so `src/db/local-database.ts`'s
+ *  crash-recovery boot check can perform the same "rename the retired database back to the
+ *  live name" operation this module's own rollback path uses, rather than reimplementing it. */
+export async function renameDatabaseWithRetry(
   adminPool: pg.Pool,
   fromName: string,
   toName: string,
@@ -111,6 +121,66 @@ async function renameDatabaseWithRetry(
       }
       throw err;
     }
+  }
+}
+
+/**
+ * Crash-recovery marker for the rename-swap below. Two `ALTER DATABASE ... RENAME` statements
+ * over a `pg.Pool` are not one atomic operation — a hard kill (power loss, OOM, forced
+ * termination) between them leaves NO database holding the live name, with nothing else on
+ * disk recording that a swap was ever in progress. This marker is that record.
+ *
+ * It sits BESIDE the data directory, mirroring `src/db/postgres-runtime.ts`'s
+ * `initSentinelPath` convention for the same reason: the boot path in `local-database.ts` knows
+ * `dataDir` on every launch and can find this file without being handed a separate location.
+ * Written durably (temp file + rename, the same pattern `writeInstallFile` uses) immediately
+ * before the first rename; removed only once the swap is back in a state that needs no
+ * recovery — either it fully succeeded, or an in-process rollback restored the live database's
+ * original name. If neither happens because the process died, the marker survives for
+ * `local-database.ts` to find on the next launch.
+ */
+export interface RestoreSwapMarker {
+  liveDb: string;
+  retiredDb: string;
+  stagingDb: string;
+  startedAt: string;
+}
+
+export function restoreSwapMarkerPath(dataDir: string): string {
+  return join(dirname(dataDir), `.aphub-restore-swap-${basename(dataDir)}.json`);
+}
+
+async function writeRestoreSwapMarker(dataDir: string, marker: RestoreSwapMarker): Promise<void> {
+  const path = restoreSwapMarkerPath(dataDir);
+  const tmp = `${path}.tmp`;
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(tmp, JSON.stringify(marker), { encoding: 'utf8' });
+  await rename(tmp, path);
+}
+
+/** Exported so `local-database.ts` can clear a marker it has just recovered from. */
+export async function clearRestoreSwapMarker(dataDir: string): Promise<void> {
+  await rm(restoreSwapMarkerPath(dataDir), { force: true });
+}
+
+/** Read the marker, tolerantly — a missing or unparsable file is just "no marker", never fatal. */
+export function readRestoreSwapMarker(dataDir: string): RestoreSwapMarker | null {
+  const path = restoreSwapMarkerPath(dataDir);
+  if (!existsSync(path)) return null;
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'));
+    if (
+      parsed !== null &&
+      typeof parsed === 'object' &&
+      typeof (parsed as RestoreSwapMarker).liveDb === 'string' &&
+      typeof (parsed as RestoreSwapMarker).retiredDb === 'string' &&
+      typeof (parsed as RestoreSwapMarker).stagingDb === 'string'
+    ) {
+      return parsed as RestoreSwapMarker;
+    }
+    return null;
+  } catch {
+    return null;
   }
 }
 
@@ -253,36 +323,57 @@ export async function restoreBackup(opts: RestoreBackupOptions): Promise<Restore
 
     // 5. The swap. Everything before this point could fail with the live database completely
     //    untouched; everything from here on is designed to either complete or roll itself back.
+    //    A marker is written FIRST, so a hard crash between the two renames below is
+    //    recoverable on the next launch (`local-database.ts`) instead of silently producing an
+    //    empty live-named database. It is cleared only once the swap is back in a state that
+    //    needs no recovery.
+    await writeRestoreSwapMarker(opts.dataDir, { liveDb, retiredDb, stagingDb, startedAt: now().toISOString() });
+
     const adminPool = new Pool({
       connectionString: buildConnectionString({ user: conn.user, password: conn.password, port: conn.port, database: 'postgres' }),
     });
     let liveRenamedAside = false;
+    let swapEndedSafely = false; // marker only ever cleared when this is true
     try {
       await renameDatabaseWithRetry(adminPool, liveDb, retiredDb);
       liveRenamedAside = true;
       await renameDatabaseWithRetry(adminPool, stagingDb, liveDb);
       stagingDbPending = false; // it is now the live database; do not drop it in the finally below
+      swapEndedSafely = true; // fully succeeded
     } catch (err) {
       if (liveRenamedAside) {
         try {
           await renameDatabaseWithRetry(adminPool, retiredDb, liveDb);
+          swapEndedSafely = true; // rolled back in-process: live database has its original name again
         } catch (rollbackErr) {
           const rollbackDetail = rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr);
           log.error(
             { liveDb, retiredDb, stagingDb, rollbackDetail },
             'restore rollback failed — the live database is currently named as the retired database and needs manual renaming',
           );
+          // swapEndedSafely stays false: the marker must survive so the next launch's
+          // boot-time check recovers automatically instead of silently creating an empty database.
           throw new RestoreFailed(
             `restore left the database in an inconsistent state: the database currently named "${retiredDb}" ` +
               `must be renamed back to "${liveDb}" manually. The restored copy is intact at "${stagingDb}".`,
             rollbackDetail,
           );
         }
+      } else {
+        swapEndedSafely = true; // the first rename never took effect; the live database was never touched
       }
       const detail = err instanceof Error ? err.message : String(err);
       throw new RestoreFailed('swapping the restored database into place failed; the live database was not changed', detail);
     } finally {
       await adminPool.end();
+      if (swapEndedSafely) {
+        await clearRestoreSwapMarker(opts.dataDir).catch((markerErr) => {
+          log.error(
+            { liveDb, retiredDb, err: markerErr instanceof Error ? markerErr.message : String(markerErr) },
+            'failed to clear the restore-swap marker after a safe outcome — harmless but should be investigated',
+          );
+        });
+      }
     }
 
     // 6. Final sanity check against the now-live database — closing the loop end to end.

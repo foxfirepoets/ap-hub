@@ -8,8 +8,15 @@ import { startLocalDatabase } from '../src/db/local-database';
 import { migrateUp } from '../src/db/migrate';
 import type { SecretStore } from '../src/host/types';
 import { createWindowsHostAdapter } from '../src/host/windows';
+import { buildConnectionString } from '../src/db/postgres-runtime';
 import { createBackup } from '../src/backup/create';
-import { restoreBackup, RestoreFailed } from '../src/backup/restore';
+import {
+  restoreBackup,
+  RestoreFailed,
+  renameDatabaseWithRetry,
+  restoreSwapMarkerPath,
+  type RestoreSwapMarker,
+} from '../src/backup/restore';
 import { BACKUP_TABLES } from '../src/backup/manifest';
 
 /**
@@ -238,6 +245,7 @@ describeIf('restoreBackup — destroy-and-restore drill, real bundled PostgreSQL
       pgBinDir: BIN,
       exeSuffix: EXE,
       backupDir: join(root, 'restore-drill'),
+      dataDir: join(root, 'pgdata'),
       restrictToCurrentUser: windowsHost.fsPermissions.restrictToCurrentUser,
       secretStore,
     });
@@ -297,6 +305,7 @@ describeIf('restoreBackup — destroy-and-restore drill, real bundled PostgreSQL
         pgBinDir: BIN,
         exeSuffix: EXE,
         backupDir: join(root, 'restore-tamper'),
+        dataDir: join(root, 'pgdata'),
         restrictToCurrentUser: windowsHost.fsPermissions.restrictToCurrentUser,
         secretStore,
       }),
@@ -308,4 +317,115 @@ describeIf('restoreBackup — destroy-and-restore drill, real bundled PostgreSQL
 
     await seedPool.end();
   }, 180_000);
+
+  it(
+    'recovers automatically from a crash between the two rename-swap steps, instead of ' +
+      'silently creating an empty database on the next launch',
+    async () => {
+      const seedPool = new pg.Pool({ connectionString });
+      seedPool.on('error', () => {});
+
+      await destroyLiveData(seedPool);
+      await seedRepresentativeData(seedPool, {
+        tenantName: 'Crash Co',
+        gmailId: 'gm-crash-1',
+        sha: 'sha-crash-1',
+        idem: 'idem-crash-1',
+      });
+      const beforeCrash = await captureSnapshot(seedPool);
+      expect(beforeCrash.messages.length).toBe(1);
+      await seedPool.end();
+
+      const liveDb = connection.database;
+      const retiredDb = `${liveDb}_pre_restore_crashtest001`;
+      const dataDir = join(root, 'pgdata');
+      const adminConnStr = buildConnectionString({
+        user: connection.user,
+        password: connection.password,
+        port: connection.port,
+        database: 'postgres',
+      });
+
+      // Genuinely perform step 1 of the real rename-swap, using the exact same production
+      // function `restoreBackup` itself calls — then stop, exactly as if the process had been
+      // hard-killed right after this rename and before the second one. This is not a mock: the
+      // live database is really renamed aside via a real `ALTER DATABASE ... RENAME`.
+      const preCrashAdminPool = new pg.Pool({ connectionString: adminConnStr });
+      try {
+        await renameDatabaseWithRetry(preCrashAdminPool, liveDb, retiredDb);
+      } finally {
+        await preCrashAdminPool.end();
+      }
+
+      // Write the marker in the exact shape `restoreBackup` writes it before the swap begins,
+      // naming the retired database the "crash" left orphaned. `stagingDb` is never created in
+      // this drill — recovery never needs to read it, only `liveDb`/`retiredDb`.
+      const marker: RestoreSwapMarker = {
+        liveDb,
+        retiredDb,
+        stagingDb: 'aphub_restore_crashtest001',
+        startedAt: new Date().toISOString(),
+      };
+      writeFileSync(restoreSwapMarkerPath(dataDir), JSON.stringify(marker));
+
+      // Prove the live database genuinely does not exist right now — the exact silent-data-loss
+      // trigger condition `defaultCreateDatabase` would otherwise walk straight into.
+      const missingCheckPool = new pg.Pool({ connectionString: adminConnStr });
+      try {
+        const { rowCount } = await missingCheckPool.query('SELECT 1 FROM pg_database WHERE datname = $1', [liveDb]);
+        expect(rowCount).toBe(0);
+      } finally {
+        await missingCheckPool.end();
+      }
+
+      // The machine "dies": the server that performed the rename above stops.
+      await stop();
+
+      // The next launch — a fresh boot against the same data directory, the actual production
+      // entry point — must recover automatically instead of manufacturing an empty database.
+      const recovered = await startLocalDatabase({
+        binDir: BIN,
+        dataDir,
+        installFilePath: join(root, 'install.json'),
+        logDir: join(root, 'logs'),
+        exeSuffix: EXE,
+        platform: 'win32',
+        appVersion: '0.0.0-restore-int',
+        osAccountId: 'S-1-5-21-restore-int',
+        secretStore,
+        migrate: (url: string) => migrateUp(url, MIGRATIONS),
+      });
+      stop = () => recovered.postgres.stop(); // afterAll cleans up this instance instead now
+
+      expect(existsSync(restoreSwapMarkerPath(dataDir))).toBe(false);
+
+      const restoredPool = new pg.Pool({ connectionString: recovered.connectionString });
+      try {
+        const after = await captureSnapshot(restoredPool);
+        // The pre-crash (pre-restore) data — not an empty freshly-created database.
+        expect(after).toEqual(beforeCrash);
+      } finally {
+        await restoredPool.end();
+      }
+
+      const postRecoveryAdminPool = new pg.Pool({
+        connectionString: buildConnectionString({
+          user: connection.user,
+          password: connection.password,
+          port: recovered.port,
+          database: 'postgres',
+        }),
+      });
+      try {
+        const { rowCount: retiredStillThere } = await postRecoveryAdminPool.query(
+          'SELECT 1 FROM pg_database WHERE datname = $1',
+          [retiredDb],
+        );
+        expect(retiredStillThere).toBe(0); // renamed back to the live name, not left orphaned
+      } finally {
+        await postRecoveryAdminPool.end();
+      }
+    },
+    180_000,
+  );
 });

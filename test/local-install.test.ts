@@ -88,6 +88,11 @@ function harness(overrides: Record<string, unknown> = {}) {
       // below that does not care about the pre/post-migrate ordering — they still exercise the
       // (unavoidable) post-migration fallback check. The ordering itself is proved separately.
       recordedInstallTableExists: async () => false,
+      // No real Postgres backs these tests (FakePostgres) — without this override, any test
+      // that simulates an already-existing cluster would have the real CHUNK_7 crash-recovery
+      // check try a genuine network connection and fail with an unrelated error. That check's
+      // own behaviour is proved separately, in test/local-database.test.ts.
+      detectInterruptedRestoreSwap: async () => null,
       ...overrides,
     },
   };
