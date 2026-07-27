@@ -47,6 +47,7 @@ export async function registerPipelineJobs(boss: PgBoss, cfg: Config): Promise<v
   const { mapHandler, proposeHandler } = await import('./mapping.js');
   const { auditAnchorHandler, scheduleAuditAnchor } = await import('./audit-anchor.js');
   const { digestHandler, scheduleDigest } = await import('../services/digest.js');
+  const { backupNightlyHandler, scheduleBackupNightly } = await import('../backup/rotation.js');
 
   // pg-boss v10 requires each queue to be explicitly created before .work()/.send()/.schedule()
   // can target it (no more implicit auto-create on first use). createQueue is idempotent.
@@ -61,6 +62,7 @@ export async function registerPipelineJobs(boss: PgBoss, cfg: Config): Promise<v
     JOBS.post_sandbox,
     JOBS.audit_anchor,
     JOBS.digest,
+    JOBS.backup_nightly,
     JOBS.dispatch_classifications,
   ]) {
     await boss.createQueue(name);
@@ -76,6 +78,7 @@ export async function registerPipelineJobs(boss: PgBoss, cfg: Config): Promise<v
   await boss.work(JOBS.post_sandbox, (job: any) => guardedPostSandboxHandler(job));
   await boss.work(JOBS.audit_anchor, (job: any) => auditAnchorHandler(job));
   await boss.work(JOBS.digest, (job: any) => digestHandler(job));
+  await boss.work(JOBS.backup_nightly, () => backupNightlyHandler());
   await boss.work(JOBS.dispatch_classifications, async () => {
     const { dispatchPendingClassifications } = await import('../accounting/document-review.js');
     await dispatchPendingClassifications();
@@ -84,6 +87,7 @@ export async function registerPipelineJobs(boss: PgBoss, cfg: Config): Promise<v
   await schedulePoll(boss, cfg);
   await scheduleAuditAnchor(boss);
   await scheduleDigest(boss);
+  await scheduleBackupNightly(boss);
   await boss.schedule(JOBS.dispatch_classifications, '* * * * *');
 
   logger.info('pipeline jobs registered');

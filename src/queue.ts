@@ -45,6 +45,7 @@ export const JOBS = {
   post_sandbox: 'post_sandbox',
   audit_anchor: 'audit_anchor',
   digest: 'digest',
+  backup_nightly: 'backup_nightly',
   dispatch_classifications: 'dispatch_classifications',
   noop: 'noop',
 } as const;
