@@ -7,7 +7,7 @@ import { childLogger } from '../logger.js';
 import { encryptFile } from './crypto.js';
 import { getOrCreateBackupKey } from './key.js';
 import { BACKUP_TABLES, captureRowCounts, hashFile } from './manifest.js';
-import { runPgTool, PgToolFailed, type PgConnection } from './pg-tools.js';
+import { runPgTool, PgToolFailed, type PgConnection, type SecurePgPassDir } from './pg-tools.js';
 import { verifyBackup } from './verify.js';
 
 const { Pool } = pg;
@@ -27,6 +27,12 @@ export interface CreateBackupOptions {
   exeSuffix: string;
   /** Directory the encrypted backup file is written into; created if absent. */
   backupDir: string;
+  /**
+   * ACL-hardens a directory to the current user — the same `FsPermissions` primitive
+   * `desktop/database.ts` calls on the Postgres data root. Used to secure the short-lived
+   * `.pgpass` file this module writes for `pg_dump`/`pg_restore`/`createdb`/`dropdb` auth.
+   */
+  restrictToCurrentUser: (dir: string) => Promise<void>;
   secretStore: SecretStore;
   tables?: readonly string[];
   now?: () => Date;
@@ -80,6 +86,9 @@ export async function createBackup(opts: CreateBackupOptions): Promise<BackupRes
   const tables = opts.tables ?? BACKUP_TABLES;
   const bin = (name: string) => join(opts.pgBinDir, `${name}${opts.exeSuffix}`);
   const conn: PgConnection = { host: opts.connection.host, port: opts.connection.port, user: opts.connection.user, password: opts.connection.password };
+  // Under backupDir (caller-supplied, already the data root's own directory in production
+  // wiring) — never os.tmpdir(), which `restrictToCurrentUser` cannot meaningfully protect.
+  const secureDir: SecurePgPassDir = { dir: join(opts.backupDir, '.pgpass'), restrictToCurrentUser: opts.restrictToCurrentUser };
 
   await mkdir(opts.backupDir, { recursive: true });
   const key = await getOrCreateBackupKey(opts.secretStore);
@@ -99,7 +108,7 @@ export async function createBackup(opts: CreateBackupOptions): Promise<BackupRes
     encPath = join(opts.backupDir, `aphub-backup-${opts.kind}-${stamp}-${suffix}.aphubbak`);
 
     try {
-      await runPgTool(bin, 'pg_dump', ['-Fc', '-f', dumpPath, opts.connection.database], conn, 30 * 60_000);
+      await runPgTool(bin, 'pg_dump', ['-Fc', '-f', dumpPath, opts.connection.database], conn, secureDir, 30 * 60_000);
     } catch (err) {
       const detail = err instanceof PgToolFailed ? err.detail : err instanceof Error ? err.message : String(err);
       log.error({ kind: opts.kind, detail }, 'pg_dump failed; no backup row written');
@@ -119,6 +128,7 @@ export async function createBackup(opts: CreateBackupOptions): Promise<BackupRes
       expectedRowCounts: rowCountsAtDump,
       bin,
       conn,
+      secureDir,
       tables,
     });
 
