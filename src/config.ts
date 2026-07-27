@@ -30,8 +30,8 @@ const RawSchema = z.object({
   // ap-hub works with WHATEVER LLM the operator has: a local runtime (Ollama /
   // LM Studio), any OpenAI-compatible API (LLM_BASE_URL), a cloud key, or — with
   // an explicit LLM_PROVIDER=claude|codex|gemini — a local CLI. No key is
-  // required at boot in ANY mode (including BROKER MODE below); the provider is
-  // resolved at extraction time (see src/llm/provider.ts, ExtractorNotConfiguredError).
+  // required at boot; the provider is resolved at extraction time (see
+  // src/llm/provider.ts, ExtractorNotConfiguredError).
   ANTHROPIC_API_KEY: z.string().default(''),
   OPENAI_API_KEY: z.string().default(''),
   LLM_PROVIDER: z.string().default('auto'), // auto | anthropic | openai | ollama | lmstudio | custom | claude | codex | gemini
@@ -70,20 +70,15 @@ const RawSchema = z.object({
 
   // --- SwarmSync proof suite (Amendment A1) ---
   // SwarmSync proof suite (InvoiceProof fraud scan · Verify-API notarization ·
-  // AuditProof anchoring) is OPTIONAL. Enabled by default (existing behavior).
+  // AuditProof anchoring) is OPTIONAL. Disabled by default (CHUNK_6: a fresh
+  // install makes zero calls to any hosted service until the operator opts in).
   // When disabled, no proof calls are made and invoices are capped at review.
   // Absence of a verifier is never treated as successful verification.
-  SWARMSYNC_ENABLED: boolish(true),
+  SWARMSYNC_ENABLED: boolish(false),
   SWARMSYNC_OFF_MODE: z.literal('review').default('review'),
   SWARMSYNC_API_BASE: z.string().url().default('https://api.swarmsync.ai'),
   SWARMSYNC_WEB_BASE: z.string().url().default('https://swarmsync.ai'),
   SWARMSYNC_API_KEY: z.string().default(''),
-
-  // --- Key broker (CHUNK_4): when BROKER_BASE_URL is set, ap-hub runs in BROKER
-  // MODE — Claude + SwarmSync(verify/proof) calls go through the broker, which
-  // holds the keys, and no ANTHROPIC/SWARMSYNC key need live on this machine.
-  BROKER_BASE_URL: z.string().url().optional(),
-  BROKER_INSTALL_TOKEN: z.string().default(''),
 
   // --- Phase 0.5 gatekeeper (proof-gated forwarding relay) ---
   GATEKEEPER_ENABLED: boolish(false),
@@ -170,20 +165,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     }
   }
 
-  // Broker URL, when set, must be https — except http://127.0.0.1 for local tests.
-  if (cfg.BROKER_BASE_URL) {
-    const isHttps = cfg.BROKER_BASE_URL.startsWith('https://');
-    const isLocalTest = cfg.BROKER_BASE_URL.startsWith('http://127.0.0.1');
-    if (!isHttps && !isLocalTest) {
-      throw new ConfigError(
-        `BROKER_BASE_URL must be https:// (or http://127.0.0.1 in tests); got "${cfg.BROKER_BASE_URL}".`,
-      );
-    }
-  }
-  // No boot-time key requirement outside broker mode: src/llm/provider.ts
-  // resolves a local runtime, an OpenAI-compatible endpoint, a cloud key, or an
-  // explicitly-chosen CLI at extraction time, and throws LlmNotConfiguredError
-  // (surfaced as a typed exceptions row, never a bare boot refusal) if none apply.
+  // No boot-time key requirement: src/llm/provider.ts resolves a local runtime,
+  // an OpenAI-compatible endpoint, a cloud key, or an explicitly-chosen CLI at
+  // extraction time, and throws LlmNotConfiguredError (surfaced as a typed
+  // exceptions row, never a bare boot refusal) if none apply.
 
   // QuickBooks Desktop, when enabled, needs a Web Connector password (the QBWC
   // login the operator sets when importing the .QWC). Write mode is a loud,

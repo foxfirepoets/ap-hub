@@ -89,10 +89,8 @@ function instructionFor(input: ExtractInput): string {
 }
 
 /**
- * Build the Anthropic Messages request for an extraction input. Shared by BOTH
- * the direct extractor (SDK) and the broker extractor (HTTP to the broker), so the
- * prompt + vision-content logic lives in exactly ONE place. The broker is a thin
- * passthrough that forwards this exact request with the key injected.
+ * Build the Anthropic Messages request for an extraction input. Kept as a single
+ * shared builder so the prompt + vision-content logic lives in exactly ONE place.
  */
 export function buildAnthropicRequest(
   input: ExtractInput,
@@ -243,50 +241,14 @@ export async function getAnthropicExtractor(apiKey: string, model = EXTRACTION_M
 }
 
 /**
- * Broker-mode extractor (CHUNK_4). Builds the SAME Anthropic request as the direct
- * path, then POSTs it to the broker's /v1/extract with the install token. The
- * broker injects Ben's key and relays the raw model response — so no Anthropic key
- * ever lives on the pilot machine. Any non-2xx from the broker (incl. its own 502
- * on an Anthropic failure) throws → the extract pipeline records an exception and
- * does NOT advance the proposal (fail-closed).
- */
-export function getBrokerExtractor(
-  brokerBaseUrl: string,
-  installToken: string,
-  fetchImpl: typeof fetch = globalThis.fetch,
-): Extractor {
-  const base = brokerBaseUrl.replace(/\/$/, '');
-  return {
-    async extract(input: ExtractInput): Promise<unknown> {
-      const req = buildAnthropicRequest(input);
-      const res = await fetchImpl(`${base}/v1/extract`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${installToken}` },
-        body: JSON.stringify(req),
-      });
-      if (!res.ok) {
-        throw new Error(`broker /v1/extract → ${res.status}`);
-      }
-      const body = await res.json();
-      return parseAnthropicMessageJson(body as any);
-    },
-  };
-}
-
-/**
- * Select the extractor from config, in priority order:
- *   1. Broker mode (BROKER_BASE_URL set) — keys live on the broker, white-label
- *      installs never need a local key at all.
- *   2. Provider-agnostic local resolution (src/llm/provider.ts): an explicit
- *      LLM_PROVIDER, a configured OpenAI-compatible endpoint, a running local
- *      runtime (Ollama/LM Studio), an Anthropic key, or an OpenAI key — in that
- *      order. Throws LlmNotConfiguredError if none apply; the caller (the pg-boss
- *      extract job) surfaces this as a typed exceptions row, never a silent skip.
+ * Select the extractor from config via provider-agnostic local resolution
+ * (src/llm/provider.ts): an explicit LLM_PROVIDER, a configured OpenAI-compatible
+ * endpoint, a running local runtime (Ollama/LM Studio), an Anthropic key, or an
+ * OpenAI key — in that order. Throws LlmNotConfiguredError if none apply; the
+ * caller (the pg-boss extract job) surfaces this as a typed exceptions row, never
+ * a silent skip.
  */
 export async function getExtractor(cfg: import('../config.js').Config): Promise<Extractor> {
-  if (cfg.BROKER_BASE_URL) {
-    return getBrokerExtractor(cfg.BROKER_BASE_URL, cfg.BROKER_INSTALL_TOKEN ?? '');
-  }
   const { resolveProvider } = await import('../llm/provider.js');
   const p = await resolveProvider(cfg);
   if (p.kind === 'anthropic') return getAnthropicExtractor(p.apiKey!, p.model);
