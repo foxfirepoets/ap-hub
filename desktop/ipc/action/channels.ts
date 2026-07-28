@@ -80,5 +80,7 @@ export const ACTION_CHANNELS = [
   // encrypted backup actions (CHUNK_7_BACKUP, owner only)
   'aphub:backup:create',
   'aphub:backup:restore',
+  'aphub:backup:restore-external',
   'aphub:backup:export',
+  'aphub:backup:repair',
 ] as const;

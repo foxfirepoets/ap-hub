@@ -380,10 +380,10 @@ export interface ClassificationReviewItem {
 }
 
 export interface BackupRecord {
-  id: number;
+  id: number | string;
   kind: string;
   createdAt: string;
-  sizeBytes: number;
+  sizeBytes: number | string;
   verifiedAt: string | null;
   externalCopy: string | null;
 }

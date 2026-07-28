@@ -11,7 +11,8 @@ import type pg from 'pg';
  *      backup is decrypted back out during verification. Equality proves the encrypt/decrypt
  *      round trip reproduced the exact dump bytes — not just "some file that decrypts".
  *   2. `captureRowCounts`: counts for a fixed set of tables that hold the user's actual AP
- *      history (messages, attachments, the attachment bytes themselves, proposals, postings).
+ *      history (messages, attachments, the attachment bytes themselves, proposals, postings,
+ *      audit_log, exceptions).
  *      Captured from the live database at dump time and re-derived from the RESTORED dump
  *      during verification (see `verify.ts`), so a match proves the dump is really restorable,
  *      not merely that the live database didn't change in between.
@@ -23,6 +24,8 @@ export const BACKUP_TABLES = [
   'attachment_blobs',
   'proposals',
   'postings',
+  'audit_log',
+  'exceptions',
 ] as const;
 
 /** sha256 of a file's bytes, streamed — no whole-file buffering. */

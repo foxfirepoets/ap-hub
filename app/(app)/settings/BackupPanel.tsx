@@ -7,6 +7,8 @@ import type { BackupRecord } from '../../lib/types';
 // CHUNK_7_BACKUP UI — HTTP-shaped paths mapped to aphub:backup:* via app/lib/ipc-routes.ts.
 const LIST_PATH = '/api/backup/list';
 const CREATE_PATH = '/api/backup/create';
+const RESTORE_EXTERNAL_PATH = '/api/backup/restore-external';
+const REPAIR_PATH = '/api/backup/repair';
 const RESTORE_CONFIRMATION = 'RESTORE';
 
 function formatWhen(iso: string): string {
@@ -21,10 +23,16 @@ function formatWhen(iso: string): string {
   return `${date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}, ${time}`;
 }
 
-function formatSize(bytes: number): string {
-  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+function formatSize(bytes: number | string): string {
+  const n = typeof bytes === 'number' ? bytes : Number(bytes);
+  if (!Number.isFinite(n) || n < 0) return '—';
+  if (n < 1024 * 1024) return `${Math.max(1, Math.round(n / 1024))} KB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+function asBackupId(id: number | string): number {
+  return typeof id === 'number' ? id : Number(id);
 }
 
 export function BackupPanel({ owner }: { owner: boolean }) {
@@ -33,9 +41,12 @@ export function BackupPanel({ owner }: { owner: boolean }) {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ kind: 'good' | 'bad'; text: string } | null>(null);
   const [creating, setCreating] = useState(false);
+  const [repairing, setRepairing] = useState(false);
   const [exportBusyId, setExportBusyId] = useState<number | null>(null);
   const [exportDestination, setExportDestination] = useState('');
+  const [externalRestorePath, setExternalRestorePath] = useState('');
   const [restoreTarget, setRestoreTarget] = useState<BackupRecord | null>(null);
+  const [restoreExternal, setRestoreExternal] = useState(false);
   const [restoreConfirmed, setRestoreConfirmed] = useState(false);
   const [restoreTyped, setRestoreTyped] = useState('');
   const [restoreBusy, setRestoreBusy] = useState(false);
@@ -62,13 +73,16 @@ export function BackupPanel({ owner }: { owner: boolean }) {
   async function backUpNow() {
     setCreating(true);
     setNotice(null);
-    const result = await apiPost<{ id: number }>(CREATE_PATH);
+    const result = await apiPost<{ id: number; verified?: boolean }>(CREATE_PATH);
     setCreating(false);
     if (result.ok) {
-      setNotice({ kind: 'good', text: 'Backup started. It will appear below once checked and readable.' });
+      setNotice({
+        kind: 'good',
+        text: 'Backup finished and checked. It is listed below as readable.',
+      });
       await load();
     } else {
-      setNotice({ kind: 'bad', text: result.error?.message ?? 'Could not start a backup. Try again.' });
+      setNotice({ kind: 'bad', text: result.error?.message ?? 'Could not finish a backup. Try again.' });
     }
   }
 
@@ -77,36 +91,75 @@ export function BackupPanel({ owner }: { owner: boolean }) {
       setNotice({ kind: 'bad', text: 'Choose a folder to export the backup to first.' });
       return;
     }
-    setExportBusyId(backup.id);
+    const id = asBackupId(backup.id);
+    setExportBusyId(id);
     setNotice(null);
-    const result = await apiPost<{ exported: boolean }>(`/api/backup/${backup.id}/export`, {
+    const result = await apiPost<{ exported: boolean; path?: string }>(`/api/backup/${id}/export`, {
       destination: exportDestination.trim(),
     });
     setExportBusyId(null);
     if (result.ok) {
-      setNotice({ kind: 'good', text: 'Backup exported. The key to open it still lives only on this computer.' });
+      setNotice({
+        kind: 'good',
+        text: 'Backup exported. The key to open it still lives only on this computer — keep this computer\'s secure storage, or you cannot restore later.',
+      });
+      await load();
     } else {
       setNotice({ kind: 'bad', text: result.error?.message ?? 'Export failed. The backup was not changed.' });
     }
   }
 
   async function confirmRestore() {
-    if (!restoreTarget) return;
     setRestoreBusy(true);
     setNotice(null);
-    const result = await apiPost<{ restored: boolean }>(`/api/backup/${restoreTarget.id}/restore`, {
-      backupId: restoreTarget.id,
-    });
+    const result = restoreExternal
+      ? await apiPost<{ restored: boolean }>(RESTORE_EXTERNAL_PATH, {
+          path: externalRestorePath.trim(),
+        })
+      : restoreTarget
+        ? await apiPost<{ restored: boolean }>(`/api/backup/${asBackupId(restoreTarget.id)}/restore`, {
+            backupId: asBackupId(restoreTarget.id),
+          })
+        : { ok: false as const, error: { message: 'Nothing selected to restore.' } };
     setRestoreBusy(false);
     if (result.ok) {
       setNotice({ kind: 'good', text: 'Restore complete. Your data now matches the selected backup.' });
       setRestoreTarget(null);
+      setRestoreExternal(false);
       setRestoreConfirmed(false);
       setRestoreTyped('');
       await load();
     } else {
-      setNotice({ kind: 'bad', text: result.error?.message ?? 'Restore failed. Your current data was not changed.' });
+      setNotice({
+        kind: 'bad',
+        text: result.error?.message ?? 'Restore failed. Your current data was not changed.',
+      });
     }
+  }
+
+  async function runRepair() {
+    setRepairing(true);
+    setNotice(null);
+    const result = await apiPost<{ repaired: boolean }>(REPAIR_PATH);
+    setRepairing(false);
+    if (result.ok) {
+      setNotice({ kind: 'good', text: 'Repair finished. Your data was not changed.' });
+      await load();
+    } else {
+      setNotice({ kind: 'bad', text: result.error?.message ?? 'Repair could not finish. Try again.' });
+    }
+  }
+
+  function openExternalRestore() {
+    if (!externalRestorePath.trim()) {
+      setNotice({ kind: 'bad', text: 'Choose the exported backup file first.' });
+      return;
+    }
+    setRestoreExternal(true);
+    setRestoreTarget(null);
+    setRestoreConfirmed(false);
+    setRestoreTyped('');
+    setNotice(null);
   }
 
   return (
@@ -150,6 +203,13 @@ export function BackupPanel({ owner }: { owner: boolean }) {
           >
             {creating ? 'Backing up…' : 'Back up now'}
           </button>
+          <button
+            disabled={repairing}
+            onClick={() => void runRepair()}
+            data-testid="backup-repair"
+          >
+            {repairing ? 'Repairing…' : 'Repair'}
+          </button>
         </div>
       ) : (
         <p className="muted">Only the account owner can start a backup, export, or restore.</p>
@@ -167,45 +227,51 @@ export function BackupPanel({ owner }: { owner: boolean }) {
             </tr>
           </thead>
           <tbody>
-            {backups.map((backup) => (
-              <tr key={backup.id} data-testid={`backup-row-${backup.id}`}>
-                <td>{formatWhen(backup.createdAt)}</td>
-                <td>{backup.kind.replaceAll('_', ' ')}</td>
-                <td>{formatSize(backup.sizeBytes)}</td>
-                <td>
-                  <span className={`badge ${backup.verifiedAt ? 'good' : 'warn'}`}>
-                    {backup.verifiedAt ? 'Checked and readable' : 'Not yet verified'}
-                  </span>
-                  {backup.externalCopy ? <span className="muted"> · also saved outside this computer</span> : null}
-                </td>
-                {owner ? (
+            {backups.map((backup) => {
+              const id = asBackupId(backup.id);
+              return (
+                <tr key={id} data-testid={`backup-row-${id}`}>
+                  <td>{formatWhen(backup.createdAt)}</td>
+                  <td>{backup.kind.replaceAll('_', ' ')}</td>
+                  <td>{formatSize(backup.sizeBytes)}</td>
                   <td>
-                    <div className="btn-row">
-                      <button
-                        disabled={!backup.verifiedAt || exportBusyId === backup.id}
-                        onClick={() => void exportBackup(backup)}
-                        data-testid={`backup-export-${backup.id}`}
-                      >
-                        {exportBusyId === backup.id ? 'Exporting…' : 'Export'}
-                      </button>
-                      <button
-                        className="danger"
-                        disabled={!backup.verifiedAt}
-                        onClick={() => {
-                          setRestoreTarget(backup);
-                          setRestoreConfirmed(false);
-                          setRestoreTyped('');
-                          setNotice(null);
-                        }}
-                        data-testid={`backup-restore-${backup.id}`}
-                      >
-                        Restore
-                      </button>
-                    </div>
+                    <span className={`badge ${backup.verifiedAt ? 'good' : 'warn'}`}>
+                      {backup.verifiedAt ? 'Checked and readable' : 'Not yet verified'}
+                    </span>
+                    {backup.externalCopy ? (
+                      <span className="muted"> · also saved outside this computer</span>
+                    ) : null}
                   </td>
-                ) : null}
-              </tr>
-            ))}
+                  {owner ? (
+                    <td>
+                      <div className="btn-row">
+                        <button
+                          disabled={!backup.verifiedAt || exportBusyId === id}
+                          onClick={() => void exportBackup(backup)}
+                          data-testid={`backup-export-${id}`}
+                        >
+                          {exportBusyId === id ? 'Exporting…' : 'Export'}
+                        </button>
+                        <button
+                          className="danger"
+                          disabled={!backup.verifiedAt}
+                          onClick={() => {
+                            setRestoreTarget(backup);
+                            setRestoreExternal(false);
+                            setRestoreConfirmed(false);
+                            setRestoreTyped('');
+                            setNotice(null);
+                          }}
+                          data-testid={`backup-restore-${id}`}
+                        >
+                          Restore
+                        </button>
+                      </div>
+                    </td>
+                  ) : null}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       ) : null}
@@ -223,9 +289,40 @@ export function BackupPanel({ owner }: { owner: boolean }) {
         </label>
       ) : null}
 
-      {restoreTarget ? (
+      {owner ? (
+        <div style={{ marginTop: 14 }}>
+          <label className="field-row">
+            <span>Restore from an exported backup file</span>
+            <input
+              type="text"
+              value={externalRestorePath}
+              onChange={(event) => setExternalRestorePath(event.target.value)}
+              placeholder="e.g. D:\AP-Hub Backups\aphub-backup-3.aphubbak"
+              data-testid="backup-external-path"
+            />
+          </label>
+          <div className="btn-row" style={{ marginTop: 8 }}>
+            <button
+              className="danger"
+              onClick={() => openExternalRestore()}
+              data-testid="backup-restore-external"
+            >
+              Restore from exported file…
+            </button>
+          </div>
+          <p className="muted" style={{ marginTop: 6 }}>
+            The key that unlocks the export still lives only on this computer's secure storage.
+          </p>
+        </div>
+      ) : null}
+
+      {restoreTarget || restoreExternal ? (
         <div className="panel" data-testid="backup-restore-confirm">
-          <strong>Restore from {formatWhen(restoreTarget.createdAt)}?</strong>
+          <strong>
+            {restoreExternal
+              ? 'Restore from the exported backup file?'
+              : `Restore from ${formatWhen(restoreTarget!.createdAt)}?`}
+          </strong>
           <p className="muted">
             This replaces all current data on this computer with this backup. Anything created or
             changed since then will be lost. This cannot be undone.
@@ -259,6 +356,7 @@ export function BackupPanel({ owner }: { owner: boolean }) {
               disabled={restoreBusy}
               onClick={() => {
                 setRestoreTarget(null);
+                setRestoreExternal(false);
                 setRestoreConfirmed(false);
                 setRestoreTyped('');
               }}

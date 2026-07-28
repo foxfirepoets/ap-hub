@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createSession } from '../src/auth/session.js';
 import { query } from '../src/db/pool.js';
-import { runListBackups, runRestoreBackup, runExportBackup } from '../src/backup/http.js';
+import { runListBackups, runRestoreBackup, runExportBackup, runRestoreExternalBackup, runCreateBackup, runRepairBackup } from '../src/backup/http.js';
 import { closeAll, createTenant, createUser, resetTables } from './helpers.js';
 
 /**
@@ -180,10 +180,109 @@ describe('CHUNK_7_BACKUP IPC bridge (src/backup/http.ts)', () => {
         destination,
       );
       expect(res.status).toBe(200);
-      const body = (await res.json()) as { data: { exported: boolean } };
+      const body = (await res.json()) as { data: { exported: boolean; path: string } };
       expect(body.data.exported).toBe(true);
+      expect(body.data.path).toBe(destination);
       expect(existsSync(destination)).toBe(true);
       expect(readFileSync(destination)).toEqual(cipherBytes);
+      expect(existsSync(`${destination}.meta.json`)).toBe(true);
+    });
+
+    it('when destination is a folder, writes aphub-backup-{id}.aphubbak inside it', async () => {
+      const source = join(tmpDir, 'folder-source.aphubbak');
+      writeFileSync(source, Buffer.from('folder-export-bytes'));
+      const backupId = await insertBackup({ path: source });
+      const folder = join(tmpDir, 'export-folder');
+      const token = await tokenFor(tenantId, 'owner_controller', 'owner-export-folder@example.com');
+
+      const res = await runExportBackup(
+        req(`/api/backup/${backupId}/export`, token, { method: 'POST' }),
+        backupId,
+        folder,
+      );
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { data: { path: string } };
+      expect(body.data.path).toBe(join(folder, `aphub-backup-${backupId}.aphubbak`));
+      expect(existsSync(body.data.path)).toBe(true);
+      expect(existsSync(`${body.data.path}.meta.json`)).toBe(true);
+    });
+
+    it('refuses to export an unverified backup', async () => {
+      const source = join(tmpDir, 'unverified.aphubbak');
+      writeFileSync(source, Buffer.from('x'));
+      const backupId = await insertBackup({ path: source, verified: false });
+      const token = await tokenFor(tenantId, 'owner_controller', 'owner-export-unverified@example.com');
+      const res = await runExportBackup(
+        req(`/api/backup/${backupId}/export`, token, { method: 'POST' }),
+        backupId,
+        join(tmpDir, 'nope.aphubbak'),
+      );
+      expect(res.status).toBe(404);
+    });
+  });
+
+  describe('runCreateBackup auth', () => {
+    it('401 UNAUTHENTICATED with no session', async () => {
+      const res = await runCreateBackup(req('/api/backup/create', null, { method: 'POST' }));
+      expect(res.status).toBe(401);
+    });
+
+    it('403 FORBIDDEN for bookkeeper and cpa', async () => {
+      for (const role of ['bookkeeper', 'cpa']) {
+        const token = await tokenFor(tenantId, role, `${role}-create@example.com`);
+        const res = await runCreateBackup(req('/api/backup/create', token, { method: 'POST' }));
+        expect(res.status).toBe(403);
+      }
+    });
+  });
+
+  describe('runRestoreExternalBackup auth', () => {
+    it('401 UNAUTHENTICATED with no session', async () => {
+      const res = await runRestoreExternalBackup(
+        req('/api/backup/restore-external', null, { method: 'POST' }),
+        join(tmpDir, 'missing.aphubbak'),
+      );
+      expect(res.status).toBe(401);
+    });
+
+    it('403 FORBIDDEN for bookkeeper and cpa', async () => {
+      for (const role of ['bookkeeper', 'cpa']) {
+        const token = await tokenFor(tenantId, role, `${role}-ext@example.com`);
+        const res = await runRestoreExternalBackup(
+          req('/api/backup/restore-external', token, { method: 'POST' }),
+          join(tmpDir, 'missing.aphubbak'),
+        );
+        expect(res.status).toBe(403);
+      }
+    });
+
+    it('404 when the exported file or sidecar is missing', async () => {
+      const token = await tokenFor(tenantId, 'owner_controller', 'owner-ext-missing@example.com');
+      const res = await runRestoreExternalBackup(
+        req('/api/backup/restore-external', token, { method: 'POST' }),
+        join(tmpDir, 'does-not-exist.aphubbak'),
+      );
+      expect(res.status).toBe(404);
+    });
+  });
+
+  // --- runRepairBackup ---------------------------------------------------------------------
+  // The repair logic itself (schema-to-head, referential integrity, install linkage, never
+  // touching a user-data table) is proven at the module level by test/backup-repair.int.test.ts;
+  // this bridge only adds owner-only gating on top of `runRepair()`.
+
+  describe('runRepairBackup', () => {
+    it('401 UNAUTHENTICATED with no session', async () => {
+      const res = await runRepairBackup(req('/api/backup/repair', null, { method: 'POST' }));
+      expect(res.status).toBe(401);
+    });
+
+    it('403 FORBIDDEN for bookkeeper and cpa', async () => {
+      for (const role of ['bookkeeper', 'cpa']) {
+        const token = await tokenFor(tenantId, role, `${role}-repair@example.com`);
+        const res = await runRepairBackup(req('/api/backup/repair', token, { method: 'POST' }));
+        expect(res.status).toBe(403);
+      }
     });
   });
 });

@@ -9,7 +9,18 @@
  * `./security.js`, which the validation gate asserts directly. This file is wiring.
  */
 
-import { app, BrowserWindow, Menu, Tray, ipcMain, protocol, shell, session, nativeImage } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  Menu,
+  Tray,
+  ipcMain,
+  protocol,
+  shell,
+  session,
+  nativeImage,
+  Notification,
+} from 'electron';
 import { statSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
@@ -30,6 +41,10 @@ import { ACTION_ENTRIES } from './ipc/action/index.js';
 import { createHostAdapter } from '../src/host/index.js';
 import { initializeTokenCredentialAuthority } from '../src/auth/tokens.js';
 import { configureConnectFlowHost } from '../src/auth/connect-loopback.js';
+import { config, resetConfigCache } from '../src/config.js';
+import { startQueue, stopQueue } from '../src/queue.js';
+import { registerPipelineJobs } from '../src/pipeline/register.js';
+import { setBackupFailureAlerter } from '../src/backup/alerts.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -349,6 +364,22 @@ async function startDatabaseSupervised(): Promise<void> {
       store: createHostAdapter().secretStore,
       installId: database.install.installId,
     });
+    // Nightly backup + the accounting pipeline jobs must run inside the packaged app,
+    // not only under `npm run dev` (`src/index.ts`). Session secret is already in env
+    // from `establishLocalIdentity`, so `config()` can load. Install id binds credential
+    // custody the same way the engine boot path does.
+    process.env.APHUB_INSTALL_ID = database.install.installId;
+    resetConfigCache();
+    setBackupFailureAlerter((message) => {
+      try {
+        if (!Notification.isSupported()) return;
+        new Notification({ title: 'AP-Hub', body: message }).show();
+      } catch {
+        // Notification failure must never block backup work.
+      }
+    });
+    const boss = await startQueue(database.connectionString);
+    await registerPipelineJobs(boss, config());
     databaseProblem = null;
     setEngineState('running');
   } catch (err) {
@@ -383,6 +414,12 @@ async function stopDatabase(): Promise<void> {
   database = null;
   if (running === null) return;
   try {
+    setBackupFailureAlerter(null);
+    /**
+     * Stop pg-boss workers before closing the pool — otherwise in-flight jobs hold
+     * connections open and quit can hang past the single-instance lock release.
+     */
+    await Promise.race([stopQueue(), new Promise((resolve) => setTimeout(resolve, 10_000))]);
     /**
      * Close this process's own query pool first. CHUNK_4_IDENTITY's local sign-in is the
      * first thing in the main process to ever open one (`src/db/pool.ts`'s `getPool()`

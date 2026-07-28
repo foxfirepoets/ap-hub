@@ -29,6 +29,9 @@ import {
   type StartedLocalDatabase,
 } from '../src/db/local-database.js';
 import { migrateUp } from '../src/db/migrate.js';
+import { createBackup } from '../src/backup/create.js';
+import { alertBackupFailure } from '../src/backup/alerts.js';
+import { withBackupLock } from '../src/backup/lock.js';
 
 /** This file's own build output directory: `<root>/dist-desktop` in a checkout. */
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -116,6 +119,46 @@ export interface StartDatabaseOptions {
 }
 
 /**
+ * The pre-migration half of R1 (spec: "pre-migration ... backups run"). Wired as
+ * `migrateUp`'s `onBeforeMigrating` hook, so it only fires when an EXISTING install (one with
+ * data worth protecting) is about to have its schema changed — never on the very first launch,
+ * and never on a launch with nothing pending. Best-effort by design (`migrate.ts` swallows a
+ * throw here and proceeds with the migration regardless): refusing to update because a safety
+ * backup could not be taken would leave the user stuck on a broken app version, which is worse
+ * than the migration proceeding without one.
+ */
+async function runPreMigrationBackup(
+  connectionString: string,
+  host: HostAdapter,
+  binDir: string,
+  dataRoot: string,
+): Promise<void> {
+  const url = new URL(connectionString);
+  const result = await withBackupLock(() =>
+    createBackup({
+      kind: 'pre_migration',
+      connection: {
+        host: url.hostname,
+        port: Number(url.port || 5432),
+        user: decodeURIComponent(url.username),
+        password: decodeURIComponent(url.password),
+        database: decodeURIComponent(url.pathname.replace(/^\//, '')),
+      },
+      pgBinDir: binDir,
+      exeSuffix: host.exeSuffix,
+      backupDir: join(dataRoot, 'backups'),
+      restrictToCurrentUser: host.fsPermissions.restrictToCurrentUser,
+      secretStore: host.secretStore,
+    }),
+  );
+  if (!result.verified) {
+    alertBackupFailure(
+      'AP-Hub is updating your data and made a safety backup first, but could not confirm it is readable.',
+    );
+  }
+}
+
+/**
  * Bring the private database up for this install. Called once, during `whenReady`, before
  * the engine and before the window claims to be usable.
  */
@@ -164,6 +207,7 @@ export async function startDatabase(opts: StartDatabaseOptions = {}): Promise<St
    */
   process.env.APHUB_PG_BIN_DIR = binDir;
   process.env.APHUB_BACKUP_DIR = join(dataRoot, 'backups');
+  process.env.APHUB_MIGRATIONS_DIR = dir;
 
   return startLocalDatabase({
     binDir,
@@ -175,7 +219,10 @@ export async function startDatabase(opts: StartDatabaseOptions = {}): Promise<St
     appVersion: opts.appVersion ?? app.getVersion(),
     osAccountId: await host.osAccountId(),
     secretStore: host.secretStore,
-    migrate: (connectionString) => migrateUp(connectionString, dir),
+    migrate: (connectionString) =>
+      migrateUp(connectionString, dir, {
+        onBeforeMigrating: () => runPreMigrationBackup(connectionString, host, binDir, dataRoot),
+      }),
   });
 }
 
