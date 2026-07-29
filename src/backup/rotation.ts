@@ -183,7 +183,7 @@ export async function backupNightlyHandler(): Promise<void> {
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
     log.error('backup_nightly skipped — DATABASE_URL is not set');
-    alertBackupFailure('AP-Hub could not run the nightly backup — the private database was not ready.');
+    alertBackupFailure('BookScout OS could not run the nightly backup — the private database was not ready.');
     return;
   }
   const url = new URL(databaseUrl);
@@ -213,7 +213,7 @@ export async function backupNightlyHandler(): Promise<void> {
       if (!result.verified) {
         log.error({ backupId: result.backupId, reason: result.reason }, 'nightly backup failed verification');
         alertBackupFailure(
-          'AP-Hub made a backup copy but could not confirm it is readable. It was not counted as a usable backup.',
+          'BookScout OS made a backup copy but could not confirm it is readable. It was not counted as a usable backup.',
         );
         return; // never prune when the new copy did not verify
       }
@@ -222,7 +222,7 @@ export async function backupNightlyHandler(): Promise<void> {
     });
   } catch (err) {
     log.error({ err: String(err) }, 'nightly backup creation failed; rotation skipped this cycle');
-    alertBackupFailure('AP-Hub could not create tonight\'s backup. Your older verified backups were left alone.');
+    alertBackupFailure('BookScout OS could not create tonight\'s backup. Your older verified backups were left alone.');
   }
 }
 

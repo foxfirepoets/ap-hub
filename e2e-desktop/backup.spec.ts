@@ -6,7 +6,7 @@ import { launch, stub, stubMe, OWNER } from './support/stub';
  * window, a real IPC bridge, a real renderer. `src/backup/*` and `src/backup/http.ts`'s own
  * logic is already proven at the unit/integration layer (`test/backup-*.test.ts`); what had NO
  * coverage anywhere was the one thing the spec's own most safety-critical bullet asks for —
- * "restore from the AP-Hub UI in one confirmation" — actually reachable and correct through the
+ * "restore from the BookScout OS UI in one confirmation" — actually reachable and correct through the
  * real Settings panel, not just through calling `restoreBackup()` directly inside Vitest.
  *
  * Every `aphub:backup:*` channel is stubbed here (mirroring `settings.spec.ts`'s technique):
@@ -64,7 +64,7 @@ test.describe('Settings — backup panel', () => {
       ok: false,
       status: 500,
       code: 'BACKUP_FAILED',
-      message: 'AP-Hub made a backup copy but could not confirm it is readable. It was not counted.',
+      message: 'BookScout OS made a backup copy but could not confirm it is readable. It was not counted.',
     });
 
     await win.getByTestId('backup-now').click();
@@ -112,7 +112,7 @@ test.describe('Settings — backup panel', () => {
       ok: false,
       status: 500,
       code: 'RESTORE_FAILED',
-      message: 'AP-Hub could not restore that backup. Your current data was not changed.',
+      message: 'BookScout OS could not restore that backup. Your current data was not changed.',
     });
 
     await win.getByTestId('backup-restore-1').click();

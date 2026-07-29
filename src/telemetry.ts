@@ -1,6 +1,6 @@
 /**
  * Liveness telemetry (CHUNK_6: hosted-dependency removal). There is no hosted
- * AP-Hub URL to report to, so this is a local-only no-op: it never makes a
+ * BookScout OS URL to report to, so this is a local-only no-op: it never makes a
  * network call and never throws. Kept as a stable call site (rather than
  * deleted outright) so any future local-only liveness logging has a home
  * without touching every caller.

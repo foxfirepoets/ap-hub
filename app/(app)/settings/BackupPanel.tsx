@@ -283,7 +283,7 @@ export function BackupPanel({ owner }: { owner: boolean }) {
             type="text"
             value={exportDestination}
             onChange={(event) => setExportDestination(event.target.value)}
-            placeholder="e.g. D:\AP-Hub Backups"
+            placeholder="e.g. D:\BookScout OS Backups"
             data-testid="backup-export-destination"
           />
         </label>
@@ -297,7 +297,7 @@ export function BackupPanel({ owner }: { owner: boolean }) {
               type="text"
               value={externalRestorePath}
               onChange={(event) => setExternalRestorePath(event.target.value)}
-              placeholder="e.g. D:\AP-Hub Backups\aphub-backup-3.aphubbak"
+              placeholder="e.g. D:\BookScout OS Backups\aphub-backup-3.aphubbak"
               data-testid="backup-external-path"
             />
           </label>

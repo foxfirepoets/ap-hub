@@ -169,7 +169,7 @@ describe('tray_speaks_plain_language (spec §16, CLAUDE.md)', () => {
       expect(label.length).toBeGreaterThan(0);
       // A label must not simply echo the machine state back at the user.
       expect(label.toLowerCase()).not.toBe(state);
-      expect(label).toMatch(/^AP-Hub /);
+      expect(label).toMatch(/^BookScout OS /);
     }
   });
 

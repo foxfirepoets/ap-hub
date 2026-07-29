@@ -76,7 +76,7 @@ test('an unregistered channel is refused without leaking the channel name', asyn
   expect(res.ok).toBe(false);
   expect(res.message).not.toContain('aphub:secrets:read');
   // Plain language, no code echoed to the user.
-  expect(res.message).toBe('AP-Hub could not complete that action.');
+  expect(res.message).toBe('BookScout OS could not complete that action.');
 });
 
 test('the renderer cannot widen the bridge by mutating it', async () => {

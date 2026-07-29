@@ -2,16 +2,44 @@
 
 **Current Iteration:** 1
 
-Current chunk: CHUNK_7_BACKUP
-Current task: Wave 1 complete (backup core, CHUNK_4-deferred identity-ordering fix, pgpass ACL
-hardening) — Wave 2 next (rotation, restore, repair mode, IPC channels + Settings UI panel,
-destroy-and-restore-drill integration test). CHUNK_7 is P0 and NOT yet complete — no promise line.
-Merge commits `591b2b2`, `6127254`, `26a0665` on `feat/local-desktop-p1`, pushed. A real BLOCKING
-Kraken finding (pgpass temp file lacked real Windows ACL protection, only a cosmetic mode bit) was
-found and fixed within this session — see `.ralph/progress.md` 2026-07-27 CHUNK_7_BACKUP Wave 1
-entry for full detail. Independently re-verified, real exit codes: lint:0 noleak:0 typecheck:0
-test:0 (82 files/1669 tests) web:build:0 desktop:build:0 playwright:0 (48/48, 0 skipped), plus all
-4 `.int.test.ts` integration files (11/11).
+Current chunk: CHUNK_10_XERO_CONNECTOR — COMPLETE (spec: `specs/10_CHUNK_10_XERO_CONNECTOR.md`)
+Current task: 8 of 8 done. `npm run verify` green end to end (86/86 test files, 1812/1812 tests,
+web:build, 54/54 Playwright desktop e2e). See `.ralph/progress.md`'s 2026-07-29 entry for full
+detail and `<promise>CHUNK COMPLETE: CHUNK_10_XERO_CONNECTOR</promise>` in `IMPLEMENTATION_PLAN.md`.
+Status: DONE. Not committed/pushed per standing instruction — left for operator review.
+
+**GUARDRAIL CONFLICT — RESOLVED (2026-07-29):** generalizing `postSandboxHandler` off the
+hardcoded `getQboConnector` import broke one literal-string assertion in the protected safety test
+`architecture-connector-path.test.ts:31`. Owner explicitly approved option (a): the assertion now
+checks for `getConnectorForProvider` instead of `getQboConnector`, matching the test's own stated
+doc-comment intent. Re-ran `architecture-connector-path.test.ts` standalone post-edit: 4/4 pass.
+Full detail of the original conflict remains in `.ralph/errors.log`.
+
+**2026-07-28 pointer update:** CHUNK_7_BACKUP (previously shown here as "NOT yet complete") is
+now confirmed complete — its Wave 2 gaps (repair mode unreachable, pre-migration backup never
+firing, a restore-external phantom-verified-row defect, and a concurrency race in the backup
+encryption key) were found and fixed in a separate 2026-07-28 session (fresh-context adversarial
+audit + failure-mode audit), independently verified (86 test files / full suite green, full
+Playwright including a new backup e2e spec, all 5 named safety tests unmodified), and pushed to
+`origin/main` as commit `002ab56`. See `AUDIT-adversarial-chunk7-2026-07-28.md` and
+`AUDIT-fma-chunk7-2026-07-28.md` at the repo root for full detail — that work happened outside
+this ralph-loop's own tracking, which is why it isn't in the History section below.
+
+**CHUNK_8_SUPERVISION and CHUNK_9_PACKAGE status is genuinely unknown from this state file** —
+last recorded activity here predates any work on them. **This run is scoped to CHUNK_10 only**,
+per explicit operator instruction — CHUNK_8/9 are deferred, not abandoned; do not silently start
+them under this state pointer. Original text below (now superseded but preserved, not deleted):
+
+~~Current chunk: CHUNK_7_BACKUP~~
+~~Current task: Wave 1 complete (backup core, CHUNK_4-deferred identity-ordering fix, pgpass ACL~~
+~~hardening) — Wave 2 next (rotation, restore, repair mode, IPC channels + Settings UI panel,~~
+~~destroy-and-restore-drill integration test). CHUNK_7 is P0 and NOT yet complete — no promise line.~~
+~~Merge commits `591b2b2`, `6127254`, `26a0665` on `feat/local-desktop-p1`, pushed. A real BLOCKING~~
+~~Kraken finding (pgpass temp file lacked real Windows ACL protection, only a cosmetic mode bit) was~~
+~~found and fixed within this session — see `.ralph/progress.md` 2026-07-27 CHUNK_7_BACKUP Wave 1~~
+~~entry for full detail. Independently re-verified, real exit codes: lint:0 noleak:0 typecheck:0~~
+~~test:0 (82 files/1669 tests) web:build:0 desktop:build:0 playwright:0 (48/48, 0 skipped), plus all~~
+~~4 `.int.test.ts` integration files (11/11).~~
 
 Last completed: **CHUNK_6_CLEANUP — complete and CLOSED 2026-07-27.** Merge commits `359cf56`
 (hosted-key-broker removal), `3e0f2c9` (exhaustive onboarding error mapping), `808cc08`

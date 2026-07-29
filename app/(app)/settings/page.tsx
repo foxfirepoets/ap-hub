@@ -69,7 +69,7 @@ export default function SettingsPage() {
 
       <div className="panel">
         <h2>Connected accounts</h2>
-        <p className="muted">Sign in to Gmail or QuickBooks Online in your own browser — AP-Hub never asks for a password.</p>
+        <p className="muted">Sign in to Gmail or QuickBooks Online in your own browser — BookScout OS never asks for a password.</p>
         <ConnectAccounts owner={owner} />
       </div>
 

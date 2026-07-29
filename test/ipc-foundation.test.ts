@@ -189,7 +189,7 @@ describe('registry rejects an unsafe channel definition at import time', () => {
         ...base,
         request: strict({ replyId: entityId }).superRefine((value, ctx) => {
           if (Object.prototype.hasOwnProperty.call(value, 'to')) {
-            ctx.addIssue({ code: 'custom', message: 'AP-Hub cannot change who a reply goes to.' });
+            ctx.addIssue({ code: 'custom', message: 'BookScout OS cannot change who a reply goes to.' });
           }
         }),
         bodyKeys: ['replyId'],

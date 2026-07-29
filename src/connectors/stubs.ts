@@ -1,12 +1,13 @@
 /**
- * Capability-declaring stub adapters for Xero / Sage Intacct plus the historical
- * QBD contract fixture retained for provider-neutral contract tests.
+ * Capability-declaring stub adapter for Sage Intacct plus the historical QBD contract
+ * fixture retained for provider-neutral contract tests.
  *
  * Phase 1A builds NO logic for these providers. Each declares its capability matrix
  * (so the platform can reason about it) but throws `NotImplementedInPhase` on any
  * read/create/readBack/verify/attach. This is what lets the seam exist without
  * pretending the providers work. Active QBD runtime logic lives in `connectors/qbd.ts`;
- * Xero and Sage Intacct remain explicitly out of the supported product surface.
+ * Xero has a real implementation in `connectors/xero.ts` (CHUNK_10) — Sage Intacct
+ * remains explicitly out of the supported product surface.
  */
 
 import type { CanonicalEntityKind, CanonicalRecord, Unsupported } from '../canonical/model.js';
@@ -60,22 +61,6 @@ function makeStub(provider: ProviderId, connectionClass: ConnectionClass, caps: 
     },
     close: async () => {},
   };
-}
-
-export function createXeroConnector(): AccountingConnector {
-  return makeStub('xero', 'cloud', {
-    read: ['vendor', 'account', 'bill'],
-    write: ['bill'],
-    attachments: true,
-    purchaseOrders: true,
-    itemReceipts: false,
-    dimensions: ['tracking_category'], // max 2 active per org (line-level)
-    multiCurrency: true,
-    multiEntity: false,
-    changeFeed: 'webhook',
-    idempotency: 'native', // Idempotency-Key header
-    unsupported: [],
-  });
 }
 
 export function createSageIntacctConnector(): AccountingConnector {

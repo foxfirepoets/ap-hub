@@ -113,7 +113,7 @@ describeIf('bundled PostgreSQL — real cluster', () => {
 
   it('leaves any PostgreSQL already listening on 5432 completely untouched', async () => {
     // This machine runs a system instance on 5432. The guarantee is not "we avoid the port"
-    // but "we never speak to it": if AP-Hub had connected, stopped or re-initialised it, the
+    // but "we never speak to it": if BookScout OS had connected, stopped or re-initialised it, the
     // instance would not still be answering here on its own credentials.
     const occupiedBefore = !(await isPortFree(5432));
     const started = await startLocalDatabase(opts());

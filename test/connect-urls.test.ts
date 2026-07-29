@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { config } from '../src/config.js';
-import { buildGmailAuthorizeUrl, buildQboAuthorizeUrl } from '../src/auth/connect-urls.js';
+import { buildGmailAuthorizeUrl, buildQboAuthorizeUrl, isProviderConfigured } from '../src/auth/connect-urls.js';
 
 /**
  * CHUNK_4_STARTROUTES — the shared authorize-URL builders used by both the CLI's
@@ -42,5 +42,32 @@ describe('buildQboAuthorizeUrl', () => {
     expect(url.searchParams.get('scope')).toBe('com.intuit.quickbooks.accounting');
     expect(url.searchParams.get('state')).toBe(state);
 
+  });
+});
+
+describe('isProviderConfigured', () => {
+  it('is false for gmail when either half of the credential pair is blank', () => {
+    const base = config();
+    expect(isProviderConfigured({ ...base, GMAIL_CLIENT_ID: '', GMAIL_CLIENT_SECRET: 'x' }, 'gmail')).toBe(false);
+    expect(isProviderConfigured({ ...base, GMAIL_CLIENT_ID: 'x', GMAIL_CLIENT_SECRET: '' }, 'gmail')).toBe(false);
+    expect(isProviderConfigured({ ...base, GMAIL_CLIENT_ID: '  ', GMAIL_CLIENT_SECRET: 'x' }, 'gmail')).toBe(false);
+  });
+
+  it('is true for gmail only once both are non-blank', () => {
+    const cfg = { ...config(), GMAIL_CLIENT_ID: 'a-real-id', GMAIL_CLIENT_SECRET: 'a-real-secret' };
+    expect(isProviderConfigured(cfg, 'gmail')).toBe(true);
+  });
+
+  it('checks the QBO pair matching the active QBO_ENV, not the other one', () => {
+    const sandboxOnly = {
+      ...config(),
+      QBO_ENV: 'sandbox' as const,
+      QBO_SANDBOX_CLIENT_ID: 'sandbox-id',
+      QBO_SANDBOX_CLIENT_SECRET: 'sandbox-secret',
+      QBO_PRODUCTION_CLIENT_ID: '',
+      QBO_PRODUCTION_CLIENT_SECRET: '',
+    };
+    expect(isProviderConfigured(sandboxOnly, 'qbo')).toBe(true);
+    expect(isProviderConfigured({ ...sandboxOnly, QBO_ENV: 'production' as const }, 'qbo')).toBe(false);
   });
 });

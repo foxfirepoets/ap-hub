@@ -1,7 +1,7 @@
 /**
  * Provider-neutral canonical AP model (CHUNK_5).
  *
- * This module is AP-Hub Core and MUST NOT contain any provider- or OS-specific
+ * This module is BookScout OS Core and MUST NOT contain any provider- or OS-specific
  * identifier — enforced by `npm run lint:noleak`. Dimensions are an extensible list
  * (never fixed columns) so a dimension-rich provider does not break the model. Money
  * is carried as a string (NUMERIC read-as-string rule); compare with tolerance.

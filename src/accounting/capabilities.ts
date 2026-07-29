@@ -88,7 +88,7 @@ function supported(
 }
 
 /**
- * Executable product truth for the QuickBooks surfaces AP Hub can actually use.
+ * Executable product truth for the QuickBooks surfaces BookScout OS can actually use.
  * Unknown products fail closed and always include an operator-facing remediation.
  */
 export function assessProviderCapabilities(input: ConnectionCapabilityInput): CapabilityAssessment {
@@ -138,7 +138,7 @@ export function assessProviderCapabilities(input: ConnectionCapabilityInput): Ca
       );
     }
     return supported('qbd', edition, QBD_UNSUPPORTED_FIELDS, {
-      attach: 'QuickBooks Desktop bill attachment is not certified; retain the source evidence in AP Hub.',
+      attach: 'QuickBooks Desktop bill attachment is not certified; retain the source evidence in BookScout OS.',
     });
   }
 

@@ -65,7 +65,7 @@ export const dimensionMappingsEntries: readonly RegistryEntry[] = [
         }),
       ),
     }),
-    validationMessage: 'AP-Hub could not load the dimension mapping review queue.',
+    validationMessage: 'BookScout OS could not load the dimension mapping review queue.',
     invoke: (request) => runListDimensionMappings(request),
   }),
 ];

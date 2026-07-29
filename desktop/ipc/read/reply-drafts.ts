@@ -36,7 +36,7 @@ export const replyDraftsEntries: readonly RegistryEntry[] = [
       updatedAt: z.string(),
       sendControl: z.literal('human_in_gmail'),
     }),
-    validationMessage: 'AP-Hub could not find a reply draft for that email.',
+    validationMessage: 'BookScout OS could not find a reply draft for that email.',
     invoke: (request) => runReadReplyDraft(request),
   }),
 ];

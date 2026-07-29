@@ -122,7 +122,7 @@ export async function runListBackups(request: Request): Promise<Response> {
       })),
     );
   } catch {
-    return errorResponse('BACKUP_FAILED', 'AP-Hub could not load your backup history.', 500);
+    return errorResponse('BACKUP_FAILED', 'BookScout OS could not load your backup history.', 500);
   }
 }
 
@@ -136,7 +136,7 @@ export async function runCreateBackup(request: Request): Promise<Response> {
   }
 
   const conn = resolveConnection();
-  if (!conn) return errorResponse('BACKUP_FAILED', 'AP-Hub could not reach its database to back up.', 500);
+  if (!conn) return errorResponse('BACKUP_FAILED', 'BookScout OS could not reach its database to back up.', 500);
 
   const host = createHostAdapter();
   const dataRoot = host.dataDir();
@@ -154,11 +154,11 @@ export async function runCreateBackup(request: Request): Promise<Response> {
     );
     if (!result.verified) {
       alertBackupFailure(
-        'AP-Hub made a backup copy but could not confirm it is readable. It was not counted as a usable backup.',
+        'BookScout OS made a backup copy but could not confirm it is readable. It was not counted as a usable backup.',
       );
       return errorResponse(
         'BACKUP_FAILED',
-        'AP-Hub made a backup copy but could not confirm it is readable. It was not counted.',
+        'BookScout OS made a backup copy but could not confirm it is readable. It was not counted.',
         500,
       );
     }
@@ -170,18 +170,18 @@ export async function runCreateBackup(request: Request): Promise<Response> {
   } catch (err) {
     if (err instanceof BackupCreateFailed) {
       if (isDiskFullError(err) || /disk|ENOSPC|no space/i.test(err.message + (err.detail ?? ''))) {
-        alertBackupFailure('AP-Hub paused: your disk is full. Free up space and try again.');
-        return errorResponse('DISK_FULL', 'AP-Hub paused: your disk is full. Free up space and try again.', 507);
+        alertBackupFailure('BookScout OS paused: your disk is full. Free up space and try again.');
+        return errorResponse('DISK_FULL', 'BookScout OS paused: your disk is full. Free up space and try again.', 507);
       }
-      alertBackupFailure('AP-Hub could not create a backup.');
-      return errorResponse('BACKUP_FAILED', 'AP-Hub could not create a backup.', 500);
+      alertBackupFailure('BookScout OS could not create a backup.');
+      return errorResponse('BACKUP_FAILED', 'BookScout OS could not create a backup.', 500);
     }
     if (isDiskFullError(err)) {
-      alertBackupFailure('AP-Hub paused: your disk is full. Free up space and try again.');
-      return errorResponse('DISK_FULL', 'AP-Hub paused: your disk is full. Free up space and try again.', 507);
+      alertBackupFailure('BookScout OS paused: your disk is full. Free up space and try again.');
+      return errorResponse('DISK_FULL', 'BookScout OS paused: your disk is full. Free up space and try again.', 507);
     }
-    alertBackupFailure('AP-Hub could not create a backup.');
-    return errorResponse('BACKUP_FAILED', 'AP-Hub could not create a backup.', 500);
+    alertBackupFailure('BookScout OS could not create a backup.');
+    return errorResponse('BACKUP_FAILED', 'BookScout OS could not create a backup.', 500);
   }
 }
 
@@ -203,11 +203,11 @@ export async function runRestoreBackup(request: Request, backupId: number): Prom
     const { rows } = await poolQuery<{ id: number }>('SELECT id FROM backups WHERE id = $1', [backupId]);
     if (!rows[0]) return errorResponse('NOT_FOUND', 'That backup could not be found.', 404);
   } catch {
-    return errorResponse('RESTORE_FAILED', 'AP-Hub could not reach its database to restore.', 500);
+    return errorResponse('RESTORE_FAILED', 'BookScout OS could not reach its database to restore.', 500);
   }
 
   const conn = resolveConnection();
-  if (!conn) return errorResponse('RESTORE_FAILED', 'AP-Hub could not reach its database to restore.', 500);
+  if (!conn) return errorResponse('RESTORE_FAILED', 'BookScout OS could not reach its database to restore.', 500);
 
   const host = createHostAdapter();
   const dataRoot = host.dataDir();
@@ -227,22 +227,22 @@ export async function runRestoreBackup(request: Request, backupId: number): Prom
     return jsonResponse({ restored: true, rowCounts: result.rowCounts });
   } catch (err) {
     if (err instanceof BackupKeyMissing) {
-      alertBackupFailure('AP-Hub could not restore: the backup key is missing from this computer’s secure storage.');
+      alertBackupFailure('BookScout OS could not restore: the backup key is missing from this computer’s secure storage.');
       return errorResponse('BACKUP_KEY_MISSING', err.message, 409);
     }
     if (err instanceof RestoreFailed) {
       if (/no backup found|never verified/.test(err.message)) {
         return errorResponse('NOT_FOUND', 'That backup could not be found.', 404);
       }
-      alertBackupFailure('AP-Hub could not restore that backup. Your current data was not changed.');
+      alertBackupFailure('BookScout OS could not restore that backup. Your current data was not changed.');
       return errorResponse('RESTORE_FAILED', err.message, 500);
     }
     if (isDiskFullError(err)) {
-      alertBackupFailure('AP-Hub paused: your disk is full. Free up space and try again.');
-      return errorResponse('DISK_FULL', 'AP-Hub paused: your disk is full. Free up space and try again.', 507);
+      alertBackupFailure('BookScout OS paused: your disk is full. Free up space and try again.');
+      return errorResponse('DISK_FULL', 'BookScout OS paused: your disk is full. Free up space and try again.', 507);
     }
-    alertBackupFailure('AP-Hub could not restore that backup. Your current data was not changed.');
-    return errorResponse('RESTORE_FAILED', 'AP-Hub could not restore that backup. Your current data was not changed.', 500);
+    alertBackupFailure('BookScout OS could not restore that backup. Your current data was not changed.');
+    return errorResponse('RESTORE_FAILED', 'BookScout OS could not restore that backup. Your current data was not changed.', 500);
   }
 }
 
@@ -290,12 +290,12 @@ export async function runExportBackup(request: Request, backupId: number, destin
     return jsonResponse({ exported: true, path: outFile });
   } catch (err) {
     if (isDiskFullError(err)) {
-      return errorResponse('DISK_FULL', 'AP-Hub paused: your disk is full. Free up space and try again.', 507);
+      return errorResponse('DISK_FULL', 'BookScout OS paused: your disk is full. Free up space and try again.', 507);
     }
     if ((err as { code?: string } | undefined)?.code === 'ENOENT') {
       return errorResponse('NOT_FOUND', 'The backup file could not be found on disk.', 404);
     }
-    return errorResponse('BACKUP_FAILED', 'AP-Hub could not export that backup.', 500);
+    return errorResponse('BACKUP_FAILED', 'BookScout OS could not export that backup.', 500);
   }
 }
 
@@ -318,7 +318,7 @@ export async function runRestoreExternalBackup(request: Request, sourcePath: str
   }
 
   const conn = resolveConnection();
-  if (!conn) return errorResponse('RESTORE_FAILED', 'AP-Hub could not reach its database to restore.', 500);
+  if (!conn) return errorResponse('RESTORE_FAILED', 'BookScout OS could not reach its database to restore.', 500);
 
   const host = createHostAdapter();
   const dataRoot = host.dataDir();
@@ -330,7 +330,7 @@ export async function runRestoreExternalBackup(request: Request, sourcePath: str
     if (meta.format !== 'aphub-backup-meta-v1' || !meta.manifestHash || !meta.rowCounts || !meta.verifiedAt) {
       return errorResponse(
         'RESTORE_FAILED',
-        'That export is missing its companion info file. Export again from AP-Hub, then restore.',
+        'That export is missing its companion info file. Export again from BookScout OS, then restore.',
         500,
       );
     }
@@ -381,11 +381,11 @@ export async function runRestoreExternalBackup(request: Request, sourcePath: str
     }
   } catch (err) {
     if (err instanceof BackupKeyMissing) {
-      alertBackupFailure('AP-Hub could not restore: the backup key is missing from this computer’s secure storage.');
+      alertBackupFailure('BookScout OS could not restore: the backup key is missing from this computer’s secure storage.');
       return errorResponse('BACKUP_KEY_MISSING', err.message, 409);
     }
     if (err instanceof RestoreFailed) {
-      alertBackupFailure('AP-Hub could not restore from that exported backup. Your current data was not changed.');
+      alertBackupFailure('BookScout OS could not restore from that exported backup. Your current data was not changed.');
       return errorResponse('RESTORE_FAILED', err.message, 500);
     }
     if ((err as { code?: string } | undefined)?.code === 'ENOENT') {
@@ -396,11 +396,11 @@ export async function runRestoreExternalBackup(request: Request, sourcePath: str
       );
     }
     if (isDiskFullError(err)) {
-      alertBackupFailure('AP-Hub paused: your disk is full. Free up space and try again.');
-      return errorResponse('DISK_FULL', 'AP-Hub paused: your disk is full. Free up space and try again.', 507);
+      alertBackupFailure('BookScout OS paused: your disk is full. Free up space and try again.');
+      return errorResponse('DISK_FULL', 'BookScout OS paused: your disk is full. Free up space and try again.', 507);
     }
-    alertBackupFailure('AP-Hub could not restore from that exported backup. Your current data was not changed.');
-    return errorResponse('RESTORE_FAILED', 'AP-Hub could not restore from that exported backup. Your current data was not changed.', 500);
+    alertBackupFailure('BookScout OS could not restore from that exported backup. Your current data was not changed.');
+    return errorResponse('RESTORE_FAILED', 'BookScout OS could not restore from that exported backup. Your current data was not changed.', 500);
   }
 }
 
@@ -420,7 +420,7 @@ export async function runRepairBackup(request: Request): Promise<Response> {
   }
 
   const databaseUrl = process.env.DATABASE_URL;
-  if (!databaseUrl) return errorResponse('BACKUP_FAILED', 'AP-Hub could not reach its database to repair.', 500);
+  if (!databaseUrl) return errorResponse('BACKUP_FAILED', 'BookScout OS could not reach its database to repair.', 500);
 
   const host = createHostAdapter();
   const dataRoot = host.dataDir();
@@ -448,7 +448,7 @@ export async function runRepairBackup(request: Request): Promise<Response> {
           });
           if (!preMigration.verified) {
             alertBackupFailure(
-              'AP-Hub is repairing your data and made a safety backup first, but could not confirm it is readable.',
+              'BookScout OS is repairing your data and made a safety backup first, but could not confirm it is readable.',
             );
           }
         },
@@ -457,7 +457,7 @@ export async function runRepairBackup(request: Request): Promise<Response> {
     if (!result.ok) {
       return errorResponse(
         'BACKUP_FAILED',
-        'AP-Hub checked your data and found a problem it could not fix on its own. Contact support.',
+        'BookScout OS checked your data and found a problem it could not fix on its own. Contact support.',
         500,
       );
     }
@@ -467,6 +467,6 @@ export async function runRepairBackup(request: Request): Promise<Response> {
       backupKeyPresent: result.backupKeyPresent,
     });
   } catch {
-    return errorResponse('BACKUP_FAILED', 'AP-Hub could not complete repair.', 500);
+    return errorResponse('BACKUP_FAILED', 'BookScout OS could not complete repair.', 500);
   }
 }

@@ -248,7 +248,7 @@ function buildReplyRaw(to: string, subject: string, bodyText: string, marker?: s
   const mime =
     `To: ${to}\r\n` +
     `Subject: ${replySubject}\r\n` +
-    (marker ? `Message-ID: <${marker}>\r\nX-AP-Hub-Draft-Key: ${marker}\r\n` : '') +
+    (marker ? `Message-ID: <${marker}>\r\nX-BookScout OS-Draft-Key: ${marker}\r\n` : '') +
     'Content-Type: text/plain; charset="UTF-8"\r\n' +
     'MIME-Version: 1.0\r\n\r\n' +
     bodyText;

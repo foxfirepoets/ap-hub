@@ -74,7 +74,7 @@ export const providerJobEntries: readonly RegistryEntry[] = [
     request: strict({ jobId: entityId }),
     response: passthrough({}),
     validationMessage:
-      'AP-Hub could not tell which pending accounting task to try again. Reload the list and try again.',
+      'BookScout OS could not tell which pending accounting task to try again. Reload the list and try again.',
     invoke: (request, payload) => retryProviderJob(request, payload.jobId as number),
   }),
 ];

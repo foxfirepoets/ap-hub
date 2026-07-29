@@ -2,7 +2,7 @@ import { _electron as electron, type ElectronApplication, type ElectronLaunchOpt
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-/** AP-Hub's `before-quit` path may stop PostgreSQL for up to ~20 s; quit must finish before the next launch. */
+/** BookScout OS's `before-quit` path may stop PostgreSQL for up to ~20 s; quit must finish before the next launch. */
 const SHUTDOWN_MS = 30_000;
 
 /**

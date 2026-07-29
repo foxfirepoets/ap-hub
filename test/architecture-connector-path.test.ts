@@ -28,7 +28,7 @@ describe('architecture: production posting path routes through the connector', (
     const handlerBody = postingSrc.slice(handlerStart);
     // The sole live path is the provider-neutral connector, built by the factory.
     expect(handlerBody).toContain('../connectors/factory.js');
-    expect(handlerBody).toContain('getQboConnector');
+    expect(handlerBody).toContain('getConnectorForProvider');
     // postOnce's deps carry a connector, never a raw writer.
     expect(postingSrc).toContain('connector: AccountingConnector');
     expect(postingSrc).not.toContain('deps.writer');

@@ -38,7 +38,7 @@ export const onboardingEntries: readonly RegistryEntry[] = [
     // to an enum here would silently reject a step the service later adds.
     request: strict({ step: shortText.optional(), automationLevel: shortText.optional() }),
     response: passthrough({}),
-    validationMessage: 'AP-Hub could not save that setup choice. Go back a step and choose again.',
+    validationMessage: 'BookScout OS could not save that setup choice. Go back a step and choose again.',
     invoke: (request) => runOnboardingStep(request),
   }),
 
@@ -50,7 +50,7 @@ export const onboardingEntries: readonly RegistryEntry[] = [
     bodyKeys: [],
     request: strict({}),
     response: passthrough({}),
-    validationMessage: 'AP-Hub could not start the practice run. Try again from the setup screen.',
+    validationMessage: 'BookScout OS could not start the practice run. Try again from the setup screen.',
     invoke: (request) => runOnboardingDryRunAction(request),
   }),
 ];

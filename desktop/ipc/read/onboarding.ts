@@ -41,7 +41,7 @@ export const onboardingEntries: readonly RegistryEntry[] = [
       ),
       priorData: passthrough({ emails: z.number(), invoices: z.number(), vendorsKnown: z.number() }),
     }),
-    validationMessage: 'AP-Hub could not load your setup status.',
+    validationMessage: 'BookScout OS could not load your setup status.',
     invoke: (request) => runOnboardingGet(request),
   }),
 ];

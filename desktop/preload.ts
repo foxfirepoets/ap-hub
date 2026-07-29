@@ -1,5 +1,5 @@
 /**
- * CHUNK_1_SHELL — the ONLY bridge between the AP-Hub window and the program underneath.
+ * CHUNK_1_SHELL — the ONLY bridge between the BookScout OS window and the program underneath.
  *
  * Runs sandboxed, so it is bundled into a single file by `scripts/build-desktop.mjs`:
  * a sandboxed preload cannot `require` a relative module, and the channel allowlist must
@@ -40,7 +40,7 @@ const CHANNEL_REFUSED: IpcResult = Object.freeze({
   ok: false,
   code: 'INTERNAL',
   // Plain language, no channel name echoed back — the renderer learns nothing from probing.
-  message: 'AP-Hub could not complete that action.',
+  message: 'BookScout OS could not complete that action.',
 });
 
 /** Status events the shell pushes to the renderer. Read-only; no payload from the renderer. */

@@ -29,7 +29,7 @@ const STAGED_MAIN = join(STAGE, 'dist-desktop', 'main.mjs');
 
 /** Verbatim `describeDatabaseFailure`'s generic branch (desktop/database.ts:84-90). */
 const EXPECTED_PROBLEM =
-  'AP-Hub could not start its private database. Restarting AP-Hub usually fixes this. ' +
+  'BookScout OS could not start its private database. Restarting BookScout OS usually fixes this. ' +
   'If it keeps happening, use Repair in Settings.';
 
 interface ShellStatus {
@@ -63,7 +63,7 @@ test.describe('a database that will not start', () => {
   });
 
   test('the startup screen says what went wrong, in a sentence with a next action', async () => {
-    await expect(win.locator('#boot-heading')).toHaveText('AP-Hub could not finish starting.', {
+    await expect(win.locator('#boot-heading')).toHaveText('BookScout OS could not finish starting.', {
       timeout: 60_000,
     });
     await expect(win.locator('#boot-detail')).toHaveText(EXPECTED_PROBLEM);
@@ -100,7 +100,7 @@ test.describe('a database that will not start', () => {
     expect(status.data.engine).toBe('unstable');
     expect(status.data.database).toBe('unavailable');
     expect(status.data.problem).toBe(EXPECTED_PROBLEM);
-    expect(status.data.label).toBe('AP-Hub is having trouble starting. Your information is safe.');
+    expect(status.data.label).toBe('BookScout OS is having trouble starting. Your information is safe.');
   });
 
   test('the window never hands over to the app, so the explanation is not replaced', async () => {
@@ -112,7 +112,7 @@ test.describe('a database that will not start', () => {
      */
     await win.waitForTimeout(9_000);
     expect(win.url()).toContain('boot.html');
-    await expect(win.locator('#boot-heading')).toHaveText('AP-Hub could not finish starting.');
+    await expect(win.locator('#boot-heading')).toHaveText('BookScout OS could not finish starting.');
     await expect(win.locator('#boot-detail')).toHaveText(EXPECTED_PROBLEM);
   });
 });

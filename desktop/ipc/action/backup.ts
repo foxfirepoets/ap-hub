@@ -32,7 +32,7 @@ export const backupActionEntries: readonly RegistryEntry[] = [
       verified: z.literal(true),
       sizeBytes: persistedId,
     }),
-    validationMessage: 'AP-Hub could not create a backup. Try again in a moment.',
+    validationMessage: 'BookScout OS could not create a backup. Try again in a moment.',
     invoke: (request) => runCreateBackup(request),
   }),
   defineChannel({
@@ -42,7 +42,7 @@ export const backupActionEntries: readonly RegistryEntry[] = [
     pathTemplate: '/api/backup/:backupId/restore',
     request: strict({ backupId: entityId }),
     response: passthrough({ restored: z.literal(true), rowCounts: z.record(z.string(), z.number()) }),
-    validationMessage: 'AP-Hub could not restore that backup. Your current data was not changed.',
+    validationMessage: 'BookScout OS could not restore that backup. Your current data was not changed.',
     invoke: (request, payload) => runRestoreBackup(request, payload.backupId as number),
   }),
   defineChannel({
@@ -53,7 +53,7 @@ export const backupActionEntries: readonly RegistryEntry[] = [
     bodyKeys: ['path'],
     request: strict({ path: destinationPath }),
     response: passthrough({ restored: z.literal(true), rowCounts: z.record(z.string(), z.number()) }),
-    validationMessage: 'AP-Hub could not restore from that exported backup. Your current data was not changed.',
+    validationMessage: 'BookScout OS could not restore from that exported backup. Your current data was not changed.',
     invoke: (request, payload) => runRestoreExternalBackup(request, payload.path as string),
   }),
   defineChannel({
@@ -64,7 +64,7 @@ export const backupActionEntries: readonly RegistryEntry[] = [
     bodyKeys: ['destination'],
     request: strict({ backupId: entityId, destination: destinationPath }),
     response: passthrough({ exported: z.literal(true), path: z.string().optional() }),
-    validationMessage: 'AP-Hub could not export that backup. Choose a location and try again.',
+    validationMessage: 'BookScout OS could not export that backup. Choose a location and try again.',
     invoke: (request, payload) => runExportBackup(request, payload.backupId as number, payload.destination as string),
   }),
   defineChannel({
@@ -78,7 +78,7 @@ export const backupActionEntries: readonly RegistryEntry[] = [
       migrationsApplied: z.number(),
       backupKeyPresent: z.boolean(),
     }),
-    validationMessage: 'AP-Hub could not complete repair. Try again in a moment.',
+    validationMessage: 'BookScout OS could not complete repair. Try again in a moment.',
     invoke: (request) => runRepairBackup(request),
   }),
 ];

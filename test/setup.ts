@@ -16,6 +16,7 @@ process.env.ENCRYPTION_KEY ||= '0'.repeat(64);
 process.env.ANTHROPIC_API_KEY ||= 'test-anthropic';
 process.env.GMAIL_CLIENT_ID ||= 'test-gmail-id';
 process.env.GMAIL_CLIENT_SECRET ||= 'test-gmail-secret';
+process.env.XERO_CLIENT_ID ||= 'test-xero-client-id';
 process.env.SWARMSYNC_API_KEY ||= 'ssk_live_testkey123';
 process.env.QBO_ENV ||= 'sandbox';
 process.env.QBO_SANDBOX_COMPANY_NAME ||= 'Sandbox Company_US_1';
@@ -54,7 +55,7 @@ async function acquireCrossProcessDatabaseLock(): Promise<void> {
         await rm(lockDir, { recursive: true, force: true });
         continue;
       }
-      if (Date.now() >= deadline) throw new Error(`timed out waiting for AP Hub test DB lock held by pid ${owner}`);
+      if (Date.now() >= deadline) throw new Error(`timed out waiting for BookScout OS test DB lock held by pid ${owner}`);
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
   }

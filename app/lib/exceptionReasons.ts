@@ -82,7 +82,7 @@ function isReasonCode(code: string): code is ReasonCode {
 // (should not happen — see file header).
 const GENERIC_FALLBACK: FriendlyExceptionReason = {
   title: 'Needs your review',
-  text: "This item needs a quick look before AP-Hub can continue. Open it to see what's needed.",
+  text: "This item needs a quick look before BookScout OS can continue. Open it to see what's needed.",
 };
 
 /**
@@ -95,7 +95,7 @@ function mapKnownCode(code: ReasonCode): FriendlyExceptionReason {
     case 'low_confidence':
       return {
         title: 'Needs a second look',
-        text: "AP-Hub wasn't confident enough about what it read from this document to post it automatically. Review the details and confirm before it goes to your accounting system.",
+        text: "BookScout OS wasn't confident enough about what it read from this document to post it automatically. Review the details and confirm before it goes to your accounting system.",
       };
     case 'unknown_vendor':
       return {
@@ -105,7 +105,7 @@ function mapKnownCode(code: ReasonCode): FriendlyExceptionReason {
     case 'unmapped_account':
       return {
         title: 'Account not set up yet',
-        text: "This item isn't linked to an account in your accounting system yet. Choose the right account so AP-Hub can post it.",
+        text: "This item isn't linked to an account in your accounting system yet. Choose the right account so BookScout OS can post it.",
       };
     case 'unmapped_dimension':
       return {
@@ -125,27 +125,27 @@ function mapKnownCode(code: ReasonCode): FriendlyExceptionReason {
     case 'missing_invoice_no':
       return {
         title: 'Missing invoice number',
-        text: "AP-Hub couldn't find an invoice number on this document. Add one or confirm it's correct before posting.",
+        text: "BookScout OS couldn't find an invoice number on this document. Add one or confirm it's correct before posting.",
       };
     case 'total_mismatch':
       return {
         title: "Amounts don't match",
-        text: "The total on this document doesn't match what AP-Hub expected. Review the amounts before approving.",
+        text: "The total on this document doesn't match what BookScout OS expected. Review the amounts before approving.",
       };
     case 'no_attachment':
       return {
         title: 'No document attached',
-        text: "This email didn't include a document AP-Hub could process. Check the source email for the invoice or statement.",
+        text: "This email didn't include a document BookScout OS could process. Check the source email for the invoice or statement.",
       };
     case 'bad_pdf':
       return {
         title: "Document couldn't be opened",
-        text: "AP-Hub couldn't open this file — it may be damaged or saved in an unusual way. You may need to ask the sender for a fresh copy.",
+        text: "BookScout OS couldn't open this file — it may be damaged or saved in an unusual way. You may need to ask the sender for a fresh copy.",
       };
     case 'unsupported_file':
       return {
         title: 'File type not supported',
-        text: "This file isn't a type AP-Hub can read yet. You may need to ask the sender for a PDF or another supported format.",
+        text: "This file isn't a type BookScout OS can read yet. You may need to ask the sender for a PDF or another supported format.",
       };
     case 'bank_change_warning':
       return {
@@ -155,7 +155,7 @@ function mapKnownCode(code: ReasonCode): FriendlyExceptionReason {
     case 'extraction_failed':
       return {
         title: "Couldn't read the document",
-        text: 'AP-Hub ran into a problem reading this document. Try again, or review it yourself to enter the details.',
+        text: 'BookScout OS ran into a problem reading this document. Try again, or review it yourself to enter the details.',
       };
     case 'verify_mismatch':
       return {
@@ -165,7 +165,7 @@ function mapKnownCode(code: ReasonCode): FriendlyExceptionReason {
     case 'attachment_failed':
       return {
         title: "Couldn't download the document",
-        text: "AP-Hub wasn't able to download the attachment from this email. Try again, or check the source email directly.",
+        text: "BookScout OS wasn't able to download the attachment from this email. Try again, or check the source email directly.",
       };
     case 'qbo_api_error':
       return {
@@ -175,47 +175,47 @@ function mapKnownCode(code: ReasonCode): FriendlyExceptionReason {
     case 'auth_failure':
       return {
         title: 'Connection needs attention',
-        text: 'AP-Hub lost its connection to one of your accounts. Reconnect it in Settings to continue.',
+        text: 'BookScout OS lost its connection to one of your accounts. Reconnect it in Settings to continue.',
       };
     case 'fraud_flag':
       return {
         title: 'Flagged for review',
-        text: "This item was flagged by AP-Hub's fraud check and is being held for your review before anything is sent or posted.",
+        text: "This item was flagged by BookScout OS's fraud check and is being held for your review before anything is sent or posted.",
       };
     case 'proof_scan_unavailable':
       return {
         title: 'Verification check unavailable',
-        text: "AP-Hub couldn't run its usual verification check on this item, so it's holding here for you to review by hand.",
+        text: "BookScout OS couldn't run its usual verification check on this item, so it's holding here for you to review by hand.",
       };
     case 'unscannable_format':
       return {
         title: "Couldn't be verified automatically",
-        text: "This item is in a format AP-Hub's verification check can't read, so it's holding here for your review.",
+        text: "This item is in a format BookScout OS's verification check can't read, so it's holding here for your review.",
       };
     case 'forward_failed':
       return {
         title: "Couldn't send for verification",
-        text: "AP-Hub couldn't send this item out for its usual verification step. It will be retried, or you can review it directly.",
+        text: "BookScout OS couldn't send this item out for its usual verification step. It will be retried, or you can review it directly.",
       };
     case 'alert_failed':
       return {
         title: "Alert didn't go out",
-        text: "AP-Hub tried to notify you about this item but the alert didn't go through. The item itself is safe here in the queue.",
+        text: "BookScout OS tried to notify you about this item but the alert didn't go through. The item itself is safe here in the queue.",
       };
     case 'dry_run_locked':
       return {
         title: 'Automation is still off',
-        text: "AP-Hub is still in test mode and hasn't been turned on to post automatically yet. Finish setup to enable it.",
+        text: "BookScout OS is still in test mode and hasn't been turned on to post automatically yet. Finish setup to enable it.",
       };
     case 'dedup_unavailable':
       return {
         title: "Couldn't check for duplicates",
-        text: "AP-Hub couldn't safely confirm this isn't a duplicate, so it's holding here rather than risk posting it twice.",
+        text: "BookScout OS couldn't safely confirm this isn't a duplicate, so it's holding here rather than risk posting it twice.",
       };
     case 'company_mismatch':
       return {
         title: 'Wrong company detected',
-        text: "This doesn't match the QuickBooks company AP-Hub expects to post to. Review before continuing.",
+        text: "This doesn't match the QuickBooks company BookScout OS expects to post to. Review before continuing.",
       };
     case 'dimension_unsupported':
       return {
@@ -225,7 +225,7 @@ function mapKnownCode(code: ReasonCode): FriendlyExceptionReason {
     case 'dimension_mismatch':
       return {
         title: "Category didn't match after saving",
-        text: 'AP-Hub double-checked a category after saving it and the result came back different than expected. Review it.',
+        text: 'BookScout OS double-checked a category after saving it and the result came back different than expected. Review it.',
       };
     case 'tax_unmapped':
       return {
@@ -240,7 +240,7 @@ function mapKnownCode(code: ReasonCode): FriendlyExceptionReason {
     case 'tax_mapping_not_found':
       return {
         title: 'Tax code not recognized',
-        text: 'AP-Hub does not have this tax code set up yet. Add it before this item can post.',
+        text: 'BookScout OS does not have this tax code set up yet. Add it before this item can post.',
       };
     case 'tax_mapping_inactive':
       return {
@@ -255,7 +255,7 @@ function mapKnownCode(code: ReasonCode): FriendlyExceptionReason {
     case 'dimension_mapping_not_found':
       return {
         title: 'Category not recognized',
-        text: 'AP-Hub does not have this category set up yet. Choose or confirm the right one before this can post.',
+        text: 'BookScout OS does not have this category set up yet. Choose or confirm the right one before this can post.',
       };
     case 'dimension_mapping_not_mapped':
       return {
@@ -270,12 +270,12 @@ function mapKnownCode(code: ReasonCode): FriendlyExceptionReason {
     case 'extractor_not_configured':
       return {
         title: "Document reading isn't set up yet",
-        text: 'AP-Hub does not have a way to read documents configured yet. Finish that part of setup, then this item can be processed.',
+        text: 'BookScout OS does not have a way to read documents configured yet. Finish that part of setup, then this item can be processed.',
       };
     case 'statement_unreadable':
       return {
         title: "Bank statement couldn't be read",
-        text: 'AP-Hub could not read this bank statement. Try a different file, or review it manually.',
+        text: 'BookScout OS could not read this bank statement. Try a different file, or review it manually.',
       };
     case 'swarmsync_required_unavailable':
       return {

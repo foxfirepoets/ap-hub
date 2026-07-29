@@ -39,7 +39,7 @@ export const transactionsEntries: readonly RegistryEntry[] = [
     queryParams: ['status'],
     request: strict({ status: z.enum(UX_STATUSES).optional() }),
     response: z.array(transactionRow),
-    validationMessage: 'AP-Hub could not load your transactions.',
+    validationMessage: 'BookScout OS could not load your transactions.',
     invoke: (request, payload) =>
       runRead(request, (ctx) =>
         listTransactions(ctx.tenantId, { status: payload.status as (typeof UX_STATUSES)[number] | undefined }),
@@ -52,7 +52,7 @@ export const transactionsEntries: readonly RegistryEntry[] = [
     pathTemplate: '/api/transactions/:id',
     request: strict({ id: entityId }),
     response: transactionRow,
-    validationMessage: 'AP-Hub could not find that transaction.',
+    validationMessage: 'BookScout OS could not find that transaction.',
     invoke: (request, payload) => runRead(request, (ctx) => getTransactionById(ctx.tenantId, payload.id as number)),
   }),
 ];

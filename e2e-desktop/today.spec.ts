@@ -105,7 +105,7 @@ test.describe('Today + session gate', () => {
     await stub(app, 'aphub:accounting-documents:review', { ok: true, status: 200, data: [] });
     await stub(app, 'aphub:proposals:approve', { ok: true, status: 201, data: APPROVE_POSTED });
 
-    // Required proof (mirrors shell.spec.ts:94): the renderer talks to AP-Hub only through
+    // Required proof (mirrors shell.spec.ts:94): the renderer talks to BookScout OS only through
     // window.aphub.invoke while this whole journey runs — never HTTP, never loopback.
     const requests = trackHttpRequests(win);
 

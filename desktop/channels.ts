@@ -51,9 +51,9 @@ export function isAllowedChannel(channel: unknown): channel is string {
  * Provider consent hosts. Login opens in the user's own browser (never an embedded webview),
  * and `shell.openExternal` refuses everything else.
  *
- * Xero and Sage Intacct are declared here because the spec fixes the allowlist at the four
- * provider domains; their connectors are P4 capability-declaring stubs that throw today, so
- * no code path reaches those hosts yet.
+ * Xero's OAuth consent flow (CHUNK_10) reaches login.xero.com for real. Sage Intacct
+ * (www.intacct.com) remains a capability-declaring stub with no live code path — it is listed
+ * here only because the spec fixes the allowlist at these four provider domains up front.
  */
 export const PROVIDER_HOSTS: readonly string[] = Object.freeze([
   'accounts.google.com',

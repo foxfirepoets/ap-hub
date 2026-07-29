@@ -77,7 +77,7 @@ export const evidenceEntries: readonly RegistryEntry[] = [
       qboLink: z.string().nullable(),
       missing: z.array(z.string()),
     }),
-    validationMessage: 'AP-Hub could not find the evidence for that item.',
+    validationMessage: 'BookScout OS could not find the evidence for that item.',
     invoke: (request, payload) => runRead(request, (ctx) => getEvidence(ctx.tenantId, payload.id as number)),
   }),
 ];

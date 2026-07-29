@@ -23,12 +23,12 @@ export const ENGINE_STATES: readonly EngineState[] = Object.freeze([
 export function engineStateLabel(state: EngineState): string {
   switch (state) {
     case 'starting':
-      return 'AP-Hub is starting up';
+      return 'BookScout OS is starting up';
     case 'running':
-      return 'AP-Hub is running';
+      return 'BookScout OS is running';
     case 'paused':
-      return 'AP-Hub is paused';
+      return 'BookScout OS is paused';
     case 'unstable':
-      return 'AP-Hub is having trouble starting. Your information is safe.';
+      return 'BookScout OS is having trouble starting. Your information is safe.';
   }
 }

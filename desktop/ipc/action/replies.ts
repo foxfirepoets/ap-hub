@@ -6,7 +6,7 @@
  * ════════════════════════════════════════════════════════════════════════════════════════════
  * READ `.ralph/guardrails.md` (the email carve-out) BEFORE TOUCHING THIS FILE.
  *
- * There is EXACTLY ONE provider-send call site in AP-Hub: `sendForward` in
+ * There is EXACTLY ONE provider-send call site in BookScout OS: `sendForward` in
  * `src/gmail/adapter.ts`, reachable only through `createLockedForwarder`
  * (`src/gatekeeper/forwarder.ts`), which binds its single recipient AT CONSTRUCTION and takes no
  * recipient parameter. `sendReply` (`src/services/reply.ts:43`) has no recipient parameter
@@ -90,7 +90,7 @@ const NO_RECIPIENT_ISSUE = 'this channel accepts no recipient field';
  * rule rather than the fault, and gives a next action either way.
  */
 const SEND_VALIDATION_MESSAGE =
-  'AP-Hub can only send this reply exactly as it was prepared, to the address it was prepared for. Reopen the reply and send it again, or discard it.';
+  'BookScout OS can only send this reply exactly as it was prepared, to the address it was prepared for. Reopen the reply and send it again, or discard it.';
 
 export const replyEntries: readonly RegistryEntry[] = [
   defineChannel({

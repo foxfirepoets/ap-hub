@@ -12,10 +12,10 @@ import type { SecretStore } from '../src/host/types.js';
 
 /**
  * CHUNK_4_IDENTITY — the acceptance criterion only two REAL, separately-running installs can
- * evidence: "opening AP-Hub as a different OS account reaches no document, proposal, or token
+ * evidence: "opening BookScout OS as a different OS account reaches no document, proposal, or token
  * belonging to the first account."
  *
- * Every AP-Hub install's private database lives under that OS account's own profile
+ * Every BookScout OS install's private database lives under that OS account's own profile
  * (`host.dataDir()` = `%LOCALAPPDATA%\APHub`), so two OS accounts on the same computer never
  * share a data directory and therefore never share a PostgreSQL cluster. This test builds that
  * exact structure for real — two independent bundled clusters, on two different ports, over

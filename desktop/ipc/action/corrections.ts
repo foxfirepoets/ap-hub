@@ -61,7 +61,7 @@ export const correctionEntries: readonly RegistryEntry[] = [
     // the response is passthrough, so they still reach the renderer untouched.
     response: passthrough({ correction_id: persistedId }),
     validationMessage:
-      'AP-Hub needs to know which detail you changed and what it should say now. Fill both in and try again.',
+      'BookScout OS needs to know which detail you changed and what it should say now. Fill both in and try again.',
     invoke: (request) => runLearn(request),
   }),
 
@@ -80,7 +80,7 @@ export const correctionEntries: readonly RegistryEntry[] = [
       remember: z.boolean().optional(),
     }),
     response: passthrough({ kind: z.string(), source_key: z.string() }),
-    validationMessage: 'AP-Hub needs to know what to match and what to match it to. Fill both in and try again.',
+    validationMessage: 'BookScout OS needs to know what to match and what to match it to. Fill both in and try again.',
     invoke: (request) => runRemap(request),
   }),
 ];

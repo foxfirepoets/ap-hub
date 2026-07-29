@@ -29,7 +29,7 @@ export const accountingDocumentsEntries: readonly RegistryEntry[] = [
         createdAt: z.string(),
       }),
     ),
-    validationMessage: 'AP-Hub could not load documents waiting for review.',
+    validationMessage: 'BookScout OS could not load documents waiting for review.',
     invoke: (request) => runClassificationReview(request),
   }),
 ];

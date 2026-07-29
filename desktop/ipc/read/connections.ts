@@ -25,7 +25,7 @@ export const connectionsReadEntries: readonly RegistryEntry[] = [
         updatedAt: z.string(),
       }),
     ),
-    validationMessage: 'AP-Hub could not check your connected accounts right now.',
+    validationMessage: 'BookScout OS could not check your connected accounts right now.',
     invoke: (request) => runRead(request, (ctx) => listConnectionStatuses(ctx.tenantId), { role: ROLES }),
   }),
 ];

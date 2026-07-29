@@ -80,7 +80,7 @@ export function describeDatabaseFailure(err: unknown): DatabaseFailure {
     return {
       code: 'DB_FAILED',
       message:
-        'AP-Hub found your information but could not unlock it on this Windows account. ' +
+        'BookScout OS found your information but could not unlock it on this Windows account. ' +
         'Restoring from a backup will recover it.',
       repairable: true,
     };
@@ -89,7 +89,7 @@ export function describeDatabaseFailure(err: unknown): DatabaseFailure {
     return {
       code: 'DB_FAILED',
       message:
-        'AP-Hub found information saved under a different Windows account on this computer. ' +
+        'BookScout OS found information saved under a different Windows account on this computer. ' +
         'To keep everyone’s information private, it will not open here. Sign in to Windows ' +
         'as that original account to see it again.',
       repairable: false,
@@ -98,7 +98,7 @@ export function describeDatabaseFailure(err: unknown): DatabaseFailure {
   return {
     code: 'DB_FAILED',
     message:
-      'AP-Hub could not start its private database. Restarting AP-Hub usually fixes this. ' +
+      'BookScout OS could not start its private database. Restarting BookScout OS usually fixes this. ' +
       'If it keeps happening, use Repair in Settings.',
     repairable: false,
   };
@@ -153,7 +153,7 @@ async function runPreMigrationBackup(
   );
   if (!result.verified) {
     alertBackupFailure(
-      'AP-Hub is updating your data and made a safety backup first, but could not confirm it is readable.',
+      'BookScout OS is updating your data and made a safety backup first, but could not confirm it is readable.',
     );
   }
 }

@@ -13,7 +13,7 @@ export const meEntries: readonly RegistryEntry[] = [
     // `tenantId` is `persistedId`: `ctx.tenantId` comes off a bigint session column, so pg
     // returns it as a string even though `AuthContext.tenantId` is typed `number`.
     response: passthrough({ email: z.string(), role: z.string(), tenantId: persistedId }),
-    validationMessage: 'AP-Hub could not confirm your sign-in.',
+    validationMessage: 'BookScout OS could not confirm your sign-in.',
     invoke: (request) =>
       runRead(request, async (ctx) => ({ email: ctx.email, role: ctx.role, tenantId: ctx.tenantId })),
   }),

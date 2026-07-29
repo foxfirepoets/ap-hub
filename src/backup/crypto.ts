@@ -74,7 +74,7 @@ export async function decryptFile(encPath: string, outPath: string, key: Buffer)
     await fh.close();
   }
   if (!header.subarray(0, MAGIC.length).equals(MAGIC)) {
-    throw new BackupCorrupted('bad magic header — not an AP-Hub backup file, or it is truncated');
+    throw new BackupCorrupted('bad magic header — not an BookScout OS backup file, or it is truncated');
   }
   const iv = header.subarray(MAGIC.length, MAGIC.length + IV_LEN);
   const tag = header.subarray(MAGIC.length + IV_LEN, HEADER_LEN);

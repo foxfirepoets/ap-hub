@@ -9,7 +9,7 @@
  * `restoreBackup()` calls are worse: the rename-swap writes ONE crash-recovery marker file per
  * data directory (`restoreSwapMarkerPath`), so a second concurrent restore overwrites the
  * first's marker, and a restore's `terminateConnections` can kill an in-flight `pg_dump` from a
- * concurrent backup. All of AP-Hub's backup entry points run inside this one Electron main
+ * concurrent backup. All of BookScout OS's backup entry points run inside this one Electron main
  * process — a single Node event loop — so a simple in-process promise queue removes the race
  * entirely; no OS-level file lock is needed.
  */

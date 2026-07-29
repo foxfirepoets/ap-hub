@@ -207,7 +207,7 @@ function OnboardingPageInner() {
   if (!welcomeDismissed) {
     return (
       <div data-testid="onboarding-page">
-        <h1>Set up AP Hub</h1>
+        <h1>Set up BookScout OS</h1>
         <OnboardingWelcome onGetStarted={() => setWelcomeDismissed(true)} />
       </div>
     );
@@ -221,7 +221,7 @@ function OnboardingPageInner() {
 
   return (
     <div data-testid="onboarding-page">
-      <h1>Set up AP Hub</h1>
+      <h1>Set up BookScout OS</h1>
       <p className="page-sub">
         {state.automationLevel === 'off' ? 'Automation is OFF — nothing can post yet.' : `Automation: ${state.automationLevel}`}
       </p>
@@ -279,13 +279,13 @@ function OnboardingPageInner() {
         <div className="panel" data-testid="connect-accounts">
           <h2>Connect your accounts</h2>
           <p className="muted">
-            Connect Gmail and QuickBooks first. AP Hub then runs a no-write dry scan; an owner must
+            Connect Gmail and QuickBooks first. BookScout OS then runs a no-write dry scan; an owner must
             separately review the company identity, backup prerequisite, automation level, and write gate
             before any QuickBooks transaction can be created.
           </p>
           <ConnectPrompt
             provider="Gmail"
-            description="You'll grant mailbox read access. If draft replies are enabled, AP Hub also requests compose access for unsent drafts; only a human sends them."
+            description="You'll grant mailbox read access. If draft replies are enabled, BookScout OS also requests compose access for unsent drafts; only a human sends them."
             href="/api/connections/gmail/start"
             connected={state.connections.gmailConnected}
             errorText={connectErrors.gmail}

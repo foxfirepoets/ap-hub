@@ -26,7 +26,7 @@ export const auditEntries: readonly RegistryEntry[] = [
         at: z.string(),
       }),
     ),
-    validationMessage: 'AP-Hub could not load your audit trail.',
+    validationMessage: 'BookScout OS could not load your audit trail.',
     invoke: (request, payload) =>
       runRead(request, (ctx) =>
         listAudit(ctx.tenantId, {

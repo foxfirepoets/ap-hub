@@ -48,7 +48,7 @@ export const replyDraftEntries: readonly RegistryEntry[] = [
       reason: clearableReason,
     }),
     response: passthrough({}),
-    validationMessage: 'A reply needs a subject and some text before AP-Hub can prepare it.',
+    validationMessage: 'A reply needs a subject and some text before BookScout OS can prepare it.',
     invoke: (request) => runCreateReplyDraft(request),
   }),
 
@@ -67,7 +67,7 @@ export const replyDraftEntries: readonly RegistryEntry[] = [
       reason: clearableReason,
     }),
     response: passthrough({}),
-    validationMessage: 'A reply needs a subject and some text before AP-Hub can save your changes.',
+    validationMessage: 'A reply needs a subject and some text before BookScout OS can save your changes.',
     invoke: (request, payload) => runUpdateReplyDraft(request, payload.draftId as number),
   }),
 
@@ -79,7 +79,7 @@ export const replyDraftEntries: readonly RegistryEntry[] = [
     bodyKeys: [],
     request: strict({ draftId: entityId }),
     response: passthrough({}),
-    validationMessage: 'AP-Hub could not tell which draft reply to discard. Reload the list and try again.',
+    validationMessage: 'BookScout OS could not tell which draft reply to discard. Reload the list and try again.',
     invoke: (request, payload) => runDiscardReplyDraft(request, payload.draftId as number),
   }),
 ];

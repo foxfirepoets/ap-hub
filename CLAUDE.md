@@ -1,10 +1,10 @@
 # CLAUDE.md — ap-hub build guide for AI agents
 
-AP-Hub is a **local-first desktop application** for small and medium businesses and their
+BookScout OS is a **local-first desktop application** for small and medium businesses and their
 bookkeepers. It reads accounting email from Gmail, extracts invoices and bank statements, and
 produces reviewable transactions in the user's accounting system. The entire application and its
-database live on the user's own computer. There is no hosted AP-Hub application and no public
-AP-Hub URL.
+database live on the user's own computer. There is no hosted BookScout OS application and no public
+BookScout OS URL.
 
 **Controlling documents — read these before planning any work:**
 - `architecture-decision-packet-ap-hub-local-desktop-2026-07-25.md`
@@ -54,7 +54,7 @@ behavior to match a stale claim.
    `UNIQUE(tenant_id, sha256)` plus subject-tag replay for forwarding.
 5. **Nothing unverified is labelled verified.** No proposal reaches `ready`, nothing posts, and
    nothing forwards without its required checks. SwarmSync is **optional and off by default**; when
-   it is optional for a company its absence returns `noop` and AP-Hub's own controls apply, when a
+   it is optional for a company its absence returns `noop` and BookScout OS's own controls apply, when a
    company's policy requires it its absence sends the item to **review**, and an unscanned item is
    **never** shown as "independently verified". (`proof_fail_safe`, `gatekeeper_hold`,
    `proof_gate_posting`)

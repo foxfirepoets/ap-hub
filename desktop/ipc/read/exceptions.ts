@@ -37,7 +37,7 @@ export const exceptionsEntries: readonly RegistryEntry[] = [
     queryParams: ['status'],
     request: strict({ status: filterText.optional() }),
     response: z.array(exceptionRow),
-    validationMessage: 'AP-Hub could not load your exceptions.',
+    validationMessage: 'BookScout OS could not load your exceptions.',
     invoke: (request, payload) =>
       runRead(request, (ctx) => listExceptions(ctx.tenantId, { status: payload.status as string | undefined })),
   }),
@@ -48,7 +48,7 @@ export const exceptionsEntries: readonly RegistryEntry[] = [
     pathTemplate: '/api/exceptions/:id',
     request: strict({ id: entityId }),
     response: exceptionRow,
-    validationMessage: 'AP-Hub could not find that exception.',
+    validationMessage: 'BookScout OS could not find that exception.',
     invoke: (request, payload) => runRead(request, (ctx) => getExceptionById(ctx.tenantId, payload.id as number)),
   }),
 ];

@@ -9,14 +9,14 @@
 # committed. An unsigned build is a development artifact, not a shippable installer.
 
 appId: com.aphub.desktop
-productName: AP-Hub
-copyright: AP-Hub
+productName: BookScout OS
+copyright: BookScout OS
 
 directories:
   output: release
   buildResources: desktop/assets
 
-# Only what the shell needs at runtime. The AP-Hub source tree is bundled into
+# Only what the shell needs at runtime. The BookScout OS source tree is bundled into
 # `dist-desktop/main.mjs` by esbuild; `out/` is the statically exported React tree the window
 # loads off disk (CHUNK_3 — `npm run web:build` must have run before packaging).
 #
@@ -58,7 +58,7 @@ nsis:
   allowToChangeInstallationDirectory: false
   createDesktopShortcut: true
   createStartMenuShortcut: true
-  shortcutName: AP-Hub
+  shortcutName: BookScout OS
   # CHUNK_9 replaces this with the explicit "what should happen to your information?" choice.
   deleteAppDataOnUninstall: false
 

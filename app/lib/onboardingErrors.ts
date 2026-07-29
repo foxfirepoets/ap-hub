@@ -62,7 +62,7 @@ function isOnboardingErrorCode(code: string): code is OnboardingErrorCode {
 // nothing here for a provider string, stack trace or raw code to hide inside. Reached only if a
 // code outside the closed set above somehow arrives (should not happen — see file header).
 const GENERIC_FALLBACK: FriendlyOnboardingError = {
-  text: 'Something went wrong on that step. Try again, and if it keeps happening, restart AP-Hub.',
+  text: 'Something went wrong on that step. Try again, and if it keeps happening, restart BookScout OS.',
   retryable: true,
 };
 
@@ -95,7 +95,7 @@ function mapKnownCode(code: OnboardingErrorCode): FriendlyOnboardingError {
       };
     case 'NOT_FOUND':
       return {
-        text: "AP-Hub couldn't find that item — it may already have been removed or handled.",
+        text: "BookScout OS couldn't find that item — it may already have been removed or handled.",
         retryable: false,
       };
     case 'CONFLICT':
@@ -105,7 +105,7 @@ function mapKnownCode(code: OnboardingErrorCode): FriendlyOnboardingError {
       };
     case 'ALREADY_POSTED':
       return {
-        text: 'This was already sent to your accounting system, so AP-Hub did not send it again.',
+        text: 'This was already sent to your accounting system, so BookScout OS did not send it again.',
         retryable: false,
       };
     case 'QBO_RETRY':
@@ -115,22 +115,22 @@ function mapKnownCode(code: OnboardingErrorCode): FriendlyOnboardingError {
       };
     case 'DB_STARTING':
       return {
-        text: 'AP-Hub is still starting up — this usually takes a few seconds. Try again shortly.',
+        text: 'BookScout OS is still starting up — this usually takes a few seconds. Try again shortly.',
         retryable: true,
       };
     case 'DB_FAILED':
       return {
-        text: 'AP-Hub cannot open your data right now. Restart AP-Hub, and use Repair if this keeps happening.',
+        text: 'BookScout OS cannot open your data right now. Restart BookScout OS, and use Repair if this keeps happening.',
         retryable: false,
       };
     case 'PROVIDER_OFFLINE':
       return {
-        text: 'AP-Hub could not reach that service. Check your internet connection and try again.',
+        text: 'BookScout OS could not reach that service. Check your internet connection and try again.',
         retryable: true,
       };
     case 'PROVIDER_REAUTH':
       return {
-        text: 'AP-Hub needs your permission again before it can continue — reconnect the account in Settings.',
+        text: 'BookScout OS needs your permission again before it can continue — reconnect the account in Settings.',
         retryable: false,
       };
     case 'CONNECT_TIMEOUT':
@@ -140,32 +140,32 @@ function mapKnownCode(code: OnboardingErrorCode): FriendlyOnboardingError {
       };
     case 'SECURE_STORE':
       return {
-        text: 'AP-Hub could not read your saved sign-in details on this computer. Restart AP-Hub and try again.',
+        text: 'BookScout OS could not read your saved sign-in details on this computer. Restart BookScout OS and try again.',
         retryable: false,
       };
     case 'RESTORE_FAILED':
       return {
-        text: 'AP-Hub could not restore that backup. Your current data was not changed.',
+        text: 'BookScout OS could not restore that backup. Your current data was not changed.',
         retryable: true,
       };
     case 'BACKUP_KEY_MISSING':
       return {
-        text: 'AP-Hub could not find the secure key needed to read your backups on this computer.',
+        text: 'BookScout OS could not find the secure key needed to read your backups on this computer.',
         retryable: false,
       };
     case 'BACKUP_FAILED':
       return {
-        text: 'AP-Hub could not complete that backup.',
+        text: 'BookScout OS could not complete that backup.',
         retryable: true,
       };
     case 'DISK_FULL':
       return {
-        text: 'AP-Hub paused because your disk is full. Free up space, then try again.',
+        text: 'BookScout OS paused because your disk is full. Free up space, then try again.',
         retryable: true,
       };
     case 'INTERNAL':
       return {
-        text: 'Something went wrong on that step. Try again, and if it keeps happening, restart AP-Hub.',
+        text: 'Something went wrong on that step. Try again, and if it keeps happening, restart BookScout OS.',
         retryable: true,
       };
     default: {

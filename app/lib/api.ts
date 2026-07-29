@@ -26,8 +26,8 @@ export class ApiError extends Error {
 // Plain language only — never "IPC", "channel", "invoke", a channel name, or a code. The user
 // is non-technical (CLAUDE.md).
 const BRIDGE_UNAVAILABLE_MESSAGE =
-  'AP-Hub could not reach the program running on this computer. Restart AP-Hub and try again.';
-const ROUTE_UNAVAILABLE_MESSAGE = 'AP-Hub could not complete that action.';
+  'BookScout OS could not reach the program running on this computer. Restart BookScout OS and try again.';
+const ROUTE_UNAVAILABLE_MESSAGE = 'BookScout OS could not complete that action.';
 
 // Accessed through `globalThis` rather than the bare `window` identifier: this module is
 // imported by `test/ipc-renderer-transport.test.ts`, which compiles under the repo's root

@@ -84,7 +84,7 @@ export const taxMappingsEntries: readonly RegistryEntry[] = [
       provider: filterText.optional(),
     }),
     response: passthrough({ mappings: z.array(taxMappingRow), filter: z.string() }),
-    validationMessage: 'AP-Hub could not load your tax mappings.',
+    validationMessage: 'BookScout OS could not load your tax mappings.',
     invoke: (request) => runListTaxMappings(request),
   }),
   defineChannel({
@@ -94,7 +94,7 @@ export const taxMappingsEntries: readonly RegistryEntry[] = [
     pathTemplate: '/api/tax-mappings/:id',
     request: strict({ id: entityId }),
     response: passthrough({ mapping: taxMappingRow }),
-    validationMessage: 'AP-Hub could not find that tax mapping.',
+    validationMessage: 'BookScout OS could not find that tax mapping.',
     invoke: (request, payload) => runGetTaxMapping(request, payload.id as number),
   }),
   defineChannel({
@@ -105,7 +105,7 @@ export const taxMappingsEntries: readonly RegistryEntry[] = [
     queryParams: ['code'],
     request: strict({ code: shortText.optional() }),
     response: passthrough({}),
-    validationMessage: 'AP-Hub could not check tax codes with your accounting system.',
+    validationMessage: 'BookScout OS could not check tax codes with your accounting system.',
     invoke: (request) => runDiscoverTaxCodes(request),
   }),
   defineChannel({
@@ -115,7 +115,7 @@ export const taxMappingsEntries: readonly RegistryEntry[] = [
     pathTemplate: '/api/tax-mappings/:id/audit',
     request: strict({ id: entityId }),
     response: passthrough({ audit: z.array(taxMappingAuditRow) }),
-    validationMessage: 'AP-Hub could not load the history for that tax mapping.',
+    validationMessage: 'BookScout OS could not load the history for that tax mapping.',
     invoke: (request, payload) => runGetTaxMappingAudit(request, payload.id as number),
   }),
 ];

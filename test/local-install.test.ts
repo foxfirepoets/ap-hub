@@ -388,7 +388,7 @@ describe('plain-language UI: no Google SSO, and a clear per-account privacy stat
     const src = readFileSync(join(process.cwd(), 'app', 'components', 'OnboardingWelcome.tsx'), 'utf8');
     const normalized = src.replace(/\s+/g, ' ');
     expect(normalized).toContain(
-      "This is your own AP-Hub. It doesn&apos;t share information with other people who use this computer.",
+      "This is your own BookScout OS. It doesn&apos;t share information with other people who use this computer.",
     );
   });
 });

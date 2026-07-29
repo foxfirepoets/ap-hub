@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { sha256Hex } from '../crypto.js';
 import { query } from '../db/pool.js';
 
-export type ConnectProvider = 'gmail' | 'qbo';
+export type ConnectProvider = 'gmail' | 'qbo' | 'xero';
 const MAX_AGE_MS = 5 * 60 * 1000;
 
 export interface ConnectStateActor {

@@ -2,7 +2,7 @@ import { AuthError } from '../../auth/guard.js';
 import { errorResponse, jsonResponse, readContext } from '../read/http.js';
 import { config } from '../../config.js';
 import { createConnectState, type ConnectProvider } from '../../auth/connect-state.js';
-import { buildGmailAuthorizeUrl, buildQboAuthorizeUrl } from '../../auth/connect-urls.js';
+import { buildGmailAuthorizeUrl, buildQboAuthorizeUrl, isProviderConfigured } from '../../auth/connect-urls.js';
 import { ConnectFlowNotConfigured, startConnectFlow } from '../../auth/connect-loopback.js';
 import { hasTokenCredentialAuthority } from '../../auth/tokens.js';
 
@@ -15,6 +15,17 @@ import { hasTokenCredentialAuthority } from '../../auth/tokens.js';
  * files only wire a path to one `run*` function.
  */
 
+/** Plain-language, provider-specific "nothing is configured yet" message — shown instead of
+ *  ever building a URL with a blank client_id and sending the user to the far side's own raw
+ *  OAuth error page. */
+function notConfiguredMessage(provider: ConnectProvider | 'xero'): string {
+  if (provider === 'gmail') return 'Gmail sign-in is not set up on this computer yet.';
+  if (provider === 'qbo') return 'QuickBooks Online sign-in is not set up on this computer yet.';
+  // Provider-neutral wording for any other cloud accounting provider (lint:noleak keeps
+  // provider brand identifiers out of core — see src/connectors/** for those).
+  return 'That accounting connection is not set up on this computer yet.';
+}
+
 async function runConnectStart(
   request: Request,
   provider: ConnectProvider,
@@ -23,6 +34,9 @@ async function runConnectStart(
   try {
     const ctx = await readContext(request, 'owner_controller');
     if (!ctx.sessionId) throw new AuthError(401, 'UNAUTHENTICATED');
+    if (!isProviderConfigured(config(), provider)) {
+      return errorResponse('PROVIDER_OFFLINE', notConfiguredMessage(provider), 502);
+    }
     const state = await createConnectState(
       { tenantId: ctx.tenantId, userId: ctx.userId, sessionId: ctx.sessionId },
       provider,
@@ -60,13 +74,16 @@ export async function runConnectionsStart(request: Request): Promise<Response> {
     if (!ctx.sessionId) throw new AuthError(401, 'UNAUTHENTICATED');
 
     if (!hasTokenCredentialAuthority()) {
-      return errorResponse('SECURE_STORE', 'AP-Hub could not reach your saved sign-in details.', 503);
+      return errorResponse('SECURE_STORE', 'BookScout OS could not reach your saved sign-in details.', 503);
     }
 
     const body = (await request.json().catch(() => ({}))) as { provider?: unknown };
     const provider = body.provider;
-    if (provider !== 'gmail' && provider !== 'qbo') {
+    if (provider !== 'gmail' && provider !== 'qbo' && provider !== 'xero') {
       return errorResponse('VALIDATION', 'Choose an account to connect and try again.', 400);
+    }
+    if (!isProviderConfigured(config(), provider)) {
+      return errorResponse('PROVIDER_OFFLINE', notConfiguredMessage(provider), 502);
     }
 
     await startConnectFlow(provider, {
@@ -79,8 +96,8 @@ export async function runConnectionsStart(request: Request): Promise<Response> {
   } catch (err) {
     if (err instanceof AuthError) return errorResponse(err.code, err.message, err.status);
     if (err instanceof ConnectFlowNotConfigured) {
-      return errorResponse('PROVIDER_OFFLINE', 'AP-Hub could not open the sign-in window.', 502);
+      return errorResponse('PROVIDER_OFFLINE', 'BookScout OS could not open the sign-in window.', 502);
     }
-    return errorResponse('PROVIDER_OFFLINE', 'AP-Hub could not open the sign-in window.', 502);
+    return errorResponse('PROVIDER_OFFLINE', 'BookScout OS could not open the sign-in window.', 502);
   }
 }
