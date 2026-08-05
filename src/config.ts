@@ -47,7 +47,7 @@ const RawSchema = z.object({
   GMAIL_CLIENT_SECRET: z.string().default(''),
   GMAIL_REDIRECT_URI: z.string().url().default('http://localhost:3001/oauth/gmail/callback'),
   WATCHED_LABEL: z.string().default('AP-Inbox'),
-  // Compose permits draft CRUD. AP Hub deliberately exposes no reply send action.
+  // Compose permits draft CRUD. BookScout OS deliberately exposes no reply send action.
   GMAIL_DRAFTS_ENABLED: boolish(false),
   // Resource-exhaustion guard (FIX-F8): attachments larger than this are skipped, not
   // fetched/stored. Default matches Gmail's own per-message attachment ceiling (25MB).
@@ -67,6 +67,18 @@ const RawSchema = z.object({
   QBO_PRODUCTION_REALM_ID: z.string().default(''),
   QBO_PRODUCTION_COMPANY_NAME: z.string().default(''),
   QBO_PRODUCTION_REDIRECT_URI: z.string().url().default('http://localhost:3001/oauth/qbo/callback'),
+
+  // --- xero (CHUNK_10 Task 2: PKCE Desktop-app OAuth client, bring-your-own per customer) ---
+  // No XERO_CLIENT_SECRET: a PKCE "Desktop app"-type xero OAuth client holds no secret. The
+  // redirect_uri is always the CHUNK_5 desktop loopback's own ephemeral 127.0.0.1 URL — there is
+  // no fixed web-flow redirect for xero the way GMAIL_REDIRECT_URI/QBO_*_REDIRECT_URI have.
+  XERO_CLIENT_ID: z.string().default(''),
+  // Mirrors QBO_PRODUCTION_WRITE_ENABLED: the explicit owner gate a real (non-demo) xero
+  // org write requires. Defaults false — the safe default.
+  XERO_PRODUCTION_WRITE_ENABLED: boolish(false),
+  // Mirrors QBO_SANDBOX_COMPANY_NAME/QBO_PRODUCTION_COMPANY_NAME: the connected org's name,
+  // checked by verifyCompanyIdentity before any live post — never trusted from the token alone.
+  XERO_EXPECTED_COMPANY_NAME: z.string().default(''),
 
   // --- SwarmSync proof suite (Amendment A1) ---
   // SwarmSync proof suite (InvoiceProof fraud scan · Verify-API notarization ·
@@ -163,6 +175,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     if (missing.length) {
       throw new ConfigError(`QBO production mode is missing: ${missing.join(', ')}.`);
     }
+  }
+
+  if (cfg.XERO_PRODUCTION_WRITE_ENABLED && !cfg.XERO_EXPECTED_COMPANY_NAME.trim()) {
+    throw new ConfigError(
+      'XERO_PRODUCTION_WRITE_ENABLED=true requires XERO_EXPECTED_COMPANY_NAME — without it, ' +
+      'verifyCompanyIdentity has nothing to check a live xero write against.',
+    );
   }
 
   // No boot-time key requirement: src/llm/provider.ts resolves a local runtime,

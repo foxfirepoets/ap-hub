@@ -11,7 +11,7 @@
  * `requireSession` answers "who does this token belong to", not "was this caller entitled to
  * hold it" (`src/auth/guard.ts:80-103`), and tenant plus role are derived entirely from the
  * session it resolves (`src/auth/guard.ts:88-94`). So whoever chooses the token chooses the
- * tenant. The renderer is the one process in AP-Hub that renders untrusted-shaped content; it
+ * tenant. The renderer is the one process in BookScout OS that renders untrusted-shaped content; it
  * is therefore the one process that must not be able to name its own identity.
  *
  * The rule is enforced STRUCTURALLY, in three independent layers:

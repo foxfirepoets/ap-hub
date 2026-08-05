@@ -47,7 +47,7 @@ export const writeGateEntries: readonly RegistryEntry[] = [
     }),
     response: passthrough({ enabled: z.boolean() }),
     validationMessage:
-      'AP-Hub needs the exact company name, a confirmed backup, and the typed confirmation before it can change this. Complete all of them and try again.',
+      'BookScout OS needs the exact company name, a confirmed backup, and the typed confirmation before it can change this. Complete all of them and try again.',
     invoke: (request, payload) => runSetOwnerWriteGate(request, payload.connectionId as number),
   }),
 ];

@@ -456,19 +456,35 @@ async function recordPosting(
 export async function postSandboxHandler(job: { data: PostJob }): Promise<void> {
   const { config, swarmSyncMode } = await import('../config.js');
   // F4: the ONLY live accounting path is the provider-neutral connector — never
-  // import a provider write module (e.g. qbo/write.js) directly here.
-  const { getQboConnector } = await import('../connectors/factory.js');
+  // import a provider-specific factory function or write module (e.g. qbo/write.js)
+  // directly here.
+  const { getConnectorForProvider } = await import('../connectors/factory.js');
   const { swarmsync } = await import('../services.js');
   const { loadAttachmentBytes } = await import('../ingest/repo.js');
   const cfg = config();
-  if (cfg.QBO_ENV === 'production') {
+
+  // The sole live accounting path: the provider-neutral connector (wraps the resolved
+  // provider's clients via the factory — delegation only; the pipeline imports no
+  // provider write module and never branches on a provider-specific identifier itself).
+  const connector = await getConnectorForProvider(job.data.tenantId);
+
+  // This is an unattended, automated job — production writes always require an explicit
+  // owner_controller approval action (never this path), for every provider. Each
+  // provider's "we are configured for production" signal is its own gate: QBO_ENV for
+  // provider 'qbo', XERO_PRODUCTION_WRITE_ENABLED for provider 'xero' (that provider has
+  // no separate sandbox API — the write-enabled flag is itself the production signal).
+  if (connector.provider === 'qbo' && cfg.QBO_ENV === 'production') {
     throw new Error('QBO production posting requires an owner_controller approval action');
   }
+  if (connector.provider === 'xero' && cfg.XERO_PRODUCTION_WRITE_ENABLED) {
+    throw new Error('Accounting production posting requires an owner_controller approval action');
+  }
 
-  // The sole live accounting path: the provider-neutral connector (wraps the QBO clients
-  // via the factory — delegation only; the pipeline imports no provider write module).
-  const connector = await getQboConnector(job.data.tenantId);
-  const expectedCompanyName = cfg.QBO_SANDBOX_COMPANY_NAME.trim() || undefined;
+  // Provider-specific: each provider's own "who are we actually connected to" name, never
+  // another provider's — a QBO sandbox name would never match another provider's org name.
+  const expectedCompanyName = connector.provider === 'xero'
+    ? cfg.XERO_EXPECTED_COMPANY_NAME.trim() || undefined
+    : (cfg.QBO_ENV === 'production' ? cfg.QBO_PRODUCTION_COMPANY_NAME : cfg.QBO_SANDBOX_COMPANY_NAME).trim() || undefined;
 
   await postOnce(job.data.tenantId, job.data.proposalId, {
     connector,

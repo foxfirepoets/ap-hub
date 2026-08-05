@@ -42,7 +42,7 @@ export const todayEntries: readonly RegistryEntry[] = [
       }),
       items: z.array(todayItem),
     }),
-    validationMessage: 'AP-Hub could not load your Today view.',
+    validationMessage: 'BookScout OS could not load your Today view.',
     invoke: (request) => runRead(request, (ctx) => getToday(ctx.tenantId)),
   }),
 ];

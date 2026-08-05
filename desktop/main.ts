@@ -9,7 +9,18 @@
  * `./security.js`, which the validation gate asserts directly. This file is wiring.
  */
 
-import { app, BrowserWindow, Menu, Tray, ipcMain, protocol, shell, session, nativeImage } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  Menu,
+  Tray,
+  ipcMain,
+  protocol,
+  shell,
+  session,
+  nativeImage,
+  Notification,
+} from 'electron';
 import { statSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
@@ -30,6 +41,10 @@ import { ACTION_ENTRIES } from './ipc/action/index.js';
 import { createHostAdapter } from '../src/host/index.js';
 import { initializeTokenCredentialAuthority } from '../src/auth/tokens.js';
 import { configureConnectFlowHost } from '../src/auth/connect-loopback.js';
+import { config, resetConfigCache } from '../src/config.js';
+import { startQueue, stopQueue } from '../src/queue.js';
+import { registerPipelineJobs } from '../src/pipeline/register.js';
+import { setBackupFailureAlerter } from '../src/backup/alerts.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -115,9 +130,9 @@ function rendererEntry(): string {
 }
 
 /**
- * How long "AP-Hub is ready." stays on screen before the window hands over to the app.
+ * How long "BookScout OS is ready." stays on screen before the window hands over to the app.
  *
- * A beat, not a delay. This is the one moment AP-Hub tells the person their private database came
+ * A beat, not a delay. This is the one moment BookScout OS tells the person their private database came
  * up and their information is safe, and a message shown for zero frames has not been shown. It also
  * makes the hand-over an observable step rather than a flicker, which is what lets
  * `e2e-desktop/database.spec.ts` — CHUNK_2's proof, and not editable — still see the startup screen
@@ -229,7 +244,7 @@ function createWindow(): BrowserWindow {
     minHeight: 640,
     show: false,
     autoHideMenuBar: true,
-    title: 'AP-Hub',
+    title: 'BookScout OS',
     webPreferences: {
       ...RENDERER_WEB_PREFERENCES,
       preload: join(HERE, 'preload.cjs'),
@@ -296,12 +311,12 @@ function setEngineState(state: EngineState): void {
 function refreshTrayMenu(): void {
   if (tray === null) return;
   const paused = engineState === 'paused';
-  tray.setToolTip(`AP-Hub — ${engineStateLabel(engineState)}`);
+  tray.setToolTip(`BookScout OS — ${engineStateLabel(engineState)}`);
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: engineStateLabel(engineState), enabled: false },
       { type: 'separator' },
-      { label: 'Open AP-Hub', click: () => showWindow() },
+      { label: 'Open BookScout OS', click: () => showWindow() },
       {
         label: 'Pause processing',
         enabled: !paused,
@@ -310,7 +325,7 @@ function refreshTrayMenu(): void {
       },
       { label: 'Resume processing', enabled: paused, click: () => setEngineState('running') },
       { type: 'separator' },
-      { label: 'Quit AP-Hub', click: () => quitApp() },
+      { label: 'Quit BookScout OS', click: () => quitApp() },
     ]),
   );
 }
@@ -337,7 +352,7 @@ async function startDatabaseSupervised(): Promise<void> {
     // connection string never crosses the bridge, never reaches a log, and is not the
     // renderer's to know.
     process.env.DATABASE_URL = database.connectionString;
-    // CHUNK_4_IDENTITY: the OS account that opened AP-Hub becomes its owner, with no password
+    // CHUNK_4_IDENTITY: the OS account that opened BookScout OS becomes its owner, with no password
     // and no browser tab. `database.install.osAccountId` is already verified against the
     // running account (`OsAccountMismatch` would have thrown inside `startDatabase()`).
     await establishLocalIdentity(database.install.osAccountId);
@@ -349,6 +364,22 @@ async function startDatabaseSupervised(): Promise<void> {
       store: createHostAdapter().secretStore,
       installId: database.install.installId,
     });
+    // Nightly backup + the accounting pipeline jobs must run inside the packaged app,
+    // not only under `npm run dev` (`src/index.ts`). Session secret is already in env
+    // from `establishLocalIdentity`, so `config()` can load. Install id binds credential
+    // custody the same way the engine boot path does.
+    process.env.APHUB_INSTALL_ID = database.install.installId;
+    resetConfigCache();
+    setBackupFailureAlerter((message) => {
+      try {
+        if (!Notification.isSupported()) return;
+        new Notification({ title: 'BookScout OS', body: message }).show();
+      } catch {
+        // Notification failure must never block backup work.
+      }
+    });
+    const boss = await startQueue(database.connectionString);
+    await registerPipelineJobs(boss, config());
     databaseProblem = null;
     setEngineState('running');
   } catch (err) {
@@ -383,6 +414,12 @@ async function stopDatabase(): Promise<void> {
   database = null;
   if (running === null) return;
   try {
+    setBackupFailureAlerter(null);
+    /**
+     * Stop pg-boss workers before closing the pool — otherwise in-flight jobs hold
+     * connections open and quit can hang past the single-instance lock release.
+     */
+    await Promise.race([stopQueue(), new Promise((resolve) => setTimeout(resolve, 10_000))]);
     /**
      * Close this process's own query pool first. CHUNK_4_IDENTITY's local sign-in is the
      * first thing in the main process to ever open one (`src/db/pool.ts`'s `getPool()`
@@ -437,7 +474,7 @@ function registerShellHandlers(): void {
 }
 
 /**
- * A second launch focuses the existing window instead of starting a second AP-Hub. Without
+ * A second launch focuses the existing window instead of starting a second BookScout OS. Without
  * the lock, two instances would supervise two PostgreSQL children over one data directory.
  */
 if (!app.requestSingleInstanceLock()) {

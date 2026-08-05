@@ -1,7 +1,7 @@
 /**
  * CHUNK_2_DATABASE — make the boot page tell the truth.
  *
- * The page began as static markup that said "AP-Hub is starting up" forever. When the
+ * The page began as static markup that said "BookScout OS is starting up" forever. When the
  * database failed to start, the owner was left staring at that sentence indefinitely with no
  * explanation and nothing to do — the exact dead end the guardrails forbid. A startup screen
  * that cannot report failure is not a startup screen, it is a hang.
@@ -22,26 +22,26 @@
   /** Plain language only — no code, port, path or provider text reaches this screen. */
   function render(state, problem) {
     if (state === 'running') {
-      heading.textContent = 'AP-Hub is ready.';
+      heading.textContent = 'BookScout OS is ready.';
       detail.textContent = 'Your information is on this computer and is safe.';
       bar.hidden = true;
       return;
     }
     if (state === 'paused') {
-      heading.textContent = 'AP-Hub is paused.';
-      detail.textContent = 'Choose Resume processing from the AP-Hub icon to carry on.';
+      heading.textContent = 'BookScout OS is paused.';
+      detail.textContent = 'Choose Resume processing from the BookScout OS icon to carry on.';
       bar.hidden = true;
       return;
     }
     if (state === 'unstable') {
-      heading.textContent = 'AP-Hub could not finish starting.';
+      heading.textContent = 'BookScout OS could not finish starting.';
       // `problem` is the shell's own plain-language sentence; it always carries a next action.
       detail.textContent =
-        problem || 'Restarting AP-Hub usually fixes this. Your information is safe.';
+        problem || 'Restarting BookScout OS usually fixes this. Your information is safe.';
       bar.hidden = true;
       return;
     }
-    heading.textContent = 'AP-Hub is starting up.';
+    heading.textContent = 'BookScout OS is starting up.';
     detail.textContent = 'This only takes a moment the first time. Your information is safe.';
     bar.hidden = false;
   }

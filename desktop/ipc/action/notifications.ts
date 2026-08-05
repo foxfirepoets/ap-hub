@@ -34,7 +34,7 @@ export const notificationEntries: readonly RegistryEntry[] = [
     bodyKeys: [],
     request: strict({ notificationId: entityId }),
     response: passthrough({}),
-    validationMessage: 'AP-Hub could not tell which message to mark as read. Reload the list and try again.',
+    validationMessage: 'BookScout OS could not tell which message to mark as read. Reload the list and try again.',
     invoke: (request, payload) => runMarkNotificationRead(request, payload.notificationId as number),
   }),
 ];

@@ -173,7 +173,7 @@ describe('startConnectFlow', () => {
 
     const res = await fetch(`${redirectUri}?state=${encodeURIComponent(state)}&code=goodcode`);
     expect(res.status).toBe(200);
-    expect(await res.text()).toContain('You can close this and return to AP-Hub.');
+    expect(await res.text()).toContain('You can close this and return to BookScout OS.');
 
     await waitUntil(() => getTokenMock.mock.calls.length > 0);
     const usedVerifier = (getTokenMock.mock.calls[0]![0] as { codeVerifier: string }).codeVerifier;
@@ -290,7 +290,7 @@ describe('startConnectFlow', () => {
 
     const res = await fetch(`${redirectUri.toString()}?state=wrong-state&code=stolencode`);
     expect(res.status).toBe(200);
-    expect(await res.text()).toContain('You can close this and return to AP-Hub.');
+    expect(await res.text()).toContain('You can close this and return to BookScout OS.');
 
     await waitUntil(async () => (await refusalAudit(tenantId)) !== null);
     const audit = await refusalAudit(tenantId);
@@ -315,7 +315,7 @@ describe('startConnectFlow', () => {
     const res = await fetch(`${redirectUri.toString()}?state=${encodeURIComponent(state)}&error=access_denied`);
     expect(res.status).toBe(200);
     const body = await res.text();
-    expect(body).toContain('You can close this and return to AP-Hub.');
+    expect(body).toContain('You can close this and return to BookScout OS.');
     expect(body).not.toMatch(/access_denied|stack|Error:/i);
 
     await waitUntil(async () => (await refusalAudit(tenantId)) !== null);

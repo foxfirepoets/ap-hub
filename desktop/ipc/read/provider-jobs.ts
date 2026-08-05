@@ -38,7 +38,7 @@ export const providerJobsEntries: readonly RegistryEntry[] = [
         }),
       ),
     }),
-    validationMessage: 'AP-Hub could not load your provider jobs.',
+    validationMessage: 'BookScout OS could not load your provider jobs.',
     invoke: (request) => runRead(request, (ctx) => listProviderJobs(ctx.tenantId), { role: ['owner_controller'] }),
   }),
 ];

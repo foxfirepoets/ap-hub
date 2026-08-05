@@ -91,7 +91,7 @@ export class RestoreSwapRecoveryFailed extends Error {
     super(
       `A previous restore was interrupted mid-swap and automatic recovery failed. The database ` +
         `currently named "${pending.retiredDb}" holds your pre-restore data and must be renamed ` +
-        `to "${pending.liveDb}" manually before AP-Hub can start.`,
+        `to "${pending.liveDb}" manually before BookScout OS can start.`,
     );
     this.name = 'RestoreSwapRecoveryFailed';
   }

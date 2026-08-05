@@ -47,7 +47,7 @@ export const providerCapabilitiesEntries: readonly RegistryEntry[] = [
         }),
       ),
     }),
-    validationMessage: 'AP-Hub could not check what your accounting connection supports.',
+    validationMessage: 'BookScout OS could not check what your accounting connection supports.',
     invoke: (request) => runRead(request, (ctx) => listProviderCapabilities(ctx.tenantId), { role: ROLES }),
   }),
 ];

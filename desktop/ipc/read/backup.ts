@@ -27,7 +27,7 @@ export const backupReadEntries: readonly RegistryEntry[] = [
         externalCopy: z.string().nullable(),
       }),
     ),
-    validationMessage: 'AP-Hub could not load your backup history.',
+    validationMessage: 'BookScout OS could not load your backup history.',
     invoke: (request) => runListBackups(request),
   }),
 ];

@@ -10,6 +10,7 @@ import { AUTOMATION_LEVELS, type AutomationLevel } from '../../lib/automationLev
 import type { OnboardingState } from '../../lib/types';
 import { ProviderConnections } from './ProviderConnections';
 import { ConnectAccounts } from './ConnectAccounts';
+import { BackupPanel } from './BackupPanel';
 
 type Notice = { kind: 'good' | 'bad'; text: string };
 
@@ -68,7 +69,7 @@ export default function SettingsPage() {
 
       <div className="panel">
         <h2>Connected accounts</h2>
-        <p className="muted">Sign in to Gmail or QuickBooks Online in your own browser — AP-Hub never asks for a password.</p>
+        <p className="muted">Sign in to Gmail or QuickBooks Online in your own browser — BookScout OS never asks for a password.</p>
         <ConnectAccounts owner={owner} />
       </div>
 
@@ -113,6 +114,8 @@ export default function SettingsPage() {
           <p className="muted">Only the account owner can change automation level.</p>
         )}
       </div>
+
+      <BackupPanel owner={owner} />
 
       <div className="panel">
         <h2>Tax-code mapping</h2>

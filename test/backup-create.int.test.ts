@@ -118,6 +118,14 @@ describeIf('createBackup — real bundled PostgreSQL, real pg_dump/pg_restore', 
       `INSERT INTO postings (tenant_id, idempotency_key) VALUES ($1, 'idem-1')`,
       [tenantId],
     );
+    await pool.query(
+      `INSERT INTO audit_log (tenant_id, actor, action, entity) VALUES ($1,'test-actor','seed','messages')`,
+      [tenantId],
+    );
+    await pool.query(
+      `INSERT INTO exceptions (tenant_id, reason_code, detail) VALUES ($1,'TEST_REASON','seed exception')`,
+      [tenantId],
+    );
   }, 180_000);
 
   afterAll(async () => {

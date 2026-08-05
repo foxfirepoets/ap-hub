@@ -44,15 +44,36 @@ export async function appliedMigrations(pool: pg.Pool): Promise<Set<string>> {
   return new Set(rows.map((r) => r.name));
 }
 
+export interface MigrateUpOptions {
+  /**
+   * Fired once, before the first pending file is applied, but ONLY when `_migrations` already
+   * held rows — i.e. this is a pre-existing install being upgraded, not the empty cluster a
+   * fresh `initdb` produces on first launch (nothing to protect there yet). Best-effort: a
+   * throwing hook is logged by the caller and never blocks the migration itself, since leaving
+   * the user stuck on a broken app version is worse than a schema change proceeding without its
+   * safety-net backup.
+   */
+  onBeforeMigrating?: (pending: readonly string[]) => Promise<void>;
+}
+
 export async function migrateUp(
   connectionString: string,
   migrationsDir: string = DEFAULT_MIGRATIONS_DIR,
+  opts: MigrateUpOptions = {},
 ): Promise<string[]> {
   const pool = new Pool({ connectionString });
   const applied: string[] = [];
   try {
     await ensureMigrationsTable(pool);
     const done = await appliedMigrations(pool);
+    const pending = migrationFiles(migrationsDir).filter((f) => !done.has(f));
+    if (pending.length > 0 && done.size > 0 && opts.onBeforeMigrating) {
+      try {
+        await opts.onBeforeMigrating(pending);
+      } catch (err) {
+        console.error('pre-migration backup hook failed; continuing with migration', err);
+      }
+    }
     for (const file of migrationFiles(migrationsDir)) {
       if (done.has(file)) continue;
       const sql = readFileSync(join(migrationsDir, file), 'utf8');

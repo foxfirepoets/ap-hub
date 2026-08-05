@@ -11,19 +11,19 @@ export interface OnboardingWelcomeProps {
 export function OnboardingWelcome({ onGetStarted }: OnboardingWelcomeProps) {
   return (
     <div className="panel" data-testid="onboarding-welcome">
-      <h2>Welcome to AP Hub</h2>
+      <h2>Welcome to BookScout OS</h2>
       <p className="muted">
-        AP Hub reads accounting email from your Gmail inbox, proof-checks each document, and
+        BookScout OS reads accounting email from your Gmail inbox, proof-checks each document, and
         prepares reviewable transactions in QuickBooks Online — nothing posts until you approve
         it (or turn on automation later).
       </p>
       <p className="muted">
-        This is your own AP-Hub. It doesn&apos;t share information with other people who use this
+        This is your own BookScout OS. It doesn&apos;t share information with other people who use this
         computer.
       </p>
       <p className="muted">Before you start, you&apos;ll need to connect two things:</p>
       <ul className="muted">
-        <li>Gmail — the mailbox AP Hub should read and, when enabled, use for unsent drafts.</li>
+        <li>Gmail — the mailbox BookScout OS should read and, when enabled, use for unsent drafts.</li>
         <li>QuickBooks — the configured Online company, or a supported Windows Desktop company.</li>
       </ul>
       <button className="primary" onClick={onGetStarted}>

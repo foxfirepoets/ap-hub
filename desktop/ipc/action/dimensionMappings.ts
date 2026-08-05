@@ -50,10 +50,10 @@ export const dimensionMappingEntries: readonly RegistryEntry[] = [
     method: 'POST',
     pathTemplate: '/api/dimension-mappings/:mappingId/accept',
     bodyKeys: ['reason'],
-    // Optional — accepting AP-Hub's own proposal needs no justification (`:160`).
+    // Optional — accepting BookScout OS's own proposal needs no justification (`:160`).
     request: strict({ mappingId: entityId, reason: optionalReason }),
     response: mappingEnvelope,
-    validationMessage: 'AP-Hub could not tell which suggestion to accept. Reload the list and try again.',
+    validationMessage: 'BookScout OS could not tell which suggestion to accept. Reload the list and try again.',
     invoke: (request, payload) => runAcceptDimensionMapping(request, payload.mappingId as number),
   }),
 
@@ -103,7 +103,7 @@ export const dimensionMappingEntries: readonly RegistryEntry[] = [
     request: strict({ mappingId: entityId, reason: optionalReason }),
     // Returns a RULE, not a mapping (`:198`).
     response: passthrough({ rule: passthrough({}) }),
-    validationMessage: 'AP-Hub could not save that as a reusable rule. Reload the list and try again.',
+    validationMessage: 'BookScout OS could not save that as a reusable rule. Reload the list and try again.',
     invoke: (request, payload) => runSaveRuleDimensionMapping(request, payload.mappingId as number),
   }),
 

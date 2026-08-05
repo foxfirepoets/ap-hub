@@ -9,9 +9,11 @@ import { config } from '../config.js';
 import { getQboWriteClient } from '../qbo/write.js';
 import { getQboReadClient } from '../qbo/client.js';
 import { createQboConnector } from './qbo.js';
+import { xeroConnectorFromToken } from './xero.js';
 import type { AccountingConnector } from './types.js';
 import { query } from '../db/pool.js';
 import { ownerGateEnabled } from '../accounting/write-gates.js';
+import { getFreshXeroToken } from '../auth/xero-refresh.js';
 
 /** Build the QBO connector for a tenant, wired to config + stored tokens. */
 export async function getQboConnector(tenantId: number): Promise<AccountingConnector> {
@@ -45,4 +47,46 @@ export async function getQboConnector(tenantId: number): Promise<AccountingConne
     expectedCompanyName: (cfg.QBO_ENV === 'production'
       ? cfg.QBO_PRODUCTION_COMPANY_NAME : cfg.QBO_SANDBOX_COMPANY_NAME).trim() || undefined,
   });
+}
+
+/**
+ * Provider-neutral connector dispatcher (CHUNK_10 Task 5): resolves the tenant's active
+ * cloud connection WITHOUT hardcoding a provider, then builds the matching connector.
+ * `src/pipeline/**` calls only this — never a provider-specific factory function directly
+ * — so the live posting path stays provider-neutral (lint:noleak enforced).
+ */
+export async function getConnectorForProvider(tenantId: number): Promise<AccountingConnector> {
+  const connection = (await query<{ provider: string }>(
+    `SELECT provider FROM connections
+      WHERE tenant_id=$1 AND connection_class='cloud' AND status='active'
+      ORDER BY updated_at DESC,id DESC LIMIT 1`,
+    [tenantId],
+  )).rows[0];
+  if (!connection) throw new Error('NO_ACTIVE_CLOUD_CONNECTION');
+
+  if (connection.provider === 'qbo') return getQboConnector(tenantId);
+
+  if (connection.provider === 'xero') {
+    const cfg = config();
+    // getFreshXeroToken transparently refreshes an expired/near-expiry access token
+    // (30-min lifetime) via src/auth/xero-refresh.ts, mirroring getQboWriteClient/
+    // getQboReadClient's use of getFreshQboToken above — never a stale token as-is.
+    // Its distinct errors ("xero not connected for tenant" / "xero token refresh failed:
+    // {status}" / a malformed-response error) propagate as-is, exactly like the QBO branch
+    // above never wraps getFreshQboToken's own errors — collapsing them into one generic
+    // string would lose the difference between "never connected", "refresh rejected (needs
+    // re-auth)", and "Xero's token endpoint is down (retry later)".
+    const tok = await getFreshXeroToken(tenantId);
+    return xeroConnectorFromToken(
+      {
+        accessToken: tok.accessToken,
+        tenantId: tok.realm ?? '',
+        env: cfg.XERO_PRODUCTION_WRITE_ENABLED ? 'production' : 'demo',
+        productionWriteEnabled: cfg.XERO_PRODUCTION_WRITE_ENABLED,
+      },
+      cfg.XERO_EXPECTED_COMPANY_NAME.trim() || undefined,
+    );
+  }
+
+  throw new Error('NO_ACTIVE_CLOUD_CONNECTION');
 }

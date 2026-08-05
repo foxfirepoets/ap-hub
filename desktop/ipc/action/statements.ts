@@ -69,7 +69,7 @@ export const statementEntries: readonly RegistryEntry[] = [
     bodyKeys: [],
     request: strict({ statementId: entityId }),
     response: okResponse,
-    validationMessage: 'AP-Hub could not tell which statement to file. Reload the list and try again.',
+    validationMessage: 'BookScout OS could not tell which statement to file. Reload the list and try again.',
     invoke: (request, payload) => runFileStatement(request, payload.statementId as number),
   }),
 

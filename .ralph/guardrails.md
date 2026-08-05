@@ -141,3 +141,27 @@ Mitigation for whoever orchestrates agents:
 - DO NOT generate code for a future chunk's domain.
 - DO NOT edit a safety test to accommodate a connector, shell, or OS adapter. A conflict is a
   stop-and-escalate, not a test edit.
+
+## CHUNK_10_XERO_CONNECTOR guardrails (added 2026-07-28)
+
+- DO NOT edit any of the 5 named safety tests (`lockdown.test.ts`, `gatekeeper.test.ts`,
+  `posting.test.ts`, `anchor-whitelabel.test.ts`, `architecture-connector-path.test.ts`) to make
+  this chunk pass. A conflict is stop-and-escalate.
+- DO NOT introduce a second provider-send call site anywhere in the repo. `sendForward` in
+  `src/gmail/adapter.ts` must remain the **only** one — `lockdown.test.ts` asserts exactly one
+  occurrence; zero or two is a defect, not a pass.
+- DO NOT let any Xero-specific identifier (`Invoices`, `ACCPAY`, `TrackingCategory`,
+  `Xero-tenant-id`, `xero-node`, etc.) appear outside `src/connectors/**`. `npm run lint:noleak`
+  enforces this — a failing run is a real defect, never a rule to relax.
+- DO NOT enable production writes to a live Xero organisation by default. `XERO_PRODUCTION_WRITE_ENABLED`
+  must default to `false`, mirroring `QBO_PRODUCTION_WRITE_ENABLED` exactly — same shape, same
+  fail-closed default, no exceptions.
+- DO NOT commit or push from within this chunk's build loop. Commits stay local; the operator
+  reviews and pushes separately after the chunk completes.
+- DO NOT fabricate a live Xero test-org proof. If no live test-org connection is available, mark
+  that specific proof `UNVERIFIED — awaiting Xero test-org credentials` and continue — never claim
+  `<promise>CHUNK COMPLETE: CHUNK_10_XERO_CONNECTOR</promise>` by rounding an unverified live proof
+  up to done. Everything else (contract tests against a mocked client, lint, typecheck, the
+  provider dispatcher) is independently completable and testable without live credentials.
+- Reference: `specs/10_CHUNK_10_XERO_CONNECTOR.md` (full spec), `docs/audits/architecture-map-2026-07-28.md`
+  (integration points), `specs/reference/provider-research-2026-07-17.md` §B (Xero API facts).

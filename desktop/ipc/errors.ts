@@ -109,27 +109,27 @@ const MESSAGES: Readonly<Record<IpcErrorCode, string>> = Object.freeze({
   UNAUTHENTICATED: 'You are signed out. Sign in to continue.',
   SESSION_EXPIRED: 'Your sign-in has timed out. Sign in again to continue.',
   FORBIDDEN: 'Your account does not have permission to do that. Ask the account owner.',
-  NOT_FOUND: 'AP-Hub could not find that item. It may have been removed.',
+  NOT_FOUND: 'BookScout OS could not find that item. It may have been removed.',
   VALIDATION: 'Some required details are missing or not valid. Check the highlighted fields and try again.',
   CONFLICT: 'Someone else changed this item first. Reload it and try again.',
   ALREADY_POSTED:
-    'This has already been sent to your accounting system, so AP-Hub did not send it again.',
+    'This has already been sent to your accounting system, so BookScout OS did not send it again.',
   QBO_RETRY:
     'Your accounting system did not respond. Nothing was recorded, so you can safely try again.',
-  DB_STARTING: 'AP-Hub is still starting up. This usually takes a few seconds — try again shortly.',
-  DB_FAILED: 'AP-Hub cannot open your data right now. Restart AP-Hub, and if it happens again use Repair.',
-  PROVIDER_OFFLINE: 'AP-Hub could not reach that service. Check your internet connection and try again.',
+  DB_STARTING: 'BookScout OS is still starting up. This usually takes a few seconds — try again shortly.',
+  DB_FAILED: 'BookScout OS cannot open your data right now. Restart BookScout OS, and if it happens again use Repair.',
+  PROVIDER_OFFLINE: 'BookScout OS could not reach that service. Check your internet connection and try again.',
   PROVIDER_REAUTH:
-    'AP-Hub needs your permission again before it can continue. Reconnect the account in Settings.',
+    'BookScout OS needs your permission again before it can continue. Reconnect the account in Settings.',
   CONNECT_TIMEOUT: 'That sign-in took too long. Let\'s try again.',
   SECURE_STORE:
-    'AP-Hub could not read your saved sign-in details on this computer. Restart AP-Hub and try again.',
-  RESTORE_FAILED: 'AP-Hub could not restore that backup. Your current data was not changed.',
+    'BookScout OS could not read your saved sign-in details on this computer. Restart BookScout OS and try again.',
+  RESTORE_FAILED: 'BookScout OS could not restore that backup. Your current data was not changed.',
   BACKUP_KEY_MISSING:
-    'AP-Hub could not find the secure key needed to read your backups on this computer.',
-  BACKUP_FAILED: 'AP-Hub could not complete that backup.',
-  DISK_FULL: 'AP-Hub paused because your disk is full. Free up space and try again.',
-  INTERNAL: 'AP-Hub could not complete that action.',
+    'BookScout OS could not find the secure key needed to read your backups on this computer.',
+  BACKUP_FAILED: 'BookScout OS could not complete that backup.',
+  DISK_FULL: 'BookScout OS paused because your disk is full. Free up space and try again.',
+  INTERNAL: 'BookScout OS could not complete that action.',
 });
 
 /** The plain-language sentence for a normalized code. Total over the closed set. */

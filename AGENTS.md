@@ -68,3 +68,4 @@ npm run verify
 ## Dependencies added in this phase
 
 - `electron`, `electron-builder` (devDependencies) — desktop shell and packaging.
+- `xero-node` (dependency) — official Xero Developer SDK, used only by `src/connectors/xero.ts` (CHUNK_10).

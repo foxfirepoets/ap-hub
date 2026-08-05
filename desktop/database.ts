@@ -29,6 +29,9 @@ import {
   type StartedLocalDatabase,
 } from '../src/db/local-database.js';
 import { migrateUp } from '../src/db/migrate.js';
+import { createBackup } from '../src/backup/create.js';
+import { alertBackupFailure } from '../src/backup/alerts.js';
+import { withBackupLock } from '../src/backup/lock.js';
 
 /** This file's own build output directory: `<root>/dist-desktop` in a checkout. */
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -77,7 +80,7 @@ export function describeDatabaseFailure(err: unknown): DatabaseFailure {
     return {
       code: 'DB_FAILED',
       message:
-        'AP-Hub found your information but could not unlock it on this Windows account. ' +
+        'BookScout OS found your information but could not unlock it on this Windows account. ' +
         'Restoring from a backup will recover it.',
       repairable: true,
     };
@@ -86,7 +89,7 @@ export function describeDatabaseFailure(err: unknown): DatabaseFailure {
     return {
       code: 'DB_FAILED',
       message:
-        'AP-Hub found information saved under a different Windows account on this computer. ' +
+        'BookScout OS found information saved under a different Windows account on this computer. ' +
         'To keep everyone’s information private, it will not open here. Sign in to Windows ' +
         'as that original account to see it again.',
       repairable: false,
@@ -95,7 +98,7 @@ export function describeDatabaseFailure(err: unknown): DatabaseFailure {
   return {
     code: 'DB_FAILED',
     message:
-      'AP-Hub could not start its private database. Restarting AP-Hub usually fixes this. ' +
+      'BookScout OS could not start its private database. Restarting BookScout OS usually fixes this. ' +
       'If it keeps happening, use Repair in Settings.',
     repairable: false,
   };
@@ -113,6 +116,46 @@ function supportedPlatformOrThrow(host: HostAdapter): SupportedPlatform {
 export interface StartDatabaseOptions {
   host?: HostAdapter;
   appVersion?: string;
+}
+
+/**
+ * The pre-migration half of R1 (spec: "pre-migration ... backups run"). Wired as
+ * `migrateUp`'s `onBeforeMigrating` hook, so it only fires when an EXISTING install (one with
+ * data worth protecting) is about to have its schema changed — never on the very first launch,
+ * and never on a launch with nothing pending. Best-effort by design (`migrate.ts` swallows a
+ * throw here and proceeds with the migration regardless): refusing to update because a safety
+ * backup could not be taken would leave the user stuck on a broken app version, which is worse
+ * than the migration proceeding without one.
+ */
+async function runPreMigrationBackup(
+  connectionString: string,
+  host: HostAdapter,
+  binDir: string,
+  dataRoot: string,
+): Promise<void> {
+  const url = new URL(connectionString);
+  const result = await withBackupLock(() =>
+    createBackup({
+      kind: 'pre_migration',
+      connection: {
+        host: url.hostname,
+        port: Number(url.port || 5432),
+        user: decodeURIComponent(url.username),
+        password: decodeURIComponent(url.password),
+        database: decodeURIComponent(url.pathname.replace(/^\//, '')),
+      },
+      pgBinDir: binDir,
+      exeSuffix: host.exeSuffix,
+      backupDir: join(dataRoot, 'backups'),
+      restrictToCurrentUser: host.fsPermissions.restrictToCurrentUser,
+      secretStore: host.secretStore,
+    }),
+  );
+  if (!result.verified) {
+    alertBackupFailure(
+      'BookScout OS is updating your data and made a safety backup first, but could not confirm it is readable.',
+    );
+  }
 }
 
 /**
@@ -156,6 +199,16 @@ export async function startDatabase(opts: StartDatabaseOptions = {}): Promise<St
 
   await host.fsPermissions.restrictToCurrentUser(dataRoot);
 
+  /**
+   * Packaged-path wiring for backup create/restore/nightly. `src/backup/{http,rotation}.ts`
+   * read these the same way they read `DATABASE_URL` — set here so they resolve the real
+   * bundled `pg_dump`/`pg_restore` binaries and the install's backup directory, not the
+   * checkout `vendor/pgsql` fallback that only works under `npm run dev`.
+   */
+  process.env.APHUB_PG_BIN_DIR = binDir;
+  process.env.APHUB_BACKUP_DIR = join(dataRoot, 'backups');
+  process.env.APHUB_MIGRATIONS_DIR = dir;
+
   return startLocalDatabase({
     binDir,
     dataDir: join(dataRoot, 'pgdata'),
@@ -166,7 +219,10 @@ export async function startDatabase(opts: StartDatabaseOptions = {}): Promise<St
     appVersion: opts.appVersion ?? app.getVersion(),
     osAccountId: await host.osAccountId(),
     secretStore: host.secretStore,
-    migrate: (connectionString) => migrateUp(connectionString, dir),
+    migrate: (connectionString) =>
+      migrateUp(connectionString, dir, {
+        onBeforeMigrating: () => runPreMigrationBackup(connectionString, host, binDir, dataRoot),
+      }),
   });
 }
 

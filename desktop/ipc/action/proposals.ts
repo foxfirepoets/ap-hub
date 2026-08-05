@@ -43,7 +43,7 @@ export const proposalEntries: readonly RegistryEntry[] = [
     bodyKeys: [],
     request: strict({ proposalId: entityId }),
     response: passthrough({}),
-    validationMessage: 'AP-Hub could not tell which item to approve. Reopen the item and try again.',
+    validationMessage: 'BookScout OS could not tell which item to approve. Reopen the item and try again.',
     invoke: (request, payload) => runApprove(request, payload.proposalId as number),
   }),
 
@@ -74,7 +74,7 @@ export const proposalEntries: readonly RegistryEntry[] = [
     bodyKeys: [],
     request: strict({ proposalId: entityId }),
     response: passthrough({}),
-    validationMessage: 'AP-Hub could not tell which item to try again. Reopen the item and try again.',
+    validationMessage: 'BookScout OS could not tell which item to try again. Reopen the item and try again.',
     invoke: (request, payload) => runRetry(request, payload.proposalId as number),
   }),
 ];

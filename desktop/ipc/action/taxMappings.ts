@@ -72,7 +72,7 @@ export const taxMappingEntries: readonly RegistryEntry[] = [
     }),
     response: mappingEnvelope,
     validationMessage:
-      'AP-Hub needs the accounting connection and the full tax details before it can save this rule.',
+      'BookScout OS needs the accounting connection and the full tax details before it can save this rule.',
     invoke: (request) => runCreateTaxMapping(request),
   }),
 
@@ -125,7 +125,7 @@ export const taxMappingEntries: readonly RegistryEntry[] = [
     // Replace never deletes: it returns the superseded row alongside the new one (`:219`).
     response: passthrough({ old: passthrough({}), replacement: passthrough({}) }),
     validationMessage:
-      'AP-Hub needs the new tax details and a short reason before it can replace this rule.',
+      'BookScout OS needs the new tax details and a short reason before it can replace this rule.',
     invoke: (request, payload) => runReplaceTaxMapping(request, payload.taxMappingId as number),
   }),
 
@@ -139,7 +139,7 @@ export const taxMappingEntries: readonly RegistryEntry[] = [
     // it is absent rather than `''`, and the route comment says so. Do not "make it consistent".
     request: strict({ taxMappingId: entityId, reason: optionalReason }),
     response: mappingEnvelope,
-    validationMessage: 'AP-Hub could not tell which tax rule to re-check. Reload the list and try again.',
+    validationMessage: 'BookScout OS could not tell which tax rule to re-check. Reload the list and try again.',
     invoke: (request, payload) => runRevalidateTaxMapping(request, payload.taxMappingId as number),
   }),
 

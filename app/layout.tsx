@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import './globals.css';
 
 export const metadata = {
-  title: 'AP Hub',
+  title: 'BookScout OS',
   description: 'Human-supervised Gmail and bank-statement intake with proof-gated QuickBooks posting.',
 };
 

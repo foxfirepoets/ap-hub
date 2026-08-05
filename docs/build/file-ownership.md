@@ -35,6 +35,8 @@ and a build-time assertion both enforce this.
 | Agent | Branch | Worktree | Owns | Needs (shared) | Status |
 |---|---|---|---|---|---|
 | Integration lead | `feat/local-desktop-p1` | `Desktop/ap-hub` | all shared files; merges; gate | — | active |
+| CHUNK_7 backup IPC | `agent/chunk7-backup-ipc` | `ap-hub-worktrees/chunk7-backup-ipc` | `desktop/ipc/read/backup.ts`, `desktop/ipc/action/backup.ts`, channel-list appends in `desktop/ipc/{read,action}/channels.ts`, barrels, service wrappers under `src/backup/**` or `src/services/**` as needed, focused IPC tests | `desktop/channels.ts`, `desktop/main.ts` (patch notes only) | **active** |
+| CHUNK_7 backup UI | `agent/chunk7-backup-ui` | `ap-hub-worktrees/chunk7-backup-ui` | Settings backup panel under `app/(app)/settings/**`, plain-language helpers, UI/e2e coverage for backup panel | IPC channel names from CHUNK_7 IPC (contract only) | **active** |
 | A — Database | `agent/database-chunk2` | `ap-hub-worktrees/database` | `src/db/**`, `src/install/**`, `scripts/bundle-postgres.mjs`, `vendor/postgres.lock.json`, `test/local-database*.test.ts` | `desktop/main.ts`, `electron-builder.yml` | **CHUNK_2 complete — merged** |
 | B1 — IPC interfaces | *(integration lead, main checkout)* | `Desktop/ap-hub` | `docs/build/interfaces/**` | — | **frozen — see below** |
 | B2 — IPC foundation | `agent/ipc-foundation` | `ap-hub-worktrees/ipc-foundation` | `desktop/ipc/dispatcher.ts`, `desktop/ipc/envelope.ts`, `desktop/ipc/registry.ts`, `desktop/ipc/errors.ts`, `desktop/ipc/context.ts`, `test/ipc-foundation.test.ts` | `desktop/channels.ts`, `desktop/main.ts` | **merged** `0ca28f2` |

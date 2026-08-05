@@ -23,6 +23,7 @@ out/
 secrets/
 credentials/
 *.credentials.json
+/credentials.json
 
 # Test / coverage
 coverage/

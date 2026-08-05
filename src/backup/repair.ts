@@ -1,6 +1,6 @@
 import pg from 'pg';
 import { readInstallFile } from '../db/local-database.js';
-import { migrateUp } from '../db/migrate.js';
+import { migrateUp, type MigrateUpOptions } from '../db/migrate.js';
 import type { SecretStore } from '../host/types.js';
 import { childLogger } from '../logger.js';
 import { BACKUP_ENCRYPTION_KEY_TARGET } from './key.js';
@@ -45,6 +45,14 @@ export interface RepairOptions {
   migrationsDir?: string;
   installFilePath: string;
   secretStore: SecretStore;
+  /**
+   * Forwarded straight to `migrateUp`. Without this, a repair run that happens to find pending
+   * migrations (e.g. right after an app update, before the boot path has run) would apply them
+   * with no pre-migration safety backup — the exact gap the boot path (`desktop/database.ts`)
+   * already closed for the normal startup path. `runRepairBackup` (`src/backup/http.ts`)
+   * supplies the same kind of hook here.
+   */
+  onBeforeMigrating?: MigrateUpOptions['onBeforeMigrating'];
 }
 
 export interface IntegrityCheckResult {
@@ -134,7 +142,9 @@ async function checkInstallLinkage(
  * to a user-data table.
  */
 export async function runRepair(opts: RepairOptions): Promise<RepairResult> {
-  const migrationsApplied = await migrateUp(opts.connectionString, opts.migrationsDir);
+  const migrationsApplied = await migrateUp(opts.connectionString, opts.migrationsDir, {
+    onBeforeMigrating: opts.onBeforeMigrating,
+  });
 
   const pool = new Pool({ connectionString: opts.connectionString });
   let integrityChecks: IntegrityCheckResult[];

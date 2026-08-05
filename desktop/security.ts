@@ -53,7 +53,7 @@ export function cspHasNoRemoteOrigin(csp: string): boolean {
 
 /**
  * `connect-src 'none'` is the load-bearing directive for acceptance criterion "the renderer
- * performs zero HTTP requests to an AP-Hub origin". With it, renderer `fetch`/XHR/WebSocket
+ * performs zero HTTP requests to an BookScout OS origin". With it, renderer `fetch`/XHR/WebSocket
  * cannot reach anything at all — product operations travel over IPC or not at all.
  */
 export function cspForbidsNetwork(csp: string): boolean {

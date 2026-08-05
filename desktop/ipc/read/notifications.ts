@@ -32,7 +32,7 @@ export const notificationsEntries: readonly RegistryEntry[] = [
         createdAt: z.string(),
       }),
     ),
-    validationMessage: 'AP-Hub could not load your notifications.',
+    validationMessage: 'BookScout OS could not load your notifications.',
     invoke: (request, payload) =>
       runRead(request, (ctx) => listNotifications(ctx.tenantId, { unreadOnly: payload.unreadOnly === true })),
   }),

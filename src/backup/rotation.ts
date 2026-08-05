@@ -5,7 +5,9 @@ import { query as poolQuery } from '../db/pool.js';
 import { createHostAdapter } from '../host/index.js';
 import { JOBS } from '../queue.js';
 import { childLogger } from '../logger.js';
+import { alertBackupFailure } from './alerts.js';
 import { createBackup, type BackupKind } from './create.js';
+import { withBackupLock } from './lock.js';
 
 const log = childLogger({ module: 'backup-rotation' });
 
@@ -170,54 +172,58 @@ export async function pruneBackups(deps: Partial<PruneDeps> = {}): Promise<Prune
 /**
  * Nightly job: create a fresh `scheduled` backup, then prune per retention policy.
  *
- * KNOWN GAP (documented, not fixed here): `pgBinDir`/`backupDir`/DB connection details
- * are not yet threaded through `registerPipelineJobs(boss, cfg)` — that plumbing lives
- * in `desktop/database.ts` (resourceRoot/postgresRoot, Electron-packaging-aware) which
- * this task must not touch. This handler resolves what it can from the host adapter
- * (secretStore, restrictToCurrentUser, dataDir) and from `DATABASE_URL`, and falls back
- * to the same dev-checkout `vendor/pgsql/bin` layout the test suite uses for `pgBinDir`.
- * That fallback is correct for `npm run dev` (the only path that currently calls
- * `registerPipelineJobs`) but is NOT the packaged-app resource path — once
- * CHUNK_8_SUPERVISION wires `registerPipelineJobs` into `desktop/main.ts`, that wiring
- * must pass the real packaged `pgBinDir`/`backupDir` in rather than relying on this
- * fallback.
+ * Path resolution: `desktop/database.ts` sets `APHUB_PG_BIN_DIR` / `APHUB_BACKUP_DIR` after
+ * the bundled Postgres ACL is applied; `desktop/main.ts` registers this handler via
+ * `registerPipelineJobs` once the private DB is up. When those env vars are absent (CLI /
+ * `npm run dev` without the desktop path), fall back to `vendor/pgsql/bin` under cwd and
+ * `host.dataDir()/backups` — the same layout the integration suite uses.
  */
 export async function backupNightlyHandler(): Promise<void> {
   const host = createHostAdapter();
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
     log.error('backup_nightly skipped — DATABASE_URL is not set');
+    alertBackupFailure('BookScout OS could not run the nightly backup — the private database was not ready.');
     return;
   }
   const url = new URL(databaseUrl);
   const backupDir = join(host.dataDir(), 'backups');
 
+  // The whole create-then-prune cycle runs under one lock acquisition, alongside every other
+  // backup/restore/repair entry point (`src/backup/lock.ts`) — a manual restore or repair
+  // landing mid-cycle would otherwise race the live-database connection this dump depends on,
+  // or the encryption key `createBackup` may be minting for the very first time.
   try {
-    const result = await createBackup({
-      kind: 'scheduled' as BackupKind,
-      connection: {
-        host: url.hostname,
-        port: Number(url.port || 5432),
-        user: decodeURIComponent(url.username),
-        password: decodeURIComponent(url.password),
-        database: decodeURIComponent(url.pathname.replace(/^\//, '')),
-      },
-      pgBinDir: process.env.APHUB_PG_BIN_DIR ?? join(process.cwd(), 'vendor', 'pgsql', 'bin'),
-      exeSuffix: host.exeSuffix,
-      backupDir: process.env.APHUB_BACKUP_DIR ?? backupDir,
-      restrictToCurrentUser: host.fsPermissions.restrictToCurrentUser,
-      secretStore: host.secretStore,
+    await withBackupLock(async () => {
+      const result = await createBackup({
+        kind: 'scheduled' as BackupKind,
+        connection: {
+          host: url.hostname,
+          port: Number(url.port || 5432),
+          user: decodeURIComponent(url.username),
+          password: decodeURIComponent(url.password),
+          database: decodeURIComponent(url.pathname.replace(/^\//, '')),
+        },
+        pgBinDir: process.env.APHUB_PG_BIN_DIR ?? join(process.cwd(), 'vendor', 'pgsql', 'bin'),
+        exeSuffix: host.exeSuffix,
+        backupDir: process.env.APHUB_BACKUP_DIR ?? backupDir,
+        restrictToCurrentUser: host.fsPermissions.restrictToCurrentUser,
+        secretStore: host.secretStore,
+      });
+      if (!result.verified) {
+        log.error({ backupId: result.backupId, reason: result.reason }, 'nightly backup failed verification');
+        alertBackupFailure(
+          'BookScout OS made a backup copy but could not confirm it is readable. It was not counted as a usable backup.',
+        );
+        return; // never prune when the new copy did not verify
+      }
+      const { prunedIds, skipped } = await pruneBackups();
+      log.info({ prunedIds, skippedCount: skipped.length }, 'backup rotation complete');
     });
-    if (!result.verified) {
-      log.error({ backupId: result.backupId, reason: result.reason }, 'nightly backup failed verification');
-    }
   } catch (err) {
     log.error({ err: String(err) }, 'nightly backup creation failed; rotation skipped this cycle');
-    return; // never prune on a cycle where creation failed — nothing "newer" actually verified
+    alertBackupFailure('BookScout OS could not create tonight\'s backup. Your older verified backups were left alone.');
   }
-
-  const { prunedIds, skipped } = await pruneBackups();
-  log.info({ prunedIds, skippedCount: skipped.length }, 'backup rotation complete');
 }
 
 export async function scheduleBackupNightly(boss: PgBoss): Promise<void> {

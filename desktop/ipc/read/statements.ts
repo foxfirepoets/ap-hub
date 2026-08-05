@@ -47,7 +47,7 @@ export const statementsEntries: readonly RegistryEntry[] = [
     queryParams: ['status'],
     request: strict({ status: filterText.optional() }),
     response: z.array(statementListItem),
-    validationMessage: 'AP-Hub could not load your bank statements.',
+    validationMessage: 'BookScout OS could not load your bank statements.',
     invoke: (request, payload) =>
       runRead(request, (ctx) => listStatements(ctx.tenantId, payload.status as string | undefined), {
         role: STATEMENT_ROLE,
@@ -76,7 +76,7 @@ export const statementsEntries: readonly RegistryEntry[] = [
       unresolvedCount: z.number(),
       lines: z.array(statementLine),
     }),
-    validationMessage: 'AP-Hub could not find that bank statement.',
+    validationMessage: 'BookScout OS could not find that bank statement.',
     invoke: (request, payload) =>
       runRead(request, (ctx) => getStatement(ctx.tenantId, payload.id as number), { role: STATEMENT_ROLE }),
   }),

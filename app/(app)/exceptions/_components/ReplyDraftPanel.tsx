@@ -175,7 +175,7 @@ export function ReplyDraftPanel({
         <div>
           <h2>Draft reply</h2>
           <p className="muted">
-            Prepare the response here. <strong>AP Hub cannot send this message.</strong> A person
+            Prepare the response here. <strong>BookScout OS cannot send this message.</strong> A person
             must review and send the unsent draft from Gmail.
           </p>
         </div>

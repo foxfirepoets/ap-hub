@@ -1,4 +1,4 @@
-# ap-hub — AI Accountant Hub
+# BookScout OS
 
 A local TypeScript backend plus a Next.js review UI that reads accounting email
 from Gmail and verify documents through the operator's own **SwarmSync** proof platform
@@ -78,7 +78,7 @@ recovery and resolve retained `proof_scan_unavailable` evidence through the revi
 
 | Guarantee | Test |
 |---|---|
-| Reply drafts cannot be sent by AP Hub | Gmail draft and reply API no-send tests |
+| Reply drafts cannot be sent by BookScout OS | Gmail draft and reply API no-send tests |
 | Forward locked to one configured address | `send_lockdown` |
 | Production default-off; exact realm/company + owner/proof gates required | configuration and posting tests |
 | No double-post / double-forward | `idempotent_double_post`, `replay_after_timeout`, `no_double_forward` |

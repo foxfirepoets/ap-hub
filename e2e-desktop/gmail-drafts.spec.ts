@@ -231,7 +231,7 @@ test.describe('Gmail reply-draft lifecycle', () => {
     await stubThrow(app, 'aphub:reply-drafts:update');
 
     await win.goto('file:///exceptions');
-    await expect(win.getByTestId('reply-draft-panel')).toContainText('AP Hub cannot send');
+    await expect(win.getByTestId('reply-draft-panel')).toContainText('BookScout OS cannot send');
     await expect(win.getByTestId('draft-timestamps')).toContainText('last synced');
     await win.getByLabel('Message').fill('Updated but still unsent.');
     await win.getByTestId('draft-save').click();

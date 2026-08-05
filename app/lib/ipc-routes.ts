@@ -219,8 +219,11 @@ const ROUTES: readonly RouteSpec[] = [
   },
   { method: 'POST', pathTemplate: '/api/provider-jobs/:jobId/retry', channel: 'aphub:provider-jobs:retry' },
   { method: 'POST', pathTemplate: '/api/connections/start', channel: 'aphub:connections:start' },
+  { method: 'POST', pathTemplate: '/api/backup/create', channel: 'aphub:backup:create' },
+  { method: 'POST', pathTemplate: '/api/backup/restore-external', channel: 'aphub:backup:restore-external' },
   { method: 'POST', pathTemplate: '/api/backup/:backupId/restore', channel: 'aphub:backup:restore' },
   { method: 'POST', pathTemplate: '/api/backup/:backupId/export', channel: 'aphub:backup:export' },
+  { method: 'POST', pathTemplate: '/api/backup/repair', channel: 'aphub:backup:repair' },
 ];
 
 /** Exported so the parity test can walk every declared route without re-deriving this table. */

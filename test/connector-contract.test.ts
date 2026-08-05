@@ -1,10 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createQboConnector } from '../src/connectors/qbo.js';
-import { createXeroConnector, createSageIntacctConnector, createQbdConnector } from '../src/connectors/stubs.js';
+import { createXeroConnector } from '../src/connectors/xero.js';
+import { createSageIntacctConnector, createQbdConnector } from '../src/connectors/stubs.js';
 import { NotImplementedInPhase, type AccountingConnector } from '../src/connectors/types.js';
 import type { CanonicalBill, CanonicalRecord, Unsupported } from '../src/canonical/model.js';
 import type { QboWriteClient } from '../src/qbo/write.js';
 import type { QboReadClient } from '../src/qbo/client.js';
+import type { AccountingApi } from 'xero-node';
 
 function mockWrite(overrides: Partial<QboWriteClient> = {}): QboWriteClient {
   return {
@@ -27,6 +29,36 @@ function mockRead(overrides: Partial<QboReadClient> = {}): QboReadClient {
     }),
     ...overrides,
   } as QboReadClient;
+}
+
+function mockXeroApi(overrides: Partial<Record<string, unknown>> = {}): AccountingApi {
+  const invoices = new Map<string, any>();
+  let seq = 0;
+  return {
+    getContacts: vi.fn().mockResolvedValue({ body: { contacts: [{ contactID: 'C1', name: 'Acme' }] } }),
+    getAccounts: vi.fn().mockResolvedValue({ body: { accounts: [{ accountID: '60', name: 'Office Expense', type: 'EXPENSE' }] } }),
+    getOrganisations: vi.fn().mockResolvedValue({ body: { organisations: [{ name: 'Demo Company (US)' }] } }),
+    getInvoices: vi.fn().mockResolvedValue({ body: { invoices: [] } }),
+    createContacts: vi.fn(async (_tenantId: string, req: any) => ({
+      body: {
+        contacts: [{ ...req.contacts[0], contactID: 'C-new', updatedDateUTCString: '2026-07-01T00:00:00.000Z' }],
+      },
+    })),
+    createInvoices: vi.fn(async (_tenantId: string, req: any) => {
+      seq += 1;
+      const id = `INV-${seq}`;
+      const created = {
+        ...req.invoices[0],
+        invoiceID: id,
+        updatedDateUTCString: '2026-07-01T00:00:00.000Z',
+        total: Number(req.invoices[0].lineItems?.[0]?.lineAmount ?? 0),
+      };
+      invoices.set(id, created);
+      return { body: { invoices: [created] } };
+    }),
+    getInvoice: vi.fn(async (_tenantId: string, id: string) => ({ body: { invoices: [invoices.get(id)] } })),
+    ...overrides,
+  } as unknown as AccountingApi;
 }
 
 const sampleBill: CanonicalBill = {
@@ -140,9 +172,59 @@ describe('QBO connector — capability gaps are surfaced, never silently dropped
   });
 });
 
+// --- Xero real adapter must pass the contract (delegation-only wrap of xero-node) ---
+runConnectorContract('xero', () => createXeroConnector({ accountingApi: mockXeroApi(), tenantId: 'tenant-1' }), 'Demo Company (US)');
+
+describe('Xero connector — capability gaps are surfaced, never silently dropped', () => {
+  it('a third tracking-category dimension beyond the 2-active ceiling is Unsupported and audited', async () => {
+    const audited: Unsupported[] = [];
+    const c = createXeroConnector({ accountingApi: mockXeroApi(), tenantId: 'tenant-1', onUnsupported: (u) => audited.push(u) });
+    const bill: CanonicalBill = {
+      ...sampleBill,
+      dimensions: [
+        { kind: 'region', id: 'R1' },
+        { kind: 'department', id: 'D1' },
+        { kind: 'project', id: 'P1' },
+      ],
+    };
+    const res = await c.create('bill', { kind: 'bill', canonical: bill }, 'idem-key-xero-2');
+    expect(res.capabilityGaps.some((g) => g.field === 'dimensions.project')).toBe(true);
+    expect(audited.some((g) => g.field === 'dimensions.project')).toBe(true);
+  });
+
+  it('never writes IsSupplier on vendor Contact create (Xero derives it, read-only)', async () => {
+    const api = mockXeroApi();
+    const c = createXeroConnector({ accountingApi: api, tenantId: 'tenant-1' });
+    await c.create('vendor', { kind: 'vendor', canonical: { id: '', name: 'Acme' } }, 'idem-key-xero-3');
+    const call = (api.createContacts as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    expect(call[1].contacts[0]).not.toHaveProperty('isSupplier');
+  });
+
+  it('holds ambiguous duplicate candidates when more than one Invoice matches contact and amount', async () => {
+    const api = mockXeroApi({
+      getInvoices: vi.fn().mockResolvedValue({
+        body: {
+          invoices: [
+            { invoiceID: '1', contact: { contactID: 'V1' }, total: 100 },
+            { invoiceID: '2', contact: { contactID: 'V1' }, total: 100 },
+          ],
+        },
+      }),
+    });
+    const c = createXeroConnector({ accountingApi: api, tenantId: 'tenant-1' });
+    const txn = { vendorRef: { value: 'V1' }, DocNumber: 'INV-1', TxnDate: '2026-07-01', TotalAmt: 100 };
+    await expect(c.detectExisting(txn, 'key')).rejects.toThrow('XERO_AMBIGUOUS_DUPLICATE_MATCH');
+  });
+
+  it('refuses production writes without the explicit production write gate', () => {
+    expect(() => createXeroConnector({ accountingApi: mockXeroApi(), tenantId: 'tenant-1', env: 'production' })).toThrow(
+      'production write gate',
+    );
+  });
+});
+
 describe('provider stubs are capability-declaring but throw NotImplementedInPhase', () => {
   for (const [name, make] of [
-    ['xero', createXeroConnector],
     ['sage_intacct', createSageIntacctConnector],
     ['qbd', createQbdConnector],
   ] as const) {

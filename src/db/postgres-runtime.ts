@@ -59,7 +59,7 @@ export class PostgresStartFailed extends Error {
 export class DataDirectoryNotOurs extends Error {
   readonly code = 'DB_FAILED';
   constructor(dir: string) {
-    super(`Refusing to use a data directory AP-Hub did not create: ${dir}`);
+    super(`Refusing to use a data directory BookScout OS did not create: ${dir}`);
     this.name = 'DataDirectoryNotOurs';
   }
 }

@@ -3,10 +3,12 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { config } from '../config.js';
 import { writeAudit } from '../audit.js';
 import { logger } from '../logger.js';
-import { buildGmailAuthorizeUrl, buildQboAuthorizeUrl } from './connect-urls.js';
+import { buildGmailAuthorizeUrl, buildQboAuthorizeUrl, buildXeroAuthorizeUrl } from './connect-urls.js';
 import { exchangeGmailCode, mergeGmailScopes } from './gmail-oauth.js';
 import { exchangeQboCode } from './qbo-oauth.js';
+import { exchangeXeroCode, xeroOAuthScopes } from './xero-oauth.js';
 import { loadToken, saveToken, upsertConnection } from './tokens.js';
+import type { ConnectProvider } from './connect-state.js';
 
 /**
  * CHUNK_5_CONNECT — the desktop connect flow: system-browser consent + a single-use,
@@ -18,7 +20,7 @@ import { loadToken, saveToken, upsertConnection } from './tokens.js';
  * session-revalidated state token, built for a web flow whose "start" and "callback" requests
  * can land on different processes minutes apart. This flow never leaves one process: `start`
  * mints the state, opens the browser and stands up the listener in one call, and the listener
- * itself receives the callback — there is no second hop to survive. AP-Hub v1 is also one
+ * itself receives the callback — there is no second hop to survive. BookScout OS v1 is also one
  * computer, one OS account (`.ralph/guardrails.md`), so there is no second session to
  * revalidate against. A simpler, in-memory, single-use nonce — scoped to this module, matched
  * by exact string comparison, deleted the instant it is read — is therefore a better fit than
@@ -29,8 +31,6 @@ import { loadToken, saveToken, upsertConnection } from './tokens.js';
  * untouched.
  */
 
-export type ConnectProvider = 'gmail' | 'qbo';
-
 export interface ConnectFlowActor {
   tenantId: number;
   userId: number;
@@ -39,7 +39,7 @@ export interface ConnectFlowActor {
 }
 
 /** The desktop shell's side of this flow: open the user's system browser, and bring the
- * AP-Hub window back to the front once consent completes. Wired once at boot
+ * BookScout OS window back to the front once consent completes. Wired once at boot
  * (`desktop/main.ts`) — never a per-call argument, so nothing here can be handed a stand-in in
  * production. */
 export interface ConnectFlowHost {
@@ -66,9 +66,9 @@ const CALLBACK_PATH = '/callback';
 const DEFAULT_FLOW_TIMEOUT_MS = 10 * 60 * 1000;
 
 const CLOSE_PAGE_BODY =
-  '<!doctype html><html><head><meta charset="utf-8"><title>AP-Hub</title></head>' +
+  '<!doctype html><html><head><meta charset="utf-8"><title>BookScout OS</title></head>' +
   '<body style="font-family:system-ui,sans-serif;padding:2.5rem;color:#1a1a1a">' +
-  '<p>You can close this and return to AP-Hub.</p></body></html>';
+  '<p>You can close this and return to BookScout OS.</p></body></html>';
 
 function randomToken(): string {
   // 32 bytes -> 43 base64url characters: the RFC 7636 PKCE verifier minimum, and (used for
@@ -193,6 +193,32 @@ async function completeQbo(
   });
 }
 
+async function completeXero(
+  actor: ConnectFlowActor,
+  code: string,
+  codeVerifier: string,
+  redirectUri: string,
+): Promise<void> {
+  const tok = await exchangeXeroCode(code, codeVerifier, redirectUri);
+  await saveToken(actor.tenantId, 'xero', {
+    accessToken: tok.access_token,
+    refreshToken: tok.refresh_token,
+    expiresAt: new Date(Date.now() + tok.expires_in * 1000),
+    scope: tok.scope ?? xeroOAuthScopes().join(' '),
+    realm: tok.tenantId,
+  });
+  // Mirrors completeQbo's `connections` upsert (external_company = the connected org's own
+  // identifier — QBO's realmId there, xero's tenantId here).
+  await upsertConnection(actor.tenantId, 'xero', tok.tenantId);
+  await writeAudit({
+    tenantId: actor.tenantId,
+    actor: actor.email || `user:${actor.userId}`,
+    action: 'xero.connect',
+    entity: `tenant:${tok.tenantId}`,
+    realm: tok.tenantId,
+  });
+}
+
 function authorizeUrlFor(
   provider: ConnectProvider,
   state: string,
@@ -200,9 +226,9 @@ function authorizeUrlFor(
   codeChallenge: string,
 ): string {
   const cfg = config();
-  return provider === 'gmail'
-    ? buildGmailAuthorizeUrl(cfg, state, { redirectUri, codeChallenge })
-    : buildQboAuthorizeUrl(cfg, state, { redirectUri, codeChallenge });
+  if (provider === 'gmail') return buildGmailAuthorizeUrl(cfg, state, { redirectUri, codeChallenge });
+  if (provider === 'xero') return buildXeroAuthorizeUrl(cfg, state, { redirectUri, codeChallenge });
+  return buildQboAuthorizeUrl(cfg, state, { redirectUri, codeChallenge });
 }
 
 export interface StartConnectFlowOptions {
@@ -266,6 +292,7 @@ export async function startConnectFlow(
 
       try {
         if (provider === 'gmail') await completeGmail(actor, code, codeVerifier, redirectUri);
+        else if (provider === 'xero') await completeXero(actor, code, codeVerifier, redirectUri);
         else await completeQbo(actor, code, codeVerifier, redirectUri, realmId);
         activeHost.focusWindow();
       } catch (err) {
@@ -283,7 +310,7 @@ export async function startConnectFlow(
   const address = server.address();
   if (address === null || typeof address === 'string') {
     server.close();
-    throw new Error('AP-Hub could not open a local listener for the sign-in callback.');
+    throw new Error('BookScout OS could not open a local listener for the sign-in callback.');
   }
   redirectUri = `http://127.0.0.1:${address.port}${CALLBACK_PATH}`;
 
@@ -297,7 +324,7 @@ export async function startConnectFlow(
     })();
   }, timeoutMs);
   // Ten minutes is a long time for a timer to hold the process open for no other reason;
-  // `unref` lets AP-Hub quit in the meantime without waiting on an abandoned sign-in.
+  // `unref` lets BookScout OS quit in the meantime without waiting on an abandoned sign-in.
   timer.unref?.();
 
   pending.set(provider, { server, timer });

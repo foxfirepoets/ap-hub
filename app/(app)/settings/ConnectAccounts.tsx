@@ -7,7 +7,7 @@ import type { ConnectionStatus } from '../../lib/types';
 /**
  * CHUNK_5_CONNECT — Gmail and QuickBooks Online connect buttons, backed by
  * `aphub:connections:start` (opens the system browser + the loopback callback) and
- * `aphub:connections:status`. Never an embedded webview: consent always happens outside AP-Hub.
+ * `aphub:connections:status`. Never an embedded webview: consent always happens outside BookScout OS.
  */
 const PROVIDERS = [
   { id: 'gmail' as const, label: 'Gmail' },
@@ -36,7 +36,7 @@ export function ConnectAccounts({ owner }: { owner: boolean }) {
     const result = await apiPost<{ state: string }>('/api/connections/start', { provider });
     setBusyProvider(null);
     if (!result.ok) {
-      setNotice(result.error?.message ?? 'AP-Hub could not open the sign-in window.');
+      setNotice(result.error?.message ?? 'BookScout OS could not open the sign-in window.');
       return;
     }
     setNotice('Finish signing in in the browser window that just opened, then come back here.');

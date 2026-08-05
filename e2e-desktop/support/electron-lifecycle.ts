@@ -2,7 +2,7 @@ import { _electron as electron, type ElectronApplication, type ElectronLaunchOpt
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-/** AP-Hub's `before-quit` path may stop PostgreSQL for up to ~20 s; quit must finish before the next launch. */
+/** BookScout OS's `before-quit` path may stop PostgreSQL for up to ~20 s; quit must finish before the next launch. */
 const SHUTDOWN_MS = 30_000;
 
 /**
@@ -23,7 +23,22 @@ export async function closeElectron(app: ElectronApplication | undefined): Promi
       else proc.once('exit', () => resolve());
     }),
   ]);
-  await app.close();
+  await Promise.race([
+    app.close(),
+    new Promise<void>((_, reject) =>
+      setTimeout(
+        () => reject(new Error(`app.close() did not settle within ${SHUTDOWN_MS}ms`)),
+        SHUTDOWN_MS,
+      ),
+    ),
+  ]).catch(async (err) => {
+    try {
+      proc.kill();
+    } catch {
+      // already gone
+    }
+    throw err;
+  });
   await Promise.race([
     exited,
     new Promise<void>((_, reject) =>
@@ -42,11 +57,15 @@ export type LaunchElectronOptions = Omit<ElectronLaunchOptions, 'args'> & {
 };
 
 export async function launchElectron(options: LaunchElectronOptions): Promise<ElectronApplication> {
-  const args = [...(options.args ?? [])];
+  const extra = [...(options.args ?? [])];
+  const args: string[] = [];
+  // Electron treats the first non-option arg as the app entry. Put isolation flags first so
+  // they are not swallowed after MAIN.
   if (options.userDataDir) {
     mkdirSync(options.userDataDir, { recursive: true });
     args.push(`--user-data-dir=${options.userDataDir}`);
   }
+  args.push(...extra);
   const { userDataDir: _userDataDir, ...rest } = options;
   return electron.launch({ ...rest, args });
 }

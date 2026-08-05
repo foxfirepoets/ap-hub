@@ -19,9 +19,9 @@ export const connectionsEntries: readonly RegistryEntry[] = [
     method: 'POST',
     pathTemplate: '/api/connections/start',
     bodyKeys: ['provider'],
-    request: strict({ provider: z.enum(['gmail', 'qbo']) }),
+    request: strict({ provider: z.enum(['gmail', 'qbo', 'xero']) }),
     response: passthrough({ state: z.literal('browser_opened') }),
-    validationMessage: 'AP-Hub could not start connecting that account. Try again from Settings.',
+    validationMessage: 'BookScout OS could not start connecting that account. Try again from Settings.',
     invoke: (request) => runConnectionsStart(request),
   }),
 ];

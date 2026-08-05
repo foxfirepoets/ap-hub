@@ -7,7 +7,7 @@ import { join } from 'node:path';
  *
  * Unit tests prove the ordering, and `test/local-database.int.test.ts` proves the bundled
  * server starts when called directly. Neither proves the thing the chunk actually promises:
- * that double-clicking AP-Hub results in a running, migrated database. This does — it launches
+ * that double-clicking BookScout OS results in a running, migrated database. This does — it launches
  * the packaged main process, waits for the shell to report itself running, and then verifies
  * the cluster, the install file and the migrated schema from outside the app.
  *
@@ -78,15 +78,15 @@ test.describe('bundled database under a real Electron process', () => {
       );
 
     // Plain language only — no port, no path, no code reaches the renderer.
-    expect((status as ShellStatus).data.label).toBe('AP-Hub is running');
+    expect((status as ShellStatus).data.label).toBe('BookScout OS is running');
     expect((status as ShellStatus).data.problem).toBeNull();
   });
 
   test('the startup screen stops saying "starting up" once the database is up', async () => {
     // The page began as static markup. When the database failed, the owner was left on
-    // "AP-Hub is starting up" indefinitely with no explanation — a dead end. This asserts the
+    // "BookScout OS is starting up" indefinitely with no explanation — a dead end. This asserts the
     // screen actually follows the supervisor's state.
-    await expect(win.locator('#boot-heading')).toHaveText('AP-Hub is ready.', { timeout: 30_000 });
+    await expect(win.locator('#boot-heading')).toHaveText('BookScout OS is ready.', { timeout: 30_000 });
     await expect(win.locator('#boot-bar')).toBeHidden();
   });
 

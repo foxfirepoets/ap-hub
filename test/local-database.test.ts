@@ -175,7 +175,7 @@ describe('data directory disposition', () => {
 });
 
 describe('PostgresRuntime.initialise', () => {
-  it("refuses a non-empty directory AP-Hub did not create, rather than letting initdb decide", async () => {
+  it("refuses a non-empty directory BookScout OS did not create, rather than letting initdb decide", async () => {
     const dataDir = join(root, 'someone-elses-cluster');
     mkdirSync(dataDir, { recursive: true });
     writeFileSync(join(dataDir, 'important.dat'), 'a users existing data');

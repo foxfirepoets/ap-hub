@@ -1,5 +1,6 @@
 import type { Config } from '../config.js';
 import { gmailOAuthScopes } from './gmail-oauth.js';
+import { xeroOAuthScopes } from './xero-oauth.js';
 
 /**
  * Shared Gmail/QBO OAuth authorize-URL builders (CHUNK_4_STARTROUTES). Single source of
@@ -39,6 +40,28 @@ export function buildGmailAuthorizeUrl(cfg: Config, state: string, overrides: Au
   );
 }
 
+/**
+ * Whether the given provider actually has OAuth credentials configured. Neither
+ * `buildGmailAuthorizeUrl` nor `buildQboAuthorizeUrl` checks this themselves — both happily
+ * build a URL with a blank `client_id`, which Google/Intuit then reject with their own raw
+ * "Error 400: invalid_request" page. Callers (`src/services/action/connections.ts`) check this
+ * BEFORE opening that URL, so a not-yet-configured provider gets BookScout OS's own plain-language
+ * message instead of the far side's technical error screen.
+ */
+export function isProviderConfigured(cfg: Config, provider: 'gmail' | 'qbo' | 'xero'): boolean {
+  if (provider === 'gmail') {
+    return cfg.GMAIL_CLIENT_ID.trim() !== '' && cfg.GMAIL_CLIENT_SECRET.trim() !== '';
+  }
+  if (provider === 'xero') {
+    // PKCE Desktop-app client: no client_secret to check, unlike gmail/qbo.
+    return cfg.XERO_CLIENT_ID.trim() !== '';
+  }
+  const clientId = cfg.QBO_ENV === 'production' ? cfg.QBO_PRODUCTION_CLIENT_ID : cfg.QBO_SANDBOX_CLIENT_ID;
+  const clientSecret =
+    cfg.QBO_ENV === 'production' ? cfg.QBO_PRODUCTION_CLIENT_SECRET : cfg.QBO_SANDBOX_CLIENT_SECRET;
+  return clientId.trim() !== '' && clientSecret.trim() !== '';
+}
+
 export function buildQboAuthorizeUrl(cfg: Config, state: string, overrides: AuthorizeUrlOverrides = {}): string {
   const clientId = cfg.QBO_ENV === 'production' ? cfg.QBO_PRODUCTION_CLIENT_ID : cfg.QBO_SANDBOX_CLIENT_ID;
   const redirectUri = overrides.redirectUri ?? (cfg.QBO_ENV === 'production'
@@ -47,6 +70,22 @@ export function buildQboAuthorizeUrl(cfg: Config, state: string, overrides: Auth
     `https://appcenter.intuit.com/connect/oauth2?client_id=${clientId}` +
     `&redirect_uri=${encodeURIComponent(redirectUri)}` +
     `&response_type=code&scope=${encodeURIComponent(QBO_SCOPE)}&state=${encodeURIComponent(state)}` +
+    pkceQuery(overrides)
+  );
+}
+
+/**
+ * PKCE against a "Desktop app"-type xero OAuth client — always via the CHUNK_5 loopback flow, so
+ * `overrides.redirectUri` is always supplied by the caller (there is no fixed web-flow redirect
+ * for xero the way GMAIL_REDIRECT_URI/QBO_*_REDIRECT_URI have; falling back to '' here would only
+ * matter if this were ever called without it, which no caller does).
+ */
+export function buildXeroAuthorizeUrl(cfg: Config, state: string, overrides: AuthorizeUrlOverrides = {}): string {
+  const redirectUri = overrides.redirectUri ?? '';
+  return (
+    `https://login.xero.com/identity/connect/authorize?response_type=code&client_id=${cfg.XERO_CLIENT_ID}` +
+    `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+    `&scope=${encodeURIComponent(xeroOAuthScopes().join(' '))}&state=${encodeURIComponent(state)}` +
     pkceQuery(overrides)
   );
 }

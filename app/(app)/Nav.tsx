@@ -19,7 +19,7 @@ export function Nav() {
   const me = useSession();
   return (
     <nav className="topnav" aria-label="Primary navigation">
-      <span className="brand">AP Hub</span>
+      <span className="brand">BookScout OS</span>
       {LINKS.map((l) => {
         const active = pathname === l.href || pathname.startsWith(l.href + '/');
         return (
